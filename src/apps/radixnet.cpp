@@ -27,23 +27,34 @@
 
 */
 
+#include <stdarg.h>
+
+void errmsg( const char* format, ... )
+{
+  va_list arglist;
+
+  printf( "Error: " );
+  va_start( arglist, format );
+  vprintf( format, arglist );
+  va_end( arglist );
+}
 
 
 
 int main(int argc, char **argv) {
     //int sta = init();
     
-    int status = Env::init();
+    int status = utility::init();
     //int status = 0;
     if(status) {
         //printf("WARN(rank=%d): Failure to enable NUMA-aware memory allocation\n", rank);
         MPI_Finalize();
-        exit(1);         
+        std::exit(1);         
     }
 
     if(argc != 7) {
         fprintf(stderr, "USAGE: %s -n <Nneurons> -l <maxLayers> <path_to_input> <path_to_dnn>\n", argv[0]);
-        exit(1);         
+        std::exit(1);         
     }
     
     std::vector<WGT> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
@@ -63,7 +74,13 @@ int main(int argc, char **argv) {
         fprintf(stderr, "Error: Opening %s\n", featuresFile.c_str());
         exit(1);
     }
-    printf("Exiting\n");
+    
+    //errmsg( "%s %d %s %d", "Failed", 100, "times", 3);
+    
+    
+    
+    
+    printf("Exiting %d\n", utility::rank);
     int ret = MPI_Finalize();
     assert(ret == MPI_SUCCESS);
     
