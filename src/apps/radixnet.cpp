@@ -27,34 +27,27 @@
 
 */
 
-#include <stdarg.h>
 
-void errmsg( const char* format, ... )
-{
-  va_list arglist;
 
-  printf( "Error: " );
-  va_start( arglist, format );
-  vprintf( format, arglist );
-  va_end( arglist );
-}
 
 
 
 int main(int argc, char **argv) {
     //int sta = init();
     
-    int status = utility::init();
+    int status = Env::init();
     //int status = 0;
     if(status) {
-        //printf("WARN(rank=%d): Failure to enable NUMA-aware memory allocation\n", rank);
-        MPI_Finalize();
-        std::exit(1);         
+        
+        Env::print("%s", "ERROR: Failure to initialize MPI environment");
+        Env::finalize(1);
+        //int ret = MPI_Finalize();
+        //std::exit(1);         
     }
 
     if(argc != 7) {
-        fprintf(stderr, "USAGE: %s -n <Nneurons> -l <maxLayers> <path_to_input> <path_to_dnn>\n", argv[0]);
-        std::exit(1);         
+        Env::print("%s %s", "ERROR: USAGE =", argv[0], "-n <Nneurons> -l <maxLayers> <path_to_input> <path_to_dnn>");
+        Env::finalize(1);     
     }
     
     std::vector<WGT> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
@@ -62,27 +55,30 @@ int main(int argc, char **argv) {
     std::vector<uint32_t> NneuronsVector = {1024, 4096, 16384, 65536};
     uint32_t idxN = std::distance(NneuronsVector.begin(), std::find(NneuronsVector.begin(), NneuronsVector.end(), Nneurons));
     if(idxN >= NneuronsVector.size()) {
-        fprintf(stderr, "Invalid number of neurons/layer %d\n", Nneurons);
+        Env::print("%s %d", "ERROR: Invalid number of neurons/layer", Nneurons);
+        //fprintf(stderr, "Invalid number of neurons/layer %d\n", Nneurons);
         exit(1);
     }    
     WGT biasValue = neuralNetBias[idxN];
     
     std::string featuresFile = ((std::string) argv[5]) + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
-    printf("INFO: Start reading the features file %s\n", featuresFile.c_str());
+    Env::print("%s %s", "INFO: Start reading the features file", featuresFile.c_str());
+    //printf("INFO: Start reading the features file %s\n", featuresFile.c_str());
     std::ifstream fin(featuresFile.c_str());
-    if(!fin.is_open()) {
-        fprintf(stderr, "Error: Opening %s\n", featuresFile.c_str());
+    if(not fin.is_open()) {
+        Env::print("%s %s", "ERROR: Opening", featuresFile.c_str());
+        //fprintf(stderr, "Error: Opening %s\n", featuresFile.c_str());
         exit(1);
     }
     
-    //errmsg( "%s %d %s %d", "Failed", 100, "times", 3);
     
     
     
     
-    printf("Exiting %d\n", utility::rank);
+    
+    //printf("Exiting %d\n", Env::rank);
     int ret = MPI_Finalize();
-    assert(ret == MPI_SUCCESS);
+    //assert(ret == MPI_SUCCESS);
     
     /*
     uint64_t nrowsFeatures = 0; 
