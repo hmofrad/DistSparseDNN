@@ -33,7 +33,7 @@
 int main(int argc, char **argv) {
     //int sta = init();
     
-    int status = init();
+    int status = Env::init();
     //int status = 0;
     if(status) {
         //printf("WARN(rank=%d): Failure to enable NUMA-aware memory allocation\n", rank);
