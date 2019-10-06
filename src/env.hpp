@@ -16,11 +16,12 @@
 
 
 
+
 namespace Env {
     int nranks = 0;
     int rank = 0;
+    
     int init();
-    void print(const char* format, ...);
     double clock();
     void barrier();
     void finalize(int code);
@@ -38,34 +39,23 @@ int Env::init() {
     if((provided < MPI_THREAD_SINGLE) or (provided > MPI_THREAD_MULTIPLE)) {
         status = 1;
     } 
-    //int nranks;    
+
     MPI_Comm_size(MPI_COMM_WORLD, &Env::nranks);
     if(Env::nranks < 0) {
         status = 1;
-        
     }
-    //int rank;    
+    
     MPI_Comm_rank(MPI_COMM_WORLD, &Env::rank);
     if(Env::rank < 0) {
         status = 1;
     }
-    printf("done %d/%d\n", Env::rank, Env::nranks);
+
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
 }
 
 
-void Env::print(const char* format, ...)
-{
-//printf("Error: ");
-    if(not Env::rank) {
-        va_list arglist;  
-        va_start(arglist, format);
-        vprintf(format, arglist);
-        va_end(arglist);
-        printf("\n");
-    }
-}
+
 
 double Env::clock() {
     return(MPI_Wtime());
@@ -82,8 +72,6 @@ void Env::finalize(int code) {
     assert(ret == MPI_SUCCESS);
     std::exit(code);
 }
-
-
 
 
 
