@@ -19,8 +19,13 @@
 namespace utility {
     int nranks = 0;
     int rank = 0;
+    int init();
+
     
-    int init() {
+    //void helper2();
+}
+
+int utility::init() {
     int status = 0;
     int required = MPI_THREAD_MULTIPLE;
     int provided = -1;
@@ -44,10 +49,6 @@ namespace utility {
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
 }
-    
-    //void helper2();
-}
-
 
 
 
