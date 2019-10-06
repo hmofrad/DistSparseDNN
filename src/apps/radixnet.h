@@ -7,6 +7,8 @@
 #ifndef RADIXNET_H
 #define RADIXNET_H
 
+#include <cassert>
+
 using WGT = double;     
 
 #endif
