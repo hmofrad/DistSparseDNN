@@ -7,25 +7,29 @@
 #ifndef ENV_HPP
 #define ENV_HPP
 
-#include <cassert>
 
 #include <mpi.h>
 #include <omp.h>
 #include <numa.h>
 #include <thread>
+#include <stdarg.h>
 
 
 
-namespace utility {
+namespace Env {
     int nranks = 0;
     int rank = 0;
     int init();
+    void print(const char* format, ...);
+    double clock();
+    void barrier();
+    void finalize(int code);
 
     
     //void helper2();
 }
 
-int utility::init() {
+int Env::init() {
     int status = 0;
     int required = MPI_THREAD_MULTIPLE;
     int provided = -1;
@@ -35,20 +39,52 @@ int utility::init() {
         status = 1;
     } 
     //int nranks;    
-    MPI_Comm_size(MPI_COMM_WORLD, &nranks);
-    if(nranks < 0) {
+    MPI_Comm_size(MPI_COMM_WORLD, &Env::nranks);
+    if(Env::nranks < 0) {
         status = 1;
         
     }
     //int rank;    
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    if(rank < 0) {
+    MPI_Comm_rank(MPI_COMM_WORLD, &Env::rank);
+    if(Env::rank < 0) {
         status = 1;
     }
-    printf("done %d/%d\n", rank, nranks);
+    printf("done %d/%d\n", Env::rank, Env::nranks);
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
 }
+
+
+void Env::print(const char* format, ...)
+{
+//printf("Error: ");
+    if(not Env::rank) {
+        va_list arglist;  
+        va_start(arglist, format);
+        vprintf(format, arglist);
+        va_end(arglist);
+        printf("\n");
+    }
+}
+
+double Env::clock() {
+    return(MPI_Wtime());
+}
+
+void Env::barrier() {
+    MPI_Barrier(MPI_COMM_WORLD);
+}
+
+
+void Env::finalize(int code) {
+    MPI_Barrier(MPI_COMM_WORLD);
+    int ret = MPI_Finalize();
+    assert(ret == MPI_SUCCESS);
+    std::exit(code);
+}
+
+
+
 
 
 
@@ -88,13 +124,14 @@ struct machine {
     std::vector<std::vector<int>> socket_ranks;
 };
 */
-
+/*
 class Env {
     public:
         Env();
         static int init();
         static int rank;
         static int nranks;
+        */
         /*
         static MPI_Comm MPI_WORLD;
         
@@ -153,10 +190,10 @@ class Env {
         static bool memory_prefetching;
         */
         
-};
+//};
 
-int  Env::rank = 0;
-int  Env::nranks = 0;
+//int  Env::rank = 0;
+//int  Env::nranks = 0;
 
 /*
 //MPI_Comm Env::MPI_WORLD;
@@ -204,6 +241,7 @@ bool Env::memory_prefetching = true;
 */
 
 // 0 Success else failure
+/*
 int Env::init() {
     int status = 0;
     int required = MPI_THREAD_MULTIPLE;
@@ -227,7 +265,6 @@ int Env::init() {
     return(status);
 }
 
-/*
 
 void Env::init_threads() {
     int cpu_name_len;
