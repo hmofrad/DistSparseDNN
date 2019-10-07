@@ -25,9 +25,6 @@ namespace Env {
     double clock();
     void barrier();
     void finalize(int code);
-
-    
-    //void helper2();
 }
 
 int Env::init() {
@@ -54,9 +51,6 @@ int Env::init() {
     return(status);
 }
 
-
-
-
 double Env::clock() {
     return(MPI_Wtime());
 }
@@ -65,15 +59,12 @@ void Env::barrier() {
     MPI_Barrier(MPI_COMM_WORLD);
 }
 
-
 void Env::finalize(int code) {
     MPI_Barrier(MPI_COMM_WORLD);
     int ret = MPI_Finalize();
     assert(ret == MPI_SUCCESS);
     std::exit(code);
 }
-
-
 
 
  /*
