@@ -30,7 +30,7 @@
 */
 
 //#define HAS_EDGE_WEIGHT
-
+// make clean && make && mpirun -np 2 bin/./radixnet -n 1024 -l 120 data/MNIST data/DNN
 
 
 int main(int argc, char **argv) {
@@ -38,14 +38,14 @@ int main(int argc, char **argv) {
     int status = Env::init();
     if(status) {
         Logging::print(Logging::LOGLEVELS::FATAL, "Failure to initialize MPI environment\n");
-        Env::finalize(1);
+        std::exit(Env::finalize());
         //int ret = MPI_Finalize();
         //std::exit(1);         
     }
 
     if(argc != 7) {
         Logging::print(Logging::LOGLEVELS::ERROR, "USAGE = %s -n <Nneurons> -l <maxLayers> <path_to_input> <path_to_dnn>\n", argv[0]);
-        Env::finalize(1);     
+        std::exit(Env::finalize());     
     }
     
     Logging::print(Logging::LOGLEVELS::INFO, "Radix-Net sparse DNN for MNIST dataset Implementation\n");
@@ -57,7 +57,7 @@ int main(int argc, char **argv) {
     if(idxN >= NneuronsVector.size()) {
         Logging::print(Logging::LOGLEVELS::ERROR, "Invalid number of neurons/layer %d", Nneurons);
         //fprintf(stderr, "Invalid number of neurons/layer %d\n", Nneurons);
-        exit(1);
+        std::exit(Env::finalize());
     }    
     WGT biasValue = neuralNetBias[idxN];
     
@@ -68,14 +68,13 @@ int main(int argc, char **argv) {
     if(not fin.is_open()) {
         Logging::print(Logging::LOGLEVELS::ERROR, "Opening %s\n", featuresFile.c_str());
         //fprintf(stderr, "Error: Opening %s\n", featuresFile.c_str());
-        exit(1);
+        std::exit(Env::finalize());
     }
     
     
     
     //printf("Exiting %d\n", Env::rank);
-    int ret = MPI_Finalize();
-    //assert(ret == MPI_SUCCESS);
+    
     
     
     uint64_t nrowsFeatures = 0; 
@@ -85,6 +84,74 @@ int main(int argc, char **argv) {
     std::string line;
     std::istringstream iss;
     
+    uint64_t nlines = 0;
+    while (std::getline(fin, line)) {
+        nlines++;
+    }
+    //printf("%d: %lu\n", Env::rank, nlines);
+    fin.clear();
+    fin.seekg(0, std::ios_base::beg);
+    
+    uint64_t share = nlines / Env::nranks;
+    uint64_t start_line = Env::rank * share;
+    uint64_t end_line = (Env::rank != Env::nranks - 1) ? (Env::rank * share) + share : nlines;
+    if(Env::rank == Env::nranks - 1) share = end_line - start_line;
+    uint64_t curr_line = 0;
+    
+    
+    while(curr_line < start_line) {
+        std::getline(fin, line);
+        curr_line++;
+    }
+    
+    
+    
+    
+    //printf("%d: %lu %lu : %lu %lu\n", Env::rank, share, start_line, end_line, curr_line);
+    
+    while (curr_line < end_line) {
+        std::getline(fin, line);
+        iss.clear();
+        iss.str(line);
+        iss >> featuresTriple.row >> featuresTriple.col >> featuresTriple.weight;
+        featuresTriples.push_back(featuresTriple);
+        
+        if(featuresTriple.row > nrowsFeatures)
+            nrowsFeatures = featuresTriple.row;
+        if(featuresTriple.col > ncolsFeatures)
+            ncolsFeatures = featuresTriple.col;
+       // if(!Env::rank)
+         //   printf("%d %d %f\n", featuresTriple.row, featuresTriple.col, featuresTriple.weight);
+        curr_line++;
+    }
+    fin.close();
+    
+    if((curr_line - start_line) != share) {
+        Logging::print(Logging::LOGLEVELS::ERROR, "Reading %s\n", featuresFile.c_str());
+        std::exit(Env::finalize());
+    }
+    
+    
+        
+        
+    
+    //printf("%d %lu\n", Env::rank, current );
+    
+    
+    uint64_t global_min = ncolsFeatures;
+    MPI_Allreduce(&ncolsFeatures, &global_min, 1, MPI_UNSIGNED_LONG, MPI_MIN, MPI_COMM_WORLD);
+    
+    printf(">>%d %lu %lu %lu %lu\n", Env::rank, curr_line, nrowsFeatures, ncolsFeatures, global_min);
+    //sleep(2);
+    //MPI_Barrier(MPI_COMM_WORLD);
+    return(Env::finalize());
+    
+    
+    
+    //fin.seekg(start_line, std::ios::cur);
+    
+    //Env::finalize(0);
+    /*
     while (std::getline(fin, line)) {
         iss.clear();
         iss.str(line);
@@ -99,7 +166,7 @@ int main(int argc, char **argv) {
     printf("INFO: Done  reading the features file %s\n", featuresFile.c_str());
     printf("INFO: Features file is %lu x %lu, nnz=%lu\n", nrowsFeatures, ncolsFeatures, featuresTriples.size());
     uint64_t NfeatureVectors = nrowsFeatures;
-    /*
+    
     
     struct CSC<WGT> *featuresSpMat = new struct CSC<WGT>((nrowsFeatures + 1), (Nneurons + 1), featuresTriples.size(), featuresTriples);
     featuresTriples.clear();
