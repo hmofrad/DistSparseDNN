@@ -24,7 +24,7 @@ namespace Env {
     int init();
     double clock();
     void barrier();
-    void finalize(int code);
+    int finalize();
 }
 
 int Env::init() {
@@ -59,11 +59,12 @@ void Env::barrier() {
     MPI_Barrier(MPI_COMM_WORLD);
 }
 
-void Env::finalize(int code) {
+int Env::finalize() {
     MPI_Barrier(MPI_COMM_WORLD);
     int ret = MPI_Finalize();
-    assert(ret == MPI_SUCCESS);
-    std::exit(code);
+    ;
+    return((ret == MPI_SUCCESS) ? 0 : 1);
+    //std::exit(code);
 }
 
 
