@@ -8,7 +8,7 @@
 #define LOGGING_HPP
 
 namespace Logging {
-    bool enabled = true;
+    bool enabled = false;
     bool print_at_rank_zero = true;
     enum LOGLEVELS {TRACE, DEBUG, INFO, WARN, ERROR, FATAL};
     const char* LEVELS[] = {"TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
