@@ -9,8 +9,7 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
-#include <fstream>
-#include <sstream>
+
 
 #include "radixnet.h"
 #include "env.hpp"
@@ -65,23 +64,19 @@ int main(int argc, char **argv) {
     
     std::string featureFile = ((std::string) argv[5]) + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
     Logging::print(Logging::LOGLEVELS::INFO, "Start reading the feature file %s\n", featureFile.c_str());
-    //printf("INFO: Start reading the features file %s\n", featureFile.c_str());
+    
+    /*
     std::ifstream fin(featureFile.c_str());
     if(not fin.is_open()) {
         Logging::print(Logging::LOGLEVELS::ERROR, "Opening %s\n", featureFile.c_str());
-        //fprintf(stderr, "Error: Opening %s\n", featureFile.c_str());
+        
         std::exit(Env::finalize());
     }
     
     
-    
-    //printf("Exiting %d\n", Env::rank);
-    
-    
-    
     uint64_t nrowsFeatures = 0; 
     uint64_t ncolsFeatures = 0;
-    //std::vector<struct Triple<WGT>> featuresTriples;
+    
     struct Triple<WGT> featuresTriple;
     std::string line;
     std::istringstream iss;
@@ -90,14 +85,13 @@ int main(int argc, char **argv) {
     while (std::getline(fin, line)) {
         nlines++;
     }
-    //printf("%d: %lu\n", Env::rank, nlines);
+    
     fin.clear();
     fin.seekg(0, std::ios_base::beg);
     
     uint64_t share = nlines / Env::nranks;
     uint64_t start_line = Env::rank * share;
     uint64_t end_line = (Env::rank != Env::nranks - 1) ? ((Env::rank + 1) * share) : nlines;
-    //if(Env::rank == Env::nranks - 1) share = end_line - start_line;
     share = (Env::rank == Env::nranks - 1) ? end_line - start_line : share;
     uint64_t curr_line = 0;
     
@@ -161,32 +155,7 @@ int main(int argc, char **argv) {
         
         fin_t.close();
     }
-    
-    
-    
-    /*
-    while (curr_line < end_line) {
-        std::getline(fin, line);
-        iss.clear();
-        iss.str(line);
-        iss >> featuresTriple.row >> featuresTriple.col >> featuresTriple.weight;
-        featuresTriples.push_back(featuresTriple);
-        
-        if(featuresTriple.row > nrowsFeatures)
-            nrowsFeatures = featuresTriple.row;
-        if(featuresTriple.col > ncolsFeatures)
-            ncolsFeatures = featuresTriple.col;
-       // if(!Env::rank)
-         //   printf("%d %d %f\n", featuresTriple.row, featuresTriple.col, featuresTriple.weight);
-        curr_line++;
-    }
-    fin.close();
-    
-    if((curr_line - start_line) != share) {
-        Logging::print(Logging::LOGLEVELS::ERROR, "Reading %s\n", featureFile.c_str());
-        std::exit(Env::finalize());
-    }
-    */
+
     fin.close();
     
         
@@ -212,7 +181,7 @@ int main(int argc, char **argv) {
     
     Logging::print(Logging::LOGLEVELS::INFO, "Done  reading the feature file %s\n", featureFile.c_str());
     Logging::print(Logging::LOGLEVELS::INFO, "Feature file is [%lu x %lu], nnz=%lu\n", nrowsFeatures, ncolsFeatures, nnzFeatures);
-    
+    */
     
     
     return(Env::finalize());
