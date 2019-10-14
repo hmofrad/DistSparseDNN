@@ -94,8 +94,9 @@ int main(int argc, char **argv) {
     
     uint64_t share = nlines / Env::nranks;
     uint64_t start_line = Env::rank * share;
-    uint64_t end_line = (Env::rank != Env::nranks - 1) ? (Env::rank * share) + share : nlines;
-    if(Env::rank == Env::nranks - 1) share = end_line - start_line;
+    uint64_t end_line = (Env::rank != Env::nranks - 1) ? ((Env::rank + 1) * share) : nlines;
+    //if(Env::rank == Env::nranks - 1) share = end_line - start_line;
+    share = (Env::rank == Env::nranks - 1) ? end_line - start_line : share;
     uint64_t curr_line = 0;
     
     
@@ -104,11 +105,64 @@ int main(int argc, char **argv) {
         curr_line++;
     }
     
+    printf("%d: share=%lu start=%lu end=%lu curr=%lu\n", Env::rank, share, start_line, end_line, curr_line);
+    
+    std::vector<struct Triple<WGT>> featuresTriples1(share);
+    
+    #pragma omp parallel reduction(max : nrowsFeatures, ncolsFeatures)
+    {
+        int nthreads = Env::nthreads; 
+        int tid = omp_get_thread_num();
+        
+        uint64_t share_t = share / nthreads; 
+        uint64_t start_line_t = curr_line + (tid * share_t);
+        uint64_t end_line_t = (tid != Env::nthreads - 1) ? curr_line + ((tid + 1) * share_t) : end_line;
+        share_t = (tid == Env::nthreads - 1) ? end_line_t - start_line_t : share_t;
+        uint64_t curr_line_t = 0;
+        std::string line_t;
+        std::ifstream fin_t(featuresFile.c_str());
+        if(not fin_t.is_open()) {
+            Logging::print(Logging::LOGLEVELS::ERROR, "Opening %s\n", featuresFile.c_str());
+            //fprintf(stderr, "Error: Opening %s\n", featuresFile.c_str());
+            std::exit(Env::finalize());
+        }
+        fin_t.seekg(fin.tellg(), std::ios_base::beg);
+        curr_line_t = curr_line;
+        
+        while(curr_line_t < start_line_t) {
+            std::getline(fin_t, line_t);
+            curr_line_t++;
+        }
+        
+        printf("%d: %d / %d share=%lu start=%lu end=%lu curr=%lu\n", Env::rank, tid, nthreads, share_t, start_line_t, end_line_t, curr_line_t);
+        
+        struct Triple<WGT> featuresTriple1;
+        std::istringstream iss_t;
+        while (curr_line_t < end_line_t) {
+            std::getline(fin_t, line_t);
+            iss_t.clear();
+            iss_t.str(line_t);
+            iss_t >> featuresTriple1.row >> featuresTriple1.col >> featuresTriple1.weight;
+            //long int d = (curr_line_t - curr_line);
+            //printf("%d %d %lu %lu %lu\n", Env::rank, tid, curr_line, curr_line_t, d);
+            featuresTriples1[curr_line_t - curr_line] = featuresTriple1;
+            
+            if(featuresTriple1.row > nrowsFeatures)
+                nrowsFeatures = featuresTriple1.row;
+            if(featuresTriple1.col > ncolsFeatures)
+                ncolsFeatures = featuresTriple1.col;
+            
+           // if(!Env::rank)
+             //   printf("%d %d %f\n", featuresTriple.row, featuresTriple.col, featuresTriple.weight);
+            curr_line_t++;
+        }
+        
+        fin_t.close();
+    }
     
     
     
-    //printf("%d: %lu %lu : %lu %lu\n", Env::rank, share, start_line, end_line, curr_line);
-    
+    /*
     while (curr_line < end_line) {
         std::getline(fin, line);
         iss.clear();
@@ -130,7 +184,8 @@ int main(int argc, char **argv) {
         Logging::print(Logging::LOGLEVELS::ERROR, "Reading %s\n", featuresFile.c_str());
         std::exit(Env::finalize());
     }
-    
+    */
+    fin.close();
     
         
         
@@ -138,10 +193,11 @@ int main(int argc, char **argv) {
     //printf("%d %lu\n", Env::rank, current );
     
     
-    uint64_t global_min = ncolsFeatures;
-    MPI_Allreduce(&ncolsFeatures, &global_min, 1, MPI_UNSIGNED_LONG, MPI_MIN, MPI_COMM_WORLD);
-    
-    printf(">>%d %lu %lu %lu %lu\n", Env::rank, curr_line, nrowsFeatures, ncolsFeatures, global_min);
+    uint64_t global_max = ncolsFeatures;
+    MPI_Allreduce(&ncolsFeatures, &global_max, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
+    uint64_t global_max1 = nrowsFeatures;
+    MPI_Allreduce(&nrowsFeatures, &global_max1, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
+    printf("Rank=%d curr=%lu nrowsFeatures=%lu ncolsFeatures=%lu global_max=%lu %lu\n", Env::rank, curr_line, nrowsFeatures, ncolsFeatures, global_max, global_max1);
     //sleep(2);
     //MPI_Barrier(MPI_COMM_WORLD);
     return(Env::finalize());
