@@ -4,8 +4,10 @@
  * (e) m.hasanzadeh.mofrad@gmail.com 
  */
 
-#ifndef LOGGING_HPP
-#define LOGGING_HPP
+#ifndef LOG_HPP
+#define LOG_HPP
+
+#include "env.hpp"
 
 namespace Logging {
     bool enabled = false;
