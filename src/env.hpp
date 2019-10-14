@@ -20,6 +20,7 @@
 namespace Env {
     int nranks = 0;
     int rank = 0;
+    int nthreads = 0;
     
     int init();
     double clock();
@@ -46,6 +47,8 @@ int Env::init() {
     if(Env::rank < 0) {
         status = 1;
     }
+    
+    Env::nthreads = omp_get_max_threads();    
 
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
