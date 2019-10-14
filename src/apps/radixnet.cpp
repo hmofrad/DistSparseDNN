@@ -9,12 +9,14 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
+#include<tuple>
 
 
 #include "radixnet.h"
 #include "env.hpp"
 #include "log.hpp"
 #include "triple.hpp"
+#include "io.hpp"
 
 /*
 
@@ -64,6 +66,17 @@ int main(int argc, char **argv) {
     
     std::string featureFile = ((std::string) argv[5]) + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
     Logging::print(Logging::LOGLEVELS::INFO, "Start reading the feature file %s\n", featureFile.c_str());
+    
+    std::vector<struct Triple<WGT>> featuresTriples;
+    std::tuple<uint64_t,uint64_t,uint64_t> t = read_text(featureFile, featuresTriples);
+    uint64_t nrowsFeatures = std::get<0>(t); 
+    uint64_t ncolsFeatures = std::get<1>(t);
+    uint64_t nnzFeatures = std::get<2>(t);
+    Logging::print(Logging::LOGLEVELS::INFO, "Done  reading the feature file %s\n", featureFile.c_str());
+    Logging::print(Logging::LOGLEVELS::INFO, "Feature file is [%lu x %lu], nnz=%lu\n", nrowsFeatures, ncolsFeatures, nnzFeatures);
+    
+    //printf("%lu %d %d\n", featuresTriples.size(), featuresTriples[featuresTriples.size() - 1].row, featuresTriples[featuresTriples.size() - 1].col);
+    
     
     /*
     std::ifstream fin(featureFile.c_str());
@@ -179,9 +192,10 @@ int main(int argc, char **argv) {
     //sleep(2);
     //MPI_Barrier(MPI_COMM_WORLD);
     
-    Logging::print(Logging::LOGLEVELS::INFO, "Done  reading the feature file %s\n", featureFile.c_str());
-    Logging::print(Logging::LOGLEVELS::INFO, "Feature file is [%lu x %lu], nnz=%lu\n", nrowsFeatures, ncolsFeatures, nnzFeatures);
+
     */
+    
+    
     
     
     return(Env::finalize());
