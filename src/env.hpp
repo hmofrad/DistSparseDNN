@@ -14,8 +14,7 @@
 #include <thread>
 #include <stdarg.h>
 
-
-
+//#include "log.hpp"
 
 namespace Env {
     int nranks = 0;
@@ -49,7 +48,7 @@ int Env::init() {
     }
     
     Env::nthreads = omp_get_max_threads();    
-
+    
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
 }
