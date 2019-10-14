@@ -29,6 +29,7 @@
 
 */
 
+
 //#define HAS_EDGE_WEIGHT
 // make clean && make && mpirun -np 2 bin/./radixnet -n 1024 -l 120 data/MNIST data/DNN
 
@@ -48,6 +49,7 @@ int main(int argc, char **argv) {
         std::exit(Env::finalize());     
     }
     
+    Logging::print(Logging::LOGLEVELS::INFO, "Number of MPI ranks = %d, number of threads per rank = %d\n", Env::nranks, Env::nthreads);
     Logging::print(Logging::LOGLEVELS::INFO, "Radix-Net sparse DNN for MNIST dataset Implementation\n");
     
     std::vector<WGT> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
@@ -61,13 +63,13 @@ int main(int argc, char **argv) {
     }    
     WGT biasValue = neuralNetBias[idxN];
     
-    std::string featuresFile = ((std::string) argv[5]) + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
-    Logging::print(Logging::LOGLEVELS::INFO, "Start reading the features file %s\n", featuresFile.c_str());
-    //printf("INFO: Start reading the features file %s\n", featuresFile.c_str());
-    std::ifstream fin(featuresFile.c_str());
+    std::string featureFile = ((std::string) argv[5]) + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
+    Logging::print(Logging::LOGLEVELS::INFO, "Start reading the feature file %s\n", featureFile.c_str());
+    //printf("INFO: Start reading the features file %s\n", featureFile.c_str());
+    std::ifstream fin(featureFile.c_str());
     if(not fin.is_open()) {
-        Logging::print(Logging::LOGLEVELS::ERROR, "Opening %s\n", featuresFile.c_str());
-        //fprintf(stderr, "Error: Opening %s\n", featuresFile.c_str());
+        Logging::print(Logging::LOGLEVELS::ERROR, "Opening %s\n", featureFile.c_str());
+        //fprintf(stderr, "Error: Opening %s\n", featureFile.c_str());
         std::exit(Env::finalize());
     }
     
@@ -79,7 +81,7 @@ int main(int argc, char **argv) {
     
     uint64_t nrowsFeatures = 0; 
     uint64_t ncolsFeatures = 0;
-    std::vector<struct Triple<WGT>> featuresTriples;
+    //std::vector<struct Triple<WGT>> featuresTriples;
     struct Triple<WGT> featuresTriple;
     std::string line;
     std::istringstream iss;
@@ -105,9 +107,9 @@ int main(int argc, char **argv) {
         curr_line++;
     }
     
-    printf("%d: share=%lu start=%lu end=%lu curr=%lu\n", Env::rank, share, start_line, end_line, curr_line);
+    //printf("%d: share=%lu start=%lu end=%lu curr=%lu\n", Env::rank, share, start_line, end_line, curr_line);
     
-    std::vector<struct Triple<WGT>> featuresTriples1(share);
+    std::vector<struct Triple<WGT>> featuresTriples(share);
     
     #pragma omp parallel reduction(max : nrowsFeatures, ncolsFeatures)
     {
@@ -120,10 +122,10 @@ int main(int argc, char **argv) {
         share_t = (tid == Env::nthreads - 1) ? end_line_t - start_line_t : share_t;
         uint64_t curr_line_t = 0;
         std::string line_t;
-        std::ifstream fin_t(featuresFile.c_str());
+        std::ifstream fin_t(featureFile.c_str());
         if(not fin_t.is_open()) {
-            Logging::print(Logging::LOGLEVELS::ERROR, "Opening %s\n", featuresFile.c_str());
-            //fprintf(stderr, "Error: Opening %s\n", featuresFile.c_str());
+            Logging::print(Logging::LOGLEVELS::ERROR, "Opening %s\n", featureFile.c_str());
+            //fprintf(stderr, "Error: Opening %s\n", featureFile.c_str());
             std::exit(Env::finalize());
         }
         fin_t.seekg(fin.tellg(), std::ios_base::beg);
@@ -134,7 +136,7 @@ int main(int argc, char **argv) {
             curr_line_t++;
         }
         
-        printf("%d: %d / %d share=%lu start=%lu end=%lu curr=%lu\n", Env::rank, tid, nthreads, share_t, start_line_t, end_line_t, curr_line_t);
+        //printf("%d: %d / %d share=%lu start=%lu end=%lu curr=%lu\n", Env::rank, tid, nthreads, share_t, start_line_t, end_line_t, curr_line_t);
         
         struct Triple<WGT> featuresTriple1;
         std::istringstream iss_t;
@@ -142,15 +144,15 @@ int main(int argc, char **argv) {
             std::getline(fin_t, line_t);
             iss_t.clear();
             iss_t.str(line_t);
-            iss_t >> featuresTriple1.row >> featuresTriple1.col >> featuresTriple1.weight;
+            iss_t >> featuresTriple.row >> featuresTriple.col >> featuresTriple.weight;
             //long int d = (curr_line_t - curr_line);
             //printf("%d %d %lu %lu %lu\n", Env::rank, tid, curr_line, curr_line_t, d);
-            featuresTriples1[curr_line_t - curr_line] = featuresTriple1;
+            featuresTriples[curr_line_t - curr_line] = featuresTriple;
             
-            if(featuresTriple1.row > nrowsFeatures)
-                nrowsFeatures = featuresTriple1.row;
-            if(featuresTriple1.col > ncolsFeatures)
-                ncolsFeatures = featuresTriple1.col;
+            if(featuresTriple.row > nrowsFeatures)
+                nrowsFeatures = featuresTriple.row;
+            if(featuresTriple.col > ncolsFeatures)
+                ncolsFeatures = featuresTriple.col;
             
            // if(!Env::rank)
              //   printf("%d %d %f\n", featuresTriple.row, featuresTriple.col, featuresTriple.weight);
@@ -181,7 +183,7 @@ int main(int argc, char **argv) {
     fin.close();
     
     if((curr_line - start_line) != share) {
-        Logging::print(Logging::LOGLEVELS::ERROR, "Reading %s\n", featuresFile.c_str());
+        Logging::print(Logging::LOGLEVELS::ERROR, "Reading %s\n", featureFile.c_str());
         std::exit(Env::finalize());
     }
     */
@@ -193,13 +195,26 @@ int main(int argc, char **argv) {
     //printf("%d %lu\n", Env::rank, current );
     
     
-    uint64_t global_max = ncolsFeatures;
-    MPI_Allreduce(&ncolsFeatures, &global_max, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
-    uint64_t global_max1 = nrowsFeatures;
-    MPI_Allreduce(&nrowsFeatures, &global_max1, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
-    printf("Rank=%d curr=%lu nrowsFeatures=%lu ncolsFeatures=%lu global_max=%lu %lu\n", Env::rank, curr_line, nrowsFeatures, ncolsFeatures, global_max, global_max1);
+    uint64_t reducer = 0;
+    MPI_Allreduce(&ncolsFeatures, &reducer, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
+    ncolsFeatures = reducer;
+    //uint64_t global_max1 = nrowsFeatures;
+    MPI_Allreduce(&nrowsFeatures, &reducer, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
+    nrowsFeatures = reducer;
+    
+    uint64_t nnzFeatures = featuresTriples.size();
+    MPI_Allreduce(&nnzFeatures, &reducer, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+    nnzFeatures = reducer;
+    
+    //  printf("Rank=%d curr=%lu nrowsFeatures=%lu ncolsFeatures=%lu global_max=%lu\n", Env::rank, curr_line, nrowsFeatures, ncolsFeatures, global_max);
     //sleep(2);
     //MPI_Barrier(MPI_COMM_WORLD);
+    
+    Logging::print(Logging::LOGLEVELS::INFO, "Done  reading the feature file %s\n", featureFile.c_str());
+    Logging::print(Logging::LOGLEVELS::INFO, "Feature file is [%lu x %lu], nnz=%lu\n", nrowsFeatures, ncolsFeatures, nnzFeatures);
+    
+    
+    
     return(Env::finalize());
     
     
@@ -219,7 +234,7 @@ int main(int argc, char **argv) {
             ncolsFeatures = featuresTriple.col;
     }
     fin.close();
-    printf("INFO: Done  reading the features file %s\n", featuresFile.c_str());
+    printf("INFO: Done  reading the features file %s\n", featureFile.c_str());
     printf("INFO: Features file is %lu x %lu, nnz=%lu\n", nrowsFeatures, ncolsFeatures, featuresTriples.size());
     uint64_t NfeatureVectors = nrowsFeatures;
     
