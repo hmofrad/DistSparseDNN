@@ -15,14 +15,21 @@
 #include "log.hpp"
 #include "triple.hpp"
 
-std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile, std::vector<struct Triple<WGT>>& triples) {
+
+namespace IO_interface {
+    template<typename Weight>
+    std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile, std::vector<struct Triple<Weight>>& triples);
+}
+
+template<typename Weight>
+std::tuple<uint64_t, uint64_t, uint64_t> IO_interface::read_text(std::string inputFile, std::vector<struct Triple<Weight>>& triples) {
     uint64_t nrows = 0;
     uint64_t ncols = 0;    
     uint64_t nnz = 0;
     
     std::ifstream fin(inputFile.c_str());
     if(not fin.is_open()) {
-        Logging::print(Logging::LOGLEVELS::ERROR, "Opening %s\n", inputFile.c_str());
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
         std::exit(Env::finalize());
     }
     
@@ -59,7 +66,7 @@ std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile, std::v
         std::string line_t;
         std::ifstream fin_t(inputFile.c_str());
         if(not fin_t.is_open()) {
-            Logging::print(Logging::LOGLEVELS::ERROR, "Opening %s\n", inputFile.c_str());
+            Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
             std::exit(Env::finalize());
         }
         fin_t.seekg(fin.tellg(), std::ios_base::beg);
@@ -70,7 +77,7 @@ std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile, std::v
             curr_line_t++;
         }
         
-        struct Triple<WGT> triple;
+        struct Triple<Weight> triple;
         std::istringstream iss_t;
         while (curr_line_t < end_line_t) {
             std::getline(fin_t, line_t);
@@ -92,7 +99,6 @@ std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile, std::v
         fin_t.close();
     }
     fin.close();
-    
         
     uint64_t reducer = 0;
     MPI_Allreduce(&ncols, &reducer, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
@@ -105,12 +111,10 @@ std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile, std::v
     nnz = reducer;
     
     if(nlines != nnz) {
-        Logging::print(Logging::LOGLEVELS::ERROR, "Invalid number of input features %lu", nnz);
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of input features %lu", nnz);
         std::exit(Env::finalize());
     }
 
     return std::make_tuple(nrows, ncols, nnz);
  }
-
-
 #endif
