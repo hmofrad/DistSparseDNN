@@ -60,7 +60,7 @@ class Tiling {
         void integer_factorize(uint32_t n, uint32_t& a, uint32_t& b);
         
         std::tuple<uint64_t, uint64_t, uint64_t>  get_text_info(std::string inputFile);
-        std::tuple<uint64_t, uint64_t, uint64_t> read_text_file(std::string inputFile);
+        void read_text_file(std::string inputFile);
         
         void insert_triple(const struct Triple<Weight>& triple);
         
@@ -152,7 +152,7 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
     
     print_tiling("rank");
     
-    static_cast<void>(read_text_file(inputFile));
+    read_text_file(inputFile);
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: Process-based%s\n", TILING_TYPES[tiling_type]);
     print_tiling("rank");
@@ -236,7 +236,7 @@ std::tuple<uint64_t, uint64_t, uint64_t> Tiling<Weight>::get_text_info(std::stri
 
 
 template<typename Weight>
-std::tuple<uint64_t, uint64_t, uint64_t> Tiling<Weight>::read_text_file(std::string inputFile) {
+void Tiling<Weight>::read_text_file(std::string inputFile) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Start reading the input file %s\n", inputFile.c_str());
     uint64_t nrows = 0;
     uint64_t ncols = 0;    
@@ -314,18 +314,18 @@ std::tuple<uint64_t, uint64_t, uint64_t> Tiling<Weight>::read_text_file(std::str
         fin_t.close();
     }
     fin.close();
-    printf("Close rank %d\n", Env::rank);
+    //printf("Close rank %d\n", Env::rank);
     //if(Env::rank == 1) {
-    int i = 0;
-    for(auto& t: triples) {
+ //   int i = 0;
+    for(auto& triple: triples) {
         //printf("%d %d %f\n", t.row, t.col, t.weight);
         //printf("%d\n", i);
         //i++;
-        insert_triple(t);
+        insert_triple(triple);
     }
     //}
     
-    printf("Done rank %d\n", Env::rank);
+  //  printf("Done rank %d\n", Env::rank);
     
     //if(Env::rank == 0) {
         //auto& t = triples[0];
@@ -333,7 +333,7 @@ std::tuple<uint64_t, uint64_t, uint64_t> Tiling<Weight>::read_text_file(std::str
         //(triple.row / tile_height), (triple.col / tile_width);
     //}
     
-        
+    /*    
     uint64_t reducer = 0;
     MPI_Allreduce(&ncols, &reducer, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
     ncols = reducer;
@@ -352,6 +352,7 @@ std::tuple<uint64_t, uint64_t, uint64_t> Tiling<Weight>::read_text_file(std::str
     Logging::print(Logging::LOG_LEVEL::INFO, "Done  reading the input file %s\n", inputFile.c_str());
     
     return std::make_tuple(nrows, ncols, nnz);
+    */
 }
 
 
