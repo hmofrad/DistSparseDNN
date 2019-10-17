@@ -18,7 +18,39 @@
 
 namespace IO_interface {
     template<typename Weight>
+    std::tuple<uint64_t, uint64_t, uint64_t> get_text_info(std::string inputFile);
+    template<typename Weight>
     std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile, std::vector<struct Triple<Weight>>& triples);
+}
+
+
+template<typename Weight>
+std::tuple<uint64_t, uint64_t, uint64_t> IO_interface::get_text_info(std::string inputFile) {
+    uint64_t nrows = 0;
+    uint64_t ncols = 0;    
+    uint64_t nnz = 0;
+    
+    std::ifstream fin(inputFile.c_str());
+    if(not fin.is_open()) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
+        std::exit(Env::finalize());
+    }
+    
+    std::string line;
+    struct Triple<Weight> triple;
+    std::istringstream iss;
+    while (std::getline(fin, line)) {
+        iss.clear();
+        iss.str(line);
+        iss >> triple.row >> triple.col >> triple.weight;
+        if(triple.row > nrows)
+            nrows = triple.row;
+        if(triple.col > ncols)
+            ncols = triple.col;
+        nnz++;
+    }
+    fin.close();
+    return std::make_tuple(nrows, ncols, nnz);
 }
 
 template<typename Weight>
