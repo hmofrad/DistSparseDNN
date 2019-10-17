@@ -9,13 +9,13 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
-#include<tuple>
+
 
 #include "radixnet.h"
 #include "env.hpp"
 #include "log.hpp"
 #include "triple.hpp"
-#include "io.hpp"
+//#include "io.hpp"
 
 #include "tiling.hpp"
 #include "net.hpp"
@@ -67,7 +67,7 @@ int main(int argc, char **argv) {
     }    
     WGT biasValue = neuralNetBias[idxN];
     */
-    Net<WGT> N(TILING_TYPE::_2D_, atoi(argv[2]), ((std::string) argv[5])) ;
+    Net<WGT> N(TILING_TYPE::_1D_ROW_, atoi(argv[2]), ((std::string) argv[5])) ;
     /*
     std::string featureFile = ((std::string) argv[5]) + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
     Logging::print(Logging::LOG_LEVEL::INFO, "Start reading the feature file %s\n", featureFile.c_str());
