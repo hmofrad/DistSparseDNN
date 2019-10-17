@@ -18,6 +18,7 @@
 #include "io.hpp"
 
 #include "tiling.hpp"
+#include "net.hpp"
 
 /*
 
@@ -47,40 +48,52 @@ int main(int argc, char **argv) {
     }
 
     if(argc != 7) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "USAGE = %s -n <Nneurons> -l <maxLayers> <path_to_input> <path_to_dnn>\n", argv[0]);
+        Logging::print(Logging::LOG_LEVEL::ERROR, "USAGE = %s -n <Nneurons> -l <maxLayers> <path_to_input> <path_to_dnn> <Ninput_instances> <Ninput_features>\n", argv[0]);
         std::exit(Env::finalize());     
     }
     
-    Logging::print(Logging::LOG_LEVEL::INFO, "Number of MPI ranks = %d, number of threads per rank = %d\n", Env::nranks, Env::nthreads);
     Logging::print(Logging::LOG_LEVEL::INFO, "Radix-Net sparse DNN for MNIST dataset Implementation\n");
+    Logging::print(Logging::LOG_LEVEL::INFO, "MPI ranks = %d, Threads per rank = %d\n", Env::nranks, Env::nthreads);
     
+    
+    /*
     std::vector<WGT> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
     uint32_t Nneurons = atoi(argv[2]);
     std::vector<uint32_t> NneuronsVector = {1024, 4096, 16384, 65536};
     uint32_t idxN = std::distance(NneuronsVector.begin(), std::find(NneuronsVector.begin(), NneuronsVector.end(), Nneurons));
     if(idxN >= NneuronsVector.size()) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of neurons/layer %d", Nneurons);
-        //fprintf(stderr, "Invalid number of neurons/layer %d\n", Nneurons);
         std::exit(Env::finalize());
     }    
     WGT biasValue = neuralNetBias[idxN];
-    
+    */
+    Net<WGT> N(TILING_TYPE::_2D_, atoi(argv[2]), ((std::string) argv[5])) ;
+    /*
     std::string featureFile = ((std::string) argv[5]) + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
     Logging::print(Logging::LOG_LEVEL::INFO, "Start reading the feature file %s\n", featureFile.c_str());
     
-    std::vector<struct Triple<WGT>> featuresTriples;
-    std::tuple<uint64_t,uint64_t,uint64_t> io_tuple = IO_interface::read_text<WGT>(featureFile, featuresTriples);
+    std::tuple<uint64_t,uint64_t,uint64_t> io_tuple = IO_interface::get_text_info<WGT>(featureFile);
     uint32_t nrowsFeatures = std::get<0>(io_tuple); 
     uint32_t ncolsFeatures = std::get<1>(io_tuple);
-    uint64_t nnzFeatures = std::get<2>(io_tuple);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Done  reading the feature file %s\n", featureFile.c_str());
-    Logging::print(Logging::LOG_LEVEL::INFO, "Feature file is [%lu x %lu], nnz=%lu\n", nrowsFeatures, ncolsFeatures, nnzFeatures);
+    uint64_t nnzInstances   = std::get<2>(io_tuple);
     
+    Tiling t(TILING_TYPE::_2D_, (Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks);
+    
+    //std::vector<struct Triple<WGT>> featuresTriples;
+    //static_cast<void>(IO_interface::read_text<WGT>(featureFile, featuresTriples));
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Done  reading the feature file %s\n", featureFile.c_str());
+    Logging::print(Logging::LOG_LEVEL::INFO, "Feature file is [%lu x %lu], nnz=%lu\n", nrowsFeatures, ncolsFeatures, nnzInstances);
+    */
     //Tiling::Tiling(uint32_t ntiles_, uint32_t nrowgrps_, uint32_t ncolgrps_, uint32_t nranks_, uint32_t rank_nthreads_, Tiling_type tiling_type_) {
         
-    Tiling t((Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, TILING_TYPE::_2D_);
-    Tiling t1(((Env::nranks * Env::nthreads) * (Env::nranks * Env::nthreads)), (Env::nranks * Env::nthreads), (Env::nranks * Env::nthreads), Env::nranks, Env::nthreads, TILING_TYPE::_2D_);
+    
+    //Tiling t1(TILING_TYPE::_2D_, ((Env::nranks * Env::nthreads) * (Env::nranks * Env::nthreads)), (Env::nranks * Env::nthreads), (Env::nranks * Env::nthreads), Env::nranks, Env::nthreads);
     //Tiling t2((Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, Env::nthreads, TILING_TYPE::_2D_);
+    
+    
+    //N.tiling = t;
+   // N.triples = featuresTriples;
     
     
     
