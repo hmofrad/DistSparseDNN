@@ -9,7 +9,6 @@
 
 #include "triple.hpp"
 #include "tiling.hpp"
-//#include "io.hpp"
 
 template<typename Weight>
 class Net {
@@ -38,27 +37,8 @@ Net<Weight>::Net(TILING_TYPE tiling_type, uint32_t Nneurons_, std::string inputF
     Weight biasValue = neuralNetBias[idxN];
     
     std::string featureFile = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
-    //Logging::print(Logging::LOG_LEVEL::INFO, "Start reading the feature file %s\n", featureFile.c_str());
-    
-    //std::tuple<uint64_t,uint64_t,uint64_t> io_tuple = IO_interface::get_text_info<Weight>(featureFile);
-    //nrows = std::get<0>(io_tuple); 
-    //ncols = std::get<1>(io_tuple);
-    //nnz   = std::get<2>(io_tuple);
-    
-    //Logging::print(Logging::LOG_LEVEL::INFO, "Done  reading the feature file %s\n", featureFile.c_str());
-    //Logging::print(Logging::LOG_LEVEL::INFO, "Feature file is [%d x %d] with nnz=%lu\n", nrows, ncols, nnz);
-    
     tiling =  Tiling<Weight>(tiling_type, (Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, featureFile);
-    
-    
-    //std::vector<struct Triple<WGT>> featuresTriples;
-    //static_cast<void>(IO_interface::read_text<WGT>(featureFile, tiling.tiles));
-    //printf("%lu\n", triples.size());
-    //Logging::print(Logging::LOG_LEVEL::INFO, "Done  reading the feature file %s\n", featureFile.c_str());
-    
-    
-    
-    
+
 }
 
 
