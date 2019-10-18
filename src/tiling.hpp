@@ -45,20 +45,15 @@ class Tiling {
         std::vector<std::vector<struct Tile<Weight>>> tiles;
         
         private:
-            void insert_tiles(struct Triple<Weight> triple);
-            void exchange();
+            void integer_factorize(uint32_t n, uint32_t& a, uint32_t& b);
             void print_tiling(std::string field);
             bool assert_tiling();
-            void integer_factorize(uint32_t n, uint32_t& a, uint32_t& b);
+            void insert_triple(struct Triple<Weight> triple);
+            void tile_exchange();
+            void tile_sort();
             
             
 };
-
-template<typename Weight>
-void Tiling<Weight>::insert_tiles(struct Triple<Weight> triple) {
-    std::pair pair = std::make_pair((triple.row / tile_height), (triple.col / tile_width));
-    tiles[pair.first][pair.second].triples.push_back(triple);
-}
 
 
 /* Process-based tiling based on MPI ranks*/ 
@@ -139,21 +134,22 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nnz                           = [%d     ]\n", nnz);
     
     IO::read_text_file<Weight>(inputFile, tiles, tile_height, tile_width);
-    
-    exchange();
-    
-    
-     
-    
-    if(!Env::rank) {
-        for (uint32_t i = 0; i < nrowgrps; i++) {
-        for (uint32_t j = 0; j < ncolgrps; j++) {
-            printf("%lu ", tiles[i][j].triples.size());
-        }
-        printf("\n");
-        }
+    tile_exchange();
+    tile_sort();
+
+}
+
+template<typename Weight>
+void Tiling<Weight>::integer_factorize(uint32_t n, uint32_t& a, uint32_t& b) {
+    a = b = sqrt(n);
+    while (a * b != n) {
+        b++;
+        a = n / b;
     }
-    
+    if((a * b) != n) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Factorization failed\n");
+        std::exit(Env::finalize()); 
+    }
 }
 
 template<typename Weight>
@@ -192,30 +188,20 @@ void Tiling<Weight>::print_tiling(std::string field) {
                 break;
             }
         }
-        printf("\n");
+        //printf("\n");
     }
 }
 
-
 template<typename Weight>
-void Tiling<Weight>::integer_factorize(uint32_t n, uint32_t& a, uint32_t& b) {
-    a = b = sqrt(n);
-    while (a * b != n) {
-        b++;
-        a = n / b;
-    }
-    if((a * b) != n) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Factorization failed\n");
-        std::exit(Env::finalize()); 
-    }
+void Tiling<Weight>::insert_triple(struct Triple<Weight> triple) {
+    std::pair pair = std::make_pair((triple.row / tile_height), (triple.col / tile_width));
+    tiles[pair.first][pair.second].triples.push_back(triple);
 }
 
-
-
 template<typename Weight>
-void Tiling<Weight>::exchange() {
+void Tiling<Weight>::tile_exchange() {
     MPI_Barrier(MPI_COMM_WORLD);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Exchange edges: Starting edge exchange\n", Env::nranks);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile exchange: Start exchanging tiles ...\n", Env::nranks);
     
     // Sanity check for the number of edges 
     uint64_t nedges_start_local  = 0;
@@ -269,7 +255,7 @@ void Tiling<Weight>::exchange() {
 
     auto retval = MPI_Type_free(&MANY_TRIPLES);
     if(retval != MPI_SUCCESS) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Exchange failed\n");
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tile exchanging failed!\n");
         std::exit(Env::finalize()); 
     }
     
@@ -278,7 +264,7 @@ void Tiling<Weight>::exchange() {
         if (r != Env::rank) {
             auto& inbox = inboxes[r];
             for(auto& triple: inbox) {
-                insert_tiles(triple);
+                insert_triple(triple);
             }
             inbox.clear();
             inbox.shrink_to_fit();
@@ -295,16 +281,48 @@ void Tiling<Weight>::exchange() {
         }
     }    
     MPI_Allreduce(&nedges_start_local, &nedges_start_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
-    MPI_Allreduce(&nedges_end_local, &nedges_end_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(  &nedges_end_local,   &nedges_end_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
     if(nedges_start_global != nedges_end_global) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Exchange failed\n");
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tile exchange failed\n");
         std::exit(Env::finalize()); 
     }
     
-    Logging::print(Logging::LOG_LEVEL::INFO, "Exchange edges: Edge exchange for %lu edges is done\n", nedges_end_global);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile exchange: Done exchange tiles!\n");
     MPI_Barrier(MPI_COMM_WORLD);
 }
 
+
+template<typename Weight>
+void Tiling<Weight>::tile_sort() {
+    ColSort<Weight> f_col;
+    
+    auto f_comp = [] (const Triple<Weight>& a, const Triple<Weight>& b)
+                  {return (a.row == b.row and a.col == b.col);};
+                  
+    std::vector<struct Triple<Weight>> nums = {{3,2,10}, {2,3,5}, {2,3,1}, {4,0,0}};              
+    std::sort(nums.begin(), nums.end(), f_col);
+    if(!Env::rank) {
+    for(auto& n: nums)
+        printf("%d %d %f\n", n.row, n.col, n.weight);
+    }
+  
+  /*
+    for(uint32_t t: local_tiles_row_order) {
+        auto pair = tile_of_local_tile(t);
+        auto& tile = tiles[pair.row][pair.col];
+        std::vector<struct Triple<Weight, Integer_Type>>& triples = tile.triples;
+        if(triples.size()) {
+            std::sort(triples.begin(), triples.end(), f_col);
+            /// remove parallel edges (duplicates), necessary for triangle couting 
+            if(not parallel_edges) {
+                auto last = std::unique(triples.begin(), triples.end(), f_comp);
+                triples.erase(last, triples.end());
+            }
+        }
+        tile.nedges = tile.triples.size();
+    }
+    */
+}
 
 
 /* Thread-based tiling based on MPI ranks*/ 
