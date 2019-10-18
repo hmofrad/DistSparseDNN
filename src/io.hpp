@@ -4,8 +4,8 @@
  * (e) m.hasanzadeh.mofrad@gmail.com 
  */
 
-//#ifndef IO_CPP
-//#define IO_CPP
+#ifndef IO_HPP
+#define IO_HPP
 
 #include <fstream>
 #include <sstream>
@@ -13,19 +13,17 @@
 
 #include "env.hpp"
 #include "log.hpp"
+#include "tile.hpp"
 //#include "tiling.hpp"
 
-
-/*
 namespace IO {
     template<typename Weight>
     std::tuple<uint32_t, uint32_t, uint64_t> get_text_info(std::string inputFile);
+    //template<typename Weight>
+    //std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile);
     template<typename Weight>
-    std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile);
-    template<typename Weight>
-    std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile, Tiling<Weight>& tiling);
+    void read_text_file(std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, uint32_t tile_height, uint32_t tile_width);
 }
-*/
 
 template<typename Weight>
 std::tuple<uint32_t, uint32_t, uint64_t> IO::get_text_info(std::string inputFile) {
@@ -53,11 +51,13 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::get_text_info(std::string inputFile
         nnz++;
     }
     fin.close();
-    return std::make_tuple(nrows, ncols, nnz);
+    return std::make_tuple(nrows + 1, ncols + 1, nnz);
 }
 
 template<typename Weight>
-std::tuple<uint64_t, uint64_t, uint64_t> IO::read_text(std::string inputFile){//, Tiling<Weight>& tiling) {
+void IO::read_text_file(std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, uint32_t tile_height, uint32_t tile_width) {
+    Logging::print(Logging::LOG_LEVEL::INFO, "Start reading the input file %s\n", inputFile.c_str());
+    
     uint64_t nrows = 0;
     uint64_t ncols = 0;    
     uint64_t nnz = 0;
@@ -135,7 +135,14 @@ std::tuple<uint64_t, uint64_t, uint64_t> IO::read_text(std::string inputFile){//
         fin_t.close();
     }
     fin.close();
-        
+
+    for(auto& triple: triples) {
+        std::pair pair = std::make_pair((triple.row / tile_height), (triple.col / tile_width));
+        tiles[pair.first][pair.second].triples.push_back(triple);
+    }
+      
+
+    /*  
     uint64_t reducer = 0;
     MPI_Allreduce(&ncols, &reducer, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
     ncols = reducer;
@@ -152,5 +159,7 @@ std::tuple<uint64_t, uint64_t, uint64_t> IO::read_text(std::string inputFile){//
     }
 
     return std::make_tuple(nrows, ncols, nnz);
+    */
+    Logging::print(Logging::LOG_LEVEL::INFO, "Done  reading the input file %s\n", inputFile.c_str());
  }
-//#endif
+#endif
