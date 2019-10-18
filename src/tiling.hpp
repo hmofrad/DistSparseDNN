@@ -16,18 +16,6 @@
 #include "tile.hpp"
 #include "io.hpp"
 
-/*
-template<typename Weight>
-struct Tile{
-    public:
-        Tile() {};
-        ~Tile() {};
-        
-        std::vector<struct Triple<Weight>> triples;
-        
-        int32_t rank;
-};
-*/
 
 enum TILING_TYPE {_1D_COL_, _1D_ROW_,_2D_};
 const char* TILING_TYPES[] = {"_1D_COL_", "_1D_ROW_", "_2D_"};
@@ -55,33 +43,23 @@ class Tiling {
         uint32_t tile_height, tile_width;
         
         std::vector<std::vector<struct Tile<Weight>>> tiles;
-        void print_tiling(std::string field);
-        bool assert_tiling();
-
-        void integer_factorize(uint32_t n, uint32_t& a, uint32_t& b);
         
-        std::tuple<uint64_t, uint64_t, uint64_t>  get_text_info1(std::string inputFile);
-        void read_text_file1(std::string inputFile);
-        
-        void insert_triple(const struct Triple<Weight>& triple);
-        
-        
+        private:
+            void insert_tiles(struct Triple<Weight> triple);
+            void exchange();
+            void print_tiling(std::string field);
+            bool assert_tiling();
+            void integer_factorize(uint32_t n, uint32_t& a, uint32_t& b);
+            
+            
 };
 
 template<typename Weight>
-void Tiling<Weight>::insert_triple(const struct Triple<Weight>& triple) {
+void Tiling<Weight>::insert_tiles(struct Triple<Weight> triple) {
     std::pair pair = std::make_pair((triple.row / tile_height), (triple.col / tile_width));
-    //struct Triple<Weight> pair;
-    //pair.row = (triple.row / tile_height);
-    //pair.col = (triple.col / tile_width);
-    //if((pair.first > nrowgrps) or (pair.second > ncolgrps) or (pair.first < 0) or (pair.second < 0) ) {
-        //if(!Env::rank)
-        //printf("rank=%d: Invalid entry for tile[%d][%d]=[%d %d]\n", Env::rank, pair.first, pair.second, triple.row, triple.col);
-        //Env::exit(0);
-    //}
     tiles[pair.first][pair.second].triples.push_back(triple);
-    //tiles[pair.first][pair.second].triples.push_back(triple);
 }
+
 
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
@@ -167,7 +145,6 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
         }
     }
     
-    
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: Process-based%s\n", TILING_TYPES[tiling_type]);
     print_tiling("rank");
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nrowgrps      x ncolgrps      = [%d x %d]\n", nrowgrps, ncolgrps);
@@ -176,6 +153,22 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nrows         x ncols         = [%d x %d]\n", nrows, ncols);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nnz                           = [%d     ]\n", nnz);
+    
+    
+    exchange();
+    
+    
+     
+    
+    if(!Env::rank) {
+        for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            printf("%lu ", tiles[i][j].triples.size());
+        }
+        printf("\n");
+        }
+    }
+    
 }
 
 template<typename Weight>
@@ -219,156 +212,6 @@ void Tiling<Weight>::print_tiling(std::string field) {
 }
 
 
-template<typename Weight>
-std::tuple<uint64_t, uint64_t, uint64_t> Tiling<Weight>::get_text_info1(std::string inputFile) {
-    uint64_t nrows = 0;
-    uint64_t ncols = 0;    
-    uint64_t nnz = 0;
-    
-    std::ifstream fin(inputFile.c_str());
-    if(not fin.is_open()) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
-        std::exit(Env::finalize());
-    }
-    
-    std::string line;
-    struct Triple<Weight> triple;
-    std::istringstream iss;
-    while (std::getline(fin, line)) {
-        iss.clear();
-        iss.str(line);
-        iss >> triple.row >> triple.col >> triple.weight;
-        if(triple.row > nrows)
-            nrows = triple.row;
-        if(triple.col > ncols)
-            ncols = triple.col;
-        nnz++;
-    }
-    fin.close();
-    return std::make_tuple(nrows + 1, ncols + 1, nnz);
-}
-
-
-template<typename Weight>
-void Tiling<Weight>::read_text_file1(std::string inputFile) {
-    Logging::print(Logging::LOG_LEVEL::INFO, "Start reading the input file %s\n", inputFile.c_str());
-    uint64_t nrows = 0;
-    uint64_t ncols = 0;    
-    uint64_t nnz = 0;
-    
-    std::ifstream fin(inputFile.c_str());
-    if(not fin.is_open()) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
-        std::exit(Env::finalize());
-    }
-    
-    std::string line;
-    
-    uint64_t nlines = 0;
-    while (std::getline(fin, line)) {
-        nlines++;
-    }
-    fin.clear();
-    fin.seekg(0, std::ios_base::beg);
-    
-    uint64_t share = nlines / Env::nranks;
-    uint64_t start_line = Env::rank * share;
-    uint64_t end_line = (Env::rank != Env::nranks - 1) ? ((Env::rank + 1) * share) : nlines;
-    share = (Env::rank == Env::nranks - 1) ? end_line - start_line : share;
-    uint64_t curr_line = 0;
-    while(curr_line < start_line) {
-        std::getline(fin, line);
-        curr_line++;
-    }
-    
-    std::vector<struct Triple<Weight>> triples(share);
-    #pragma omp parallel reduction(max : nrows, ncols)
-    {
-        int nthreads = Env::nthreads; 
-        int tid = omp_get_thread_num();
-        
-        uint64_t share_t = share / nthreads; 
-        uint64_t start_line_t = curr_line + (tid * share_t);
-        uint64_t end_line_t = (tid != Env::nthreads - 1) ? curr_line + ((tid + 1) * share_t) : end_line;
-        share_t = (tid == Env::nthreads - 1) ? end_line_t - start_line_t : share_t;
-        uint64_t curr_line_t = 0;
-        std::string line_t;
-        std::ifstream fin_t(inputFile.c_str());
-        if(not fin_t.is_open()) {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
-            std::exit(Env::finalize());
-        }
-        fin_t.seekg(fin.tellg(), std::ios_base::beg);
-        curr_line_t = curr_line;
-        
-        while(curr_line_t < start_line_t) {
-            std::getline(fin_t, line_t);
-            curr_line_t++;
-        }
-        
-        struct Triple<Weight> triple;
-        std::istringstream iss_t;
-        while (curr_line_t < end_line_t) {
-            std::getline(fin_t, line_t);
-            iss_t.clear();
-            iss_t.str(line_t);
-            iss_t >> triple.row >> triple.col >> triple.weight;
-            //long int d = (curr_line_t - curr_line);
-            //printf("%d %d %lu %lu %lu\n", Env::rank, tid, curr_line, curr_line_t, d);
-            triples[curr_line_t - curr_line] = triple;
-            
-            if(triple.row > nrows)
-                nrows = triple.row;
-            if(triple.col > ncols)
-                ncols = triple.col;
-
-            curr_line_t++;
-        }
-        
-        fin_t.close();
-    }
-    fin.close();
-    //printf("Close rank %d\n", Env::rank);
-    //if(Env::rank == 1) {
- //   int i = 0;
-    for(auto& triple: triples) {
-        //printf("%d %d %f\n", t.row, t.col, t.weight);
-        //printf("%d\n", i);
-        //i++;
-        insert_triple(triple);
-    }
-    //}
-    
-  //  printf("Done rank %d\n", Env::rank);
-    
-    //if(Env::rank == 0) {
-        //auto& t = triples[0];
-        //printf("%d %d %f\n", t.row, t.col, t.weight);
-        //(triple.row / tile_height), (triple.col / tile_width);
-    //}
-    
-    /*    
-    uint64_t reducer = 0;
-    MPI_Allreduce(&ncols, &reducer, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
-    ncols = reducer;
-    
-    MPI_Allreduce(&nrows, &reducer, 1, MPI_UNSIGNED_LONG, MPI_MAX, MPI_COMM_WORLD);
-    nrows = reducer;
-    nnz = triples.size();
-    MPI_Allreduce(&nnz, &reducer, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
-    nnz = reducer;
-    
-    if(nlines != nnz) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of input features %lu", nnz);
-        std::exit(Env::finalize());
-    }
-    
-    Logging::print(Logging::LOG_LEVEL::INFO, "Done  reading the input file %s\n", inputFile.c_str());
-    
-    return std::make_tuple(nrows, ncols, nnz);
-    */
-}
-
 
 
 template<typename Weight>
@@ -382,6 +225,191 @@ void Tiling<Weight>::integer_factorize(uint32_t n, uint32_t& a, uint32_t& b) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Factorization failed\n");
         std::exit(Env::finalize()); 
     }
+}
+
+
+
+template<typename Weight>
+void Tiling<Weight>::exchange() {
+    Logging::print(Logging::LOG_LEVEL::INFO, "Exchange edges: Starting edge exchange\n", Env::nranks);
+    
+    // Sanity check for the number of edges 
+    uint64_t nedges_start_local  = 0;
+    uint64_t nedges_end_local    = 0;
+    uint64_t nedges_start_global = 0;
+    uint64_t nedges_end_global   = 0;
+
+    std::vector<MPI_Request> out_requests;
+    std::vector<MPI_Request> in_requests;
+    
+    MPI_Request request;     
+    
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+                nedges_start_local +=  (tile.triples.size() > 0) ? tile.triples.size() : 0;
+            //if(tile.triples.size() > 0)
+            //    nedges_start_local += tile.triples.size();
+        }
+    }
+    
+     
+    
+    if(!Env::rank) {
+        printf("%lu\n", nedges_start_local);
+    }
+    
+       
+
+    std::vector<std::vector<Triple<Weight>>> outboxes(Env::nranks);
+
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++)   {
+            auto& tile = tiles[i][j];
+            if(tile.rank != Env::rank) {
+                auto& outbox = outboxes[tile.rank];
+                outbox.insert(outbox.end(), tile.triples.begin(), tile.triples.end());
+                tile.triples.clear();
+                tile.triples.shrink_to_fit();
+            }
+        }
+    }
+    
+    
+    MPI_Datatype MANY_TRIPLES;
+    MPI_Type_contiguous(sizeof(Triple<Weight>), MPI_BYTE, &MANY_TRIPLES);
+    MPI_Type_commit(&MANY_TRIPLES);
+    
+    std::vector<std::vector<Triple<Weight>>> inboxes(Env::nranks);
+    std::vector<uint32_t> inbox_sizes(Env::nranks);    
+    
+    
+                    
+    for (int32_t r = 0; r < Env::nranks; r++) {
+        if (r != Env::rank) {
+            auto& outbox = outboxes[r];
+            uint32_t outbox_size = outbox.size();
+            MPI_Sendrecv(&outbox_size, 1, MPI_UNSIGNED, r, 0, &inbox_sizes[r], 1, MPI_UNSIGNED,
+                                                        r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            auto &inbox = inboxes[r];
+            inbox.resize(inbox_sizes[r]);
+            MPI_Sendrecv(outbox.data(), outbox.size(), MANY_TRIPLES, r, 0, inbox.data(), inbox.size(), MANY_TRIPLES,
+                                                                     r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+    }
+
+    for (int32_t r = 0; r < Env::nranks; r++) {
+        if (r != Env::rank) {
+            auto& inbox = inboxes[r];
+            for(auto& triple: inbox) {
+                insert_tiles(triple);
+            }
+            
+
+            
+            /*    
+            for (uint32_t i = 0; i < inbox_sizes[r]; i++) {
+                test(inbox[i]);
+                insert(inbox[i]);
+            }
+            */
+            inbox.clear();
+            inbox.shrink_to_fit();
+        }
+    }
+    
+    
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(tile.rank == Env::rank) {
+                //std::vector<struct Triple<Weight, Integer_Type>>& triples = tile.triples;
+                nedges_end_local += tile.triples.size();
+            }
+        }
+    }    
+    MPI_Allreduce(&nedges_start_local, &nedges_start_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+    MPI_Allreduce(&nedges_end_local, &nedges_end_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+    
+    if(nedges_start_global != nedges_end_global) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Exchange failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Exchange edges: Edge exchange for %lu edges is done\n", nedges_end_global);
+    
+
+    auto retval = MPI_Type_free(&MANY_TRIPLES);
+    if(retval != MPI_SUCCESS) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Exchange failed\n");
+        std::exit(Env::finalize()); 
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+    
+
+    
+    //if(Env::is_master)
+      //  printf("INFO(rank=%d): Edge distribution: Sanity check for exchanging %lu edges is done\n", Env::rank, nedges_end_global);
+    //auto retval = MPI_Type_free(&MANY_TRIPLES);
+    
+    /*
+    //MPI_Barrier(MPI_COMM_WORLD);
+    if(Env::is_master)
+        printf("INFO(rank=%d): Edge distribution: Distributing edges among %d ranks\n", Env::rank, Env::nranks);     
+    
+   / Sanity check on # of edges 
+
+             
+
+                
+     
+    MPI_Barrier(MPI_COMM_WORLD);
+    for (int32_t r = 0; r < Env::nranks; r++) {
+        if (r != Env::rank) {
+            auto& outbox = outboxes[r];
+            uint32_t outbox_size = outbox.size();
+            MPI_Sendrecv(&outbox_size, 1, MPI_UNSIGNED, r, 0, &inbox_sizes[r], 1, MPI_UNSIGNED,
+                                                        r, 0, Env::MPI_WORLD, MPI_STATUS_IGNORE);
+            auto &inbox = inboxes[r];
+            inbox.resize(inbox_sizes[r]);
+            MPI_Sendrecv(outbox.data(), outbox.size(), MANY_TRIPLES, r, 0, inbox.data(), inbox.size(), MANY_TRIPLES,
+                                                        r, 0, Env::MPI_WORLD, MPI_STATUS_IGNORE);
+        }
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+
+    // Populate tiles with received edges
+    for (int32_t r = 0; r < Env::nranks; r++) {
+        if (r != Env::rank) {
+            auto& inbox = inboxes[r];
+            for (uint32_t i = 0; i < inbox_sizes[r]; i++) {
+                test(inbox[i]);
+                insert(inbox[i]);
+            }
+            inbox.clear();
+            inbox.shrink_to_fit();
+        }
+    }
+    
+    // Sanity check
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(tile.rank == Env::rank) {
+                //std::vector<struct Triple<Weight, Integer_Type>>& triples = tile.triples;
+                nedges_end_local += tile.triples.size();
+            }
+        }
+    }    
+    MPI_Allreduce(&nedges_start_local, &nedges_start_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, Env::MPI_WORLD);
+    MPI_Allreduce(&nedges_end_local, &nedges_end_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, Env::MPI_WORLD);
+    assert(nedges_start_global == nedges_end_global);
+    if(Env::is_master)
+        printf("INFO(rank=%d): Edge distribution: Sanity check for exchanging %lu edges is done\n", Env::rank, nedges_end_global);
+    auto retval = MPI_Type_free(&MANY_TRIPLES);
+    assert(retval == MPI_SUCCESS);   
+    MPI_Barrier(MPI_COMM_WORLD);
+    */
 }
 
 
