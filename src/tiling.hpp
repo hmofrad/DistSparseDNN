@@ -13,9 +13,10 @@
 #include<tuple>
 
 #include "triple.hpp"
-//#include "tile.hpp"
+#include "tile.hpp"
+#include "io.hpp"
 
-
+/*
 template<typename Weight>
 struct Tile{
     public:
@@ -26,7 +27,7 @@ struct Tile{
         
         int32_t rank;
 };
-
+*/
 
 enum TILING_TYPE {_1D_COL_, _1D_ROW_,_2D_};
 const char* TILING_TYPES[] = {"_1D_COL_", "_1D_ROW_", "_2D_"};
@@ -59,8 +60,8 @@ class Tiling {
 
         void integer_factorize(uint32_t n, uint32_t& a, uint32_t& b);
         
-        std::tuple<uint64_t, uint64_t, uint64_t>  get_text_info(std::string inputFile);
-        void read_text_file(std::string inputFile);
+        std::tuple<uint64_t, uint64_t, uint64_t>  get_text_info1(std::string inputFile);
+        void read_text_file1(std::string inputFile);
         
         void insert_triple(const struct Triple<Weight>& triple);
         
@@ -88,7 +89,8 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
         :  tiling_type(tiling_type_), ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_) , nranks(nranks_)
         , rank_ntiles(ntiles_/nranks_){
            
-    std::tie(nrows, ncols, nnz) = get_text_info(inputFile);
+    //std::tie(nrows, ncols, nnz) = get_text_info(inputFile);
+    std::tie(nrows, ncols, nnz) = IO::get_text_info<Weight>(inputFile);
             
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
@@ -152,7 +154,19 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
     
     print_tiling("rank");
     
-    read_text_file(inputFile);
+    IO::read_text_file<Weight>(inputFile, tiles, tile_height, tile_width);
+    //read_text_file(inputFile);
+    
+    
+    if(!Env::rank) {
+        for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            printf("%lu ", tiles[i][j].triples.size());
+        }
+        printf("\n");
+        }
+    }
+    
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: Process-based%s\n", TILING_TYPES[tiling_type]);
     print_tiling("rank");
@@ -206,7 +220,7 @@ void Tiling<Weight>::print_tiling(std::string field) {
 
 
 template<typename Weight>
-std::tuple<uint64_t, uint64_t, uint64_t> Tiling<Weight>::get_text_info(std::string inputFile) {
+std::tuple<uint64_t, uint64_t, uint64_t> Tiling<Weight>::get_text_info1(std::string inputFile) {
     uint64_t nrows = 0;
     uint64_t ncols = 0;    
     uint64_t nnz = 0;
@@ -236,7 +250,7 @@ std::tuple<uint64_t, uint64_t, uint64_t> Tiling<Weight>::get_text_info(std::stri
 
 
 template<typename Weight>
-void Tiling<Weight>::read_text_file(std::string inputFile) {
+void Tiling<Weight>::read_text_file1(std::string inputFile) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Start reading the input file %s\n", inputFile.c_str());
     uint64_t nrows = 0;
     uint64_t ncols = 0;    
