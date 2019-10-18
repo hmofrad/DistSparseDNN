@@ -23,4 +23,18 @@ struct Triple<Empty> {
     uint32_t col;
 };
 
+template <typename Weight>
+struct ColSort {
+    bool operator()(const struct Triple<Weight>& a, const struct Triple<Weight>& b) {
+        return((a.col == b.col) ? ((a.row == b.row) ?  ((a.weight == b.weight) ? false : a.weight < b.weight ) : a.row < b.row) : (a.col < b.col));
+    }
+};
+
+/*
+template <>
+struct ColSort {
+    return((a.col == b.col) ? (a.row < b.row) : (a.col < b.col));
+};
+*/
+
 #endif
