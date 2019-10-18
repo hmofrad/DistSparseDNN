@@ -56,7 +56,7 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::get_text_info(std::string inputFile
 
 template<typename Weight>
 void IO::read_text_file(std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, uint32_t tile_height, uint32_t tile_width) {
-    Logging::print(Logging::LOG_LEVEL::INFO, "Start reading the input file %s\n", inputFile.c_str());
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start reading the input file %s\n", inputFile.c_str());
     
     uint64_t nrows = 0;
     uint64_t ncols = 0;    
@@ -160,6 +160,6 @@ void IO::read_text_file(std::string inputFile, std::vector<std::vector<struct Ti
 
     return std::make_tuple(nrows, ncols, nnz);
     */
-    Logging::print(Logging::LOG_LEVEL::INFO, "Done  reading the input file %s\n", inputFile.c_str());
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done  reading the input file %s\n", inputFile.c_str());
  }
 #endif
