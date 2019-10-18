@@ -124,25 +124,9 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
             tile.rank = (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
         }
     }
-    
     if(not assert_tiling()) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
-    }
-    
-    print_tiling("rank");
-    
-    IO::read_text_file<Weight>(inputFile, tiles, tile_height, tile_width);
-    //read_text_file(inputFile);
-    
-    
-    if(!Env::rank) {
-        for (uint32_t i = 0; i < nrowgrps; i++) {
-        for (uint32_t j = 0; j < ncolgrps; j++) {
-            printf("%lu ", tiles[i][j].triples.size());
-        }
-        printf("\n");
-        }
     }
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: Process-based%s\n", TILING_TYPES[tiling_type]);
@@ -154,6 +138,7 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nnz                           = [%d     ]\n", nnz);
     
+    IO::read_text_file<Weight>(inputFile, tiles, tile_height, tile_width);
     
     exchange();
     
@@ -212,8 +197,6 @@ void Tiling<Weight>::print_tiling(std::string field) {
 }
 
 
-
-
 template<typename Weight>
 void Tiling<Weight>::integer_factorize(uint32_t n, uint32_t& a, uint32_t& b) {
     a = b = sqrt(n);
@@ -231,6 +214,7 @@ void Tiling<Weight>::integer_factorize(uint32_t n, uint32_t& a, uint32_t& b) {
 
 template<typename Weight>
 void Tiling<Weight>::exchange() {
+    MPI_Barrier(MPI_COMM_WORLD);
     Logging::print(Logging::LOG_LEVEL::INFO, "Exchange edges: Starting edge exchange\n", Env::nranks);
     
     // Sanity check for the number of edges 
@@ -247,22 +231,11 @@ void Tiling<Weight>::exchange() {
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
-                nedges_start_local +=  (tile.triples.size() > 0) ? tile.triples.size() : 0;
-            //if(tile.triples.size() > 0)
-            //    nedges_start_local += tile.triples.size();
+            nedges_start_local +=  (tile.triples.size() > 0) ? tile.triples.size() : 0;
         }
     }
-    
-     
-    
-    if(!Env::rank) {
-        printf("%lu\n", nedges_start_local);
-    }
-    
-       
-
+      
     std::vector<std::vector<Triple<Weight>>> outboxes(Env::nranks);
-
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++)   {
             auto& tile = tiles[i][j];
@@ -275,141 +248,61 @@ void Tiling<Weight>::exchange() {
         }
     }
     
-    
     MPI_Datatype MANY_TRIPLES;
     MPI_Type_contiguous(sizeof(Triple<Weight>), MPI_BYTE, &MANY_TRIPLES);
     MPI_Type_commit(&MANY_TRIPLES);
     
     std::vector<std::vector<Triple<Weight>>> inboxes(Env::nranks);
     std::vector<uint32_t> inbox_sizes(Env::nranks);    
-    
-    
-                    
     for (int32_t r = 0; r < Env::nranks; r++) {
         if (r != Env::rank) {
             auto& outbox = outboxes[r];
             uint32_t outbox_size = outbox.size();
             MPI_Sendrecv(&outbox_size, 1, MPI_UNSIGNED, r, 0, &inbox_sizes[r], 1, MPI_UNSIGNED,
                                                         r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            auto &inbox = inboxes[r];
+            auto& inbox = inboxes[r];
             inbox.resize(inbox_sizes[r]);
             MPI_Sendrecv(outbox.data(), outbox.size(), MANY_TRIPLES, r, 0, inbox.data(), inbox.size(), MANY_TRIPLES,
                                                                      r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
     }
 
+    auto retval = MPI_Type_free(&MANY_TRIPLES);
+    if(retval != MPI_SUCCESS) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Exchange failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    // Insert exchanged triples
     for (int32_t r = 0; r < Env::nranks; r++) {
         if (r != Env::rank) {
             auto& inbox = inboxes[r];
             for(auto& triple: inbox) {
                 insert_tiles(triple);
             }
-            
-
-            
-            /*    
-            for (uint32_t i = 0; i < inbox_sizes[r]; i++) {
-                test(inbox[i]);
-                insert(inbox[i]);
-            }
-            */
             inbox.clear();
             inbox.shrink_to_fit();
         }
     }
     
-    
+    // Finzalize sanity check 
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
-                //std::vector<struct Triple<Weight, Integer_Type>>& triples = tile.triples;
                 nedges_end_local += tile.triples.size();
             }
         }
     }    
     MPI_Allreduce(&nedges_start_local, &nedges_start_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
     MPI_Allreduce(&nedges_end_local, &nedges_end_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
-    
     if(nedges_start_global != nedges_end_global) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Exchange failed\n");
         std::exit(Env::finalize()); 
     }
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Exchange edges: Edge exchange for %lu edges is done\n", nedges_end_global);
-    
-
-    auto retval = MPI_Type_free(&MANY_TRIPLES);
-    if(retval != MPI_SUCCESS) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Exchange failed\n");
-        std::exit(Env::finalize()); 
-    }
     MPI_Barrier(MPI_COMM_WORLD);
-    
-
-    
-    //if(Env::is_master)
-      //  printf("INFO(rank=%d): Edge distribution: Sanity check for exchanging %lu edges is done\n", Env::rank, nedges_end_global);
-    //auto retval = MPI_Type_free(&MANY_TRIPLES);
-    
-    /*
-    //MPI_Barrier(MPI_COMM_WORLD);
-    if(Env::is_master)
-        printf("INFO(rank=%d): Edge distribution: Distributing edges among %d ranks\n", Env::rank, Env::nranks);     
-    
-   / Sanity check on # of edges 
-
-             
-
-                
-     
-    MPI_Barrier(MPI_COMM_WORLD);
-    for (int32_t r = 0; r < Env::nranks; r++) {
-        if (r != Env::rank) {
-            auto& outbox = outboxes[r];
-            uint32_t outbox_size = outbox.size();
-            MPI_Sendrecv(&outbox_size, 1, MPI_UNSIGNED, r, 0, &inbox_sizes[r], 1, MPI_UNSIGNED,
-                                                        r, 0, Env::MPI_WORLD, MPI_STATUS_IGNORE);
-            auto &inbox = inboxes[r];
-            inbox.resize(inbox_sizes[r]);
-            MPI_Sendrecv(outbox.data(), outbox.size(), MANY_TRIPLES, r, 0, inbox.data(), inbox.size(), MANY_TRIPLES,
-                                                        r, 0, Env::MPI_WORLD, MPI_STATUS_IGNORE);
-        }
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-
-    // Populate tiles with received edges
-    for (int32_t r = 0; r < Env::nranks; r++) {
-        if (r != Env::rank) {
-            auto& inbox = inboxes[r];
-            for (uint32_t i = 0; i < inbox_sizes[r]; i++) {
-                test(inbox[i]);
-                insert(inbox[i]);
-            }
-            inbox.clear();
-            inbox.shrink_to_fit();
-        }
-    }
-    
-    // Sanity check
-    for (uint32_t i = 0; i < nrowgrps; i++) {
-        for (uint32_t j = 0; j < ncolgrps; j++) {
-            auto& tile = tiles[i][j];
-            if(tile.rank == Env::rank) {
-                //std::vector<struct Triple<Weight, Integer_Type>>& triples = tile.triples;
-                nedges_end_local += tile.triples.size();
-            }
-        }
-    }    
-    MPI_Allreduce(&nedges_start_local, &nedges_start_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, Env::MPI_WORLD);
-    MPI_Allreduce(&nedges_end_local, &nedges_end_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, Env::MPI_WORLD);
-    assert(nedges_start_global == nedges_end_global);
-    if(Env::is_master)
-        printf("INFO(rank=%d): Edge distribution: Sanity check for exchanging %lu edges is done\n", Env::rank, nedges_end_global);
-    auto retval = MPI_Type_free(&MANY_TRIPLES);
-    assert(retval == MPI_SUCCESS);   
-    MPI_Barrier(MPI_COMM_WORLD);
-    */
 }
 
 
