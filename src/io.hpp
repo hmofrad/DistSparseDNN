@@ -76,6 +76,7 @@ void IO::read_text_file(std::string inputFile, std::vector<std::vector<struct Ti
     }
     fin.clear();
     fin.seekg(0, std::ios_base::beg);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read text: File contains %lu lines\n", nlines);
     
     uint64_t share = nlines / Env::nranks;
     uint64_t start_line = Env::rank * share;
@@ -160,6 +161,7 @@ void IO::read_text_file(std::string inputFile, std::vector<std::vector<struct Ti
 
     return std::make_tuple(nrows, ncols, nnz);
     */
-    Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done  reading the input file %s\n", inputFile.c_str());
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done reading the input file %s\n", inputFile.c_str());
+    Env::barrier();
  }
 #endif
