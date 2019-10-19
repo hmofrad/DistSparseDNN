@@ -360,92 +360,87 @@ void Tiling<Weight>::tile_load_info() {
             rowgrp_nedges[i] += e;
             colgrp_nedges[j] += e;
             nedges += e;
-            //if(Env::rank != tile.rank)
-              //  tile.nedges = nedges_grid[tile.rank][tile.nth];
-            
-            //rank_nedges[tile.rank] += tile.nedges;
-            //rowgrp_nedges[i] += tile.triples.;
-            //colgrp_nedges[j] += tile.nedges;
-            //nedges += tile.nedges;
             k++;
         }
     }
+
+    uint32_t skip = 15;
+    double imbalance_threshold = .2;
+    double ratio = 0;
+    uint32_t count = 0;
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Balanced number of edges per ranks = %lu \n", nedges/Env::nranks);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Imbalance ratio per ranks [0-%d]\n", Env::nranks-1);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Total number of edges = %lu\n", nedges);
     
+
+    for(int32_t r = 0; r < Env::nranks; r++) {
+        ratio = (double) (rank_nedges[r] / (double) (nedges/Env::nranks));
+        if(r < skip) {
+            printf("%2.2f ", ratio);
+        }
+        if(fabs(ratio - 1) > imbalance_threshold) {
+            count++;
+        }
+    }
     
-    //print("nedges");
-    MPI_Barrier(MPI_COMM_WORLD); 
-    if(!Env::rank)
-    {   
-        int32_t skip = 15;
-        double imbalance_threshold = .2;
-        double ratio = 0;
-        uint32_t count = 0;
-        printf("\nEdge balancing info (Not functional):\n");  
-        printf("Edge balancing: Total number of edges = %lu\n", nedges);
-        printf("Edge balancing: Balanced number of edges per ranks = %lu \n", nedges/Env::nranks);
-        printf("Edge balancing: imbalance ratio per ranks [0-%d]\n", Env::nranks-1);
-        printf("Edge balancing: ");
-        for(int32_t r = 0; r < Env::nranks; r++)
-        {
-            ratio = (double) (rank_nedges[r] / (double) (nedges/Env::nranks));
-            if(r < skip)
-                printf("%2.2f ", ratio);
-            if(fabs(ratio - 1) > imbalance_threshold)
-                count++;
-        }
-        if(Env::nranks > skip)
-            printf("...\n");
-        else
-            printf("\n");
-        if(count)
-        {
-            printf("Edge balancing: Edge distribution among %d ranks are not balanced.\n", count);
-        }
-        count = 0;
-        
-        printf("Edge balancing: Imbalance ratio per rowgroups [0-%d]\n", nrowgrps-1);
-        printf("Edge balancing: ");
-        for(uint32_t i = 0; i < nrowgrps; i++)
-        {
-            ratio = (double) (rowgrp_nedges[i] / (double) (nedges/nrowgrps));
-            if(i < (uint32_t) skip)
-                printf("%2.2f ", ratio);
-            if(fabs(ratio - 1) > imbalance_threshold)
-                count++;
-        }
-        if(nrowgrps > (uint32_t) skip)
-            printf("...\n");
-        else
-            printf("\n");
-        if(count)
-        {
-            printf("Edge balancing: Edge distribution among %d rowgroups are not balanced.\n", count);
-        }
-        count = 0;
-        
-        printf("Edge balancing: Imbalance ratio per colgroups [0-%d]\n", ncolgrps-1);
-        printf("Edge balancing: ");
-        for(uint32_t j = 0; j < ncolgrps; j++)
-        {
-            ratio = (double) (colgrp_nedges[j] / (double) (nedges/ncolgrps));
-            if(j < (uint32_t) skip)
-                printf("%2.2f ", ratio);
-            if(fabs(ratio - 1) > imbalance_threshold)
-                count++;
-        }
-        if(ncolgrps > (uint32_t) skip)
-            printf("...\n");
-        else
-            printf("\n");
-        if(count)
-        {
-            printf("Edge balancing: Edge distribution among %d colgroups are not balanced.", count);
-        }
+    if(Env::nranks > skip) {
+        printf("...\n");
+    }
+    else {
         printf("\n");
     }
     
+    if(count)
+    {
+        printf("Edge balancing: Edge distribution among %d ranks are not balanced.\n", count);
+    }
+    
+    /*
+    count = 0;
+    
+    printf("Edge balancing: Imbalance ratio per rowgroups [0-%d]\n", nrowgrps-1);
+    printf("Edge balancing: ");
+    for(uint32_t i = 0; i < nrowgrps; i++)
+    {
+        ratio = (double) (rowgrp_nedges[i] / (double) (nedges/nrowgrps));
+        if(i < (uint32_t) skip)
+            printf("%2.2f ", ratio);
+        if(fabs(ratio - 1) > imbalance_threshold)
+            count++;
+    }
+    if(nrowgrps > (uint32_t) skip)
+        printf("...\n");
+    else
+        printf("\n");
+    if(count)
+    {
+        printf("Edge balancing: Edge distribution among %d rowgroups are not balanced.\n", count);
+    }
+    count = 0;
+    
+    printf("Edge balancing: Imbalance ratio per colgroups [0-%d]\n", ncolgrps-1);
+    printf("Edge balancing: ");
+    for(uint32_t j = 0; j < ncolgrps; j++)
+    {
+        ratio = (double) (colgrp_nedges[j] / (double) (nedges/ncolgrps));
+        if(j < (uint32_t) skip)
+            printf("%2.2f ", ratio);
+        if(fabs(ratio - 1) > imbalance_threshold)
+            count++;
+    }
+    if(ncolgrps > (uint32_t) skip)
+        printf("...\n");
+    else
+        printf("\n");
+    if(count)
+    {
+        printf("Edge balancing: Edge distribution among %d colgroups are not balanced.", count);
+    }
+    printf("\n");
+
+    */
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Done calculating load.\n");
-    MPI_Barrier(MPI_COMM_WORLD);
+    Env::barrier();
 }
 
 
