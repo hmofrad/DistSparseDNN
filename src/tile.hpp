@@ -18,6 +18,7 @@ struct Tile{
         std::vector<struct Triple<Weight>> triples;
         
         int32_t rank;
+        uint64_t nedges;
 };
 
 #endif
