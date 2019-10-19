@@ -51,7 +51,7 @@ class Tiling {
             void insert_triple(struct Triple<Weight> triple);
             void tile_exchange();
             void tile_sort();
-            
+            void tile_load_info();
             
 };
 
@@ -131,11 +131,12 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nrows         x ncols         = [%d x %d]\n", nrows, ncols);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nnz                           = [%d     ]\n", nnz);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nnz                           = [%d]\n", nnz);
     
     IO::read_text_file<Weight>(inputFile, tiles, tile_height, tile_width);
     tile_exchange();
     tile_sort();
+    tile_load_info();
 
 }
 
@@ -200,8 +201,8 @@ void Tiling<Weight>::insert_triple(struct Triple<Weight> triple) {
 
 template<typename Weight>
 void Tiling<Weight>::tile_exchange() {
-    MPI_Barrier(MPI_COMM_WORLD);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile exchange: Start exchanging tiles ...\n", Env::nranks);
+    Env::barrier();
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile exchange: Start exchanging tiles...\n", Env::nranks);
     
     // Sanity check for the number of edges 
     uint64_t nedges_start_local  = 0;
@@ -217,7 +218,8 @@ void Tiling<Weight>::tile_exchange() {
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
-            nedges_start_local +=  (tile.triples.size() > 0) ? tile.triples.size() : 0;
+            auto& triples = tile.triples;
+            nedges_start_local +=  (triples.empty()) ? 0 : triples.size();
         }
     }
       
@@ -258,16 +260,19 @@ void Tiling<Weight>::tile_exchange() {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tile exchanging failed!\n");
         std::exit(Env::finalize()); 
     }
-    
+    uint64_t exchange_size_local = 0;
     // Insert exchanged triples
     for (int32_t r = 0; r < Env::nranks; r++) {
         if (r != Env::rank) {
             auto& inbox = inboxes[r];
-            for(auto& triple: inbox) {
-                insert_triple(triple);
+            if(not inbox.empty()) {
+                for(auto& triple: inbox) {
+                    insert_triple(triple);
+                }
+                exchange_size_local += inbox.size();
+                inbox.clear();
+                inbox.shrink_to_fit();
             }
-            inbox.clear();
-            inbox.shrink_to_fit();
         }
     }
     
@@ -287,42 +292,164 @@ void Tiling<Weight>::tile_exchange() {
         std::exit(Env::finalize()); 
     }
     
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile exchange: Done exchange tiles!\n");
-    MPI_Barrier(MPI_COMM_WORLD);
+    uint64_t exchange_size_global = 0;
+    MPI_Allreduce(&exchange_size_local, &exchange_size_global, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile exchange: Exchanged %lu edges.\n", exchange_size_global);
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile exchange: Done  exchange tiles.\n");
+    Env::barrier();
 }
 
 
 template<typename Weight>
 void Tiling<Weight>::tile_sort() {
+    Env::barrier();
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Start sorting tiles...\n");
     ColSort<Weight> f_col;
     
-    auto f_comp = [] (const Triple<Weight>& a, const Triple<Weight>& b)
-                  {return (a.row == b.row and a.col == b.col);};
-                  
-    std::vector<struct Triple<Weight>> nums = {{3,2,10}, {2,3,5}, {2,3,1}, {4,0,0}};              
-    std::sort(nums.begin(), nums.end(), f_col);
-    if(!Env::rank) {
-    for(auto& n: nums)
-        printf("%d %d %f\n", n.row, n.col, n.weight);
-    }
-  
-  /*
-    for(uint32_t t: local_tiles_row_order) {
-        auto pair = tile_of_local_tile(t);
-        auto& tile = tiles[pair.row][pair.col];
-        std::vector<struct Triple<Weight, Integer_Type>>& triples = tile.triples;
-        if(triples.size()) {
-            std::sort(triples.begin(), triples.end(), f_col);
-            /// remove parallel edges (duplicates), necessary for triangle couting 
-            if(not parallel_edges) {
-                auto last = std::unique(triples.begin(), triples.end(), f_comp);
-                triples.erase(last, triples.end());
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            auto& triples = tile.triples;
+            if(not triples.empty()) {
+                std::sort(triples.begin(), triples.end(), f_col);    
             }
         }
-        tile.nedges = tile.triples.size();
-    }
-    */
+    }        
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Done  sorting tiles.\n");
+    Env::barrier();
 }
+
+
+template<typename Weight>
+void Tiling<Weight>::tile_load_info() {
+    Env::barrier();
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Start calculating load...\n");
+    std::vector<std::vector<uint64_t>> nedges_grid(Env::nranks, std::vector<uint64_t>(rank_ntiles));
+    std::vector<uint64_t> rank_nedges(Env::nranks);
+    std::vector<uint64_t> rowgrp_nedges(nrowgrps);
+    std::vector<uint64_t> colgrp_nedges(ncolgrps);
+    
+    uint32_t k = 0;
+    for(uint32_t i = 0; i < nrowgrps; i++) {
+        for(uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(Env::rank == tile.rank){
+                nedges_grid[Env::rank][k] = tile.triples.size();
+                k++;
+            }
+        }
+    }
+    
+    for(int32_t r = 0; r < Env::nranks; r++) {
+        if(r != Env::rank) {
+            auto& out_edges = nedges_grid[Env::rank];
+            auto& in_edges = nedges_grid[r];
+            MPI_Sendrecv(out_edges.data(), out_edges.size(), MPI_UNSIGNED_LONG, r, Env::rank, 
+                          in_edges.data(),  in_edges.size(), MPI_UNSIGNED_LONG, r, r, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        }
+    }
+    uint64_t nedges = 0;
+    std::vector<uint32_t> kth(Env::nranks);
+    for(uint32_t i = 0; i < nrowgrps; i++) {
+        for(uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            uint32_t& k = kth[tile.rank];
+            uint64_t e = nedges_grid[tile.rank][k];
+            rank_nedges[tile.rank] += e;
+            rowgrp_nedges[i] += e;
+            colgrp_nedges[j] += e;
+            nedges += e;
+            //if(Env::rank != tile.rank)
+              //  tile.nedges = nedges_grid[tile.rank][tile.nth];
+            
+            //rank_nedges[tile.rank] += tile.nedges;
+            //rowgrp_nedges[i] += tile.triples.;
+            //colgrp_nedges[j] += tile.nedges;
+            //nedges += tile.nedges;
+            k++;
+        }
+    }
+    
+    
+    //print("nedges");
+    MPI_Barrier(MPI_COMM_WORLD); 
+    if(!Env::rank)
+    {   
+        int32_t skip = 15;
+        double imbalance_threshold = .2;
+        double ratio = 0;
+        uint32_t count = 0;
+        printf("\nEdge balancing info (Not functional):\n");  
+        printf("Edge balancing: Total number of edges = %lu\n", nedges);
+        printf("Edge balancing: Balanced number of edges per ranks = %lu \n", nedges/Env::nranks);
+        printf("Edge balancing: imbalance ratio per ranks [0-%d]\n", Env::nranks-1);
+        printf("Edge balancing: ");
+        for(int32_t r = 0; r < Env::nranks; r++)
+        {
+            ratio = (double) (rank_nedges[r] / (double) (nedges/Env::nranks));
+            if(r < skip)
+                printf("%2.2f ", ratio);
+            if(fabs(ratio - 1) > imbalance_threshold)
+                count++;
+        }
+        if(Env::nranks > skip)
+            printf("...\n");
+        else
+            printf("\n");
+        if(count)
+        {
+            printf("Edge balancing: Edge distribution among %d ranks are not balanced.\n", count);
+        }
+        count = 0;
+        
+        printf("Edge balancing: Imbalance ratio per rowgroups [0-%d]\n", nrowgrps-1);
+        printf("Edge balancing: ");
+        for(uint32_t i = 0; i < nrowgrps; i++)
+        {
+            ratio = (double) (rowgrp_nedges[i] / (double) (nedges/nrowgrps));
+            if(i < (uint32_t) skip)
+                printf("%2.2f ", ratio);
+            if(fabs(ratio - 1) > imbalance_threshold)
+                count++;
+        }
+        if(nrowgrps > (uint32_t) skip)
+            printf("...\n");
+        else
+            printf("\n");
+        if(count)
+        {
+            printf("Edge balancing: Edge distribution among %d rowgroups are not balanced.\n", count);
+        }
+        count = 0;
+        
+        printf("Edge balancing: Imbalance ratio per colgroups [0-%d]\n", ncolgrps-1);
+        printf("Edge balancing: ");
+        for(uint32_t j = 0; j < ncolgrps; j++)
+        {
+            ratio = (double) (colgrp_nedges[j] / (double) (nedges/ncolgrps));
+            if(j < (uint32_t) skip)
+                printf("%2.2f ", ratio);
+            if(fabs(ratio - 1) > imbalance_threshold)
+                count++;
+        }
+        if(ncolgrps > (uint32_t) skip)
+            printf("...\n");
+        else
+            printf("\n");
+        if(count)
+        {
+            printf("Edge balancing: Edge distribution among %d colgroups are not balanced.", count);
+        }
+        printf("\n");
+    }
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Done calculating load.\n");
+    MPI_Barrier(MPI_COMM_WORLD);
+}
+
+
+
 
 
 /* Thread-based tiling based on MPI ranks*/ 
