@@ -52,10 +52,9 @@ class Tiling {
             void tile_exchange();
             void tile_sort();
             void tile_load();
-            void tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t nedges, uint32_t nedges_divisor);
+            void tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t nedges, uint32_t nedges_divisor, std::string nedges_type);
             
 };
-
 
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
@@ -138,6 +137,7 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
     tile_exchange();
     tile_sort();
     tile_load();
+    print_tiling("nedges");
 
 }
 
@@ -178,6 +178,8 @@ void Tiling<Weight>::print_tiling(std::string field) {
                 auto& tile = tiles[i][j];   
                 if(field.compare("rank") == 0) 
                     printf("%d ", tile.rank);
+                else if(field.compare("nedges") == 0) 
+                    printf("%lu ", tile.nedges);
                 
                 if(j > skip) {
                     printf("...");
@@ -301,7 +303,6 @@ void Tiling<Weight>::tile_exchange() {
     Env::barrier();
 }
 
-
 template<typename Weight>
 void Tiling<Weight>::tile_sort() {
     Env::barrier();
@@ -320,7 +321,6 @@ void Tiling<Weight>::tile_sort() {
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Done  sorting tiles.\n");
     Env::barrier();
 }
-
 
 template<typename Weight>
 void Tiling<Weight>::tile_load() {
@@ -357,6 +357,7 @@ void Tiling<Weight>::tile_load() {
             auto& tile = tiles[i][j];
             uint32_t& k = kth[tile.rank];
             uint64_t e = nedges_grid[tile.rank][k];
+            tile.nedges = e;
             rank_nedges[tile.rank] += e;
             rowgrp_nedges[i] += e;
             colgrp_nedges[j] += e;
@@ -364,72 +365,28 @@ void Tiling<Weight>::tile_load() {
             k++;
         }
     }
-
-    tile_load_print(rank_nedges, nedges, Env::nranks);
-    //tile_load_print(nedges, rank_nedges);
-    
-    /*
-    count = 0;
-    
-    printf("Edge balancing: Imbalance ratio per rowgroups [0-%d]\n", nrowgrps-1);
-    printf("Edge balancing: ");
-    for(uint32_t i = 0; i < nrowgrps; i++)
-    {
-        ratio = (double) (rowgrp_nedges[i] / (double) (nedges/nrowgrps));
-        if(i < (uint32_t) skip)
-            printf("%2.2f ", ratio);
-        if(fabs(ratio - 1) > imbalance_threshold)
-            count++;
-    }
-    if(nrowgrps > (uint32_t) skip)
-        printf("...\n");
-    else
-        printf("\n");
-    if(count)
-    {
-        printf("Edge balancing: Edge distribution among %d rowgroups are not balanced.\n", count);
-    }
-    count = 0;
-    
-    printf("Edge balancing: Imbalance ratio per colgroups [0-%d]\n", ncolgrps-1);
-    printf("Edge balancing: ");
-    for(uint32_t j = 0; j < ncolgrps; j++)
-    {
-        ratio = (double) (colgrp_nedges[j] / (double) (nedges/ncolgrps));
-        if(j < (uint32_t) skip)
-            printf("%2.2f ", ratio);
-        if(fabs(ratio - 1) > imbalance_threshold)
-            count++;
-    }
-    if(ncolgrps > (uint32_t) skip)
-        printf("...\n");
-    else
-        printf("\n");
-    if(count)
-    {
-        printf("Edge balancing: Edge distribution among %d colgroups are not balanced.", count);
-    }
-    printf("\n");
-
-    */
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Done calculating load.\n");
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Start calculating imbalance.\n");
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Total number of edges = %lu\n", nedges);
+    
+    tile_load_print(rank_nedges, nedges, Env::nranks, "rank");
+    tile_load_print(rowgrp_nedges, nedges, nrowgrps, "row group");
+    tile_load_print(colgrp_nedges, nedges, ncolgrps, "column group");
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Done calculating imbalance.\n");
     Env::barrier();
 }
 
 template<typename Weight>
-void Tiling<Weight>::tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t nedges, uint32_t nedges_divisor) {
-    double imbalance_threshold = .01;
+void Tiling<Weight>::tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t nedges, uint32_t nedges_divisor, std::string nedges_type) {
+    double imbalance_threshold = .2;
     double balanced_ratio = nedges/nedges_divisor;
     double calculated_ratio = 0;
+    int32_t skip = 15;
     uint32_t count = 0;
     
-    
-    
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Total number of edges = %lu\n", nedges);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Balanced number of edges per ranks = %lu \n", (uint64_t) balanced_ratio);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Imbalance ratio per ranks [0-%d]: ", nedges_divisor-1);
-    
-    int32_t skip = 15;
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Balanced number of edges per %s = %lu \n", nedges_type.c_str(), (uint64_t) balanced_ratio);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Imbalance ratio per %s [0-%d]: ", nedges_type.c_str(), nedges_divisor-1);
     for(int32_t r = 0; r < Env::nranks; r++) {
         calculated_ratio = (double) (nedges_vec[r] / balanced_ratio);
         if(r < skip) {
@@ -448,7 +405,7 @@ void Tiling<Weight>::tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t 
     }
 
     if(count) {
-        Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Edge distribution among %d ranks are not balanced.\n", count);
+        Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Imbalance found among %d %ss are not balanced.\n", count, nedges_type.c_str());
     }
 }
 
