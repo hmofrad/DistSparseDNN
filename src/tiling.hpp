@@ -15,6 +15,7 @@
 #include "triple.hpp"
 #include "tile.hpp"
 #include "io.hpp"
+#include "allocator.hpp"
 
 
 enum TILING_TYPE {_1D_COL_, _1D_ROW_,_2D_};
@@ -44,16 +45,17 @@ class Tiling {
         
         std::vector<std::vector<struct Tile<Weight>>> tiles;
         
-        private:
-            void integer_factorize(uint32_t n, uint32_t& a, uint32_t& b);
-            void print_tiling(std::string field);
-            bool assert_tiling();
-            void insert_triple(struct Triple<Weight> triple);
-            void tile_exchange();
-            void tile_sort();
-            void tile_load();
-            void tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t nedges, uint32_t nedges_divisor, std::string nedges_type);
-            
+    private:
+        void integer_factorize(uint32_t n, uint32_t& a, uint32_t& b);
+        void populate_tiling();
+        void print_tiling(std::string field);
+        bool assert_tiling();
+        void insert_triple(struct Triple<Weight> triple);
+        void tile_exchange();
+        void tile_sort();
+        void tile_load();
+        void tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t nedges, uint32_t nedges_divisor, std::string nedges_type);        
+        void compress_tile();
 };
 
 /* Process-based tiling based on MPI ranks*/ 
@@ -62,9 +64,17 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
         :  tiling_type(tiling_type_), ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_) , nranks(nranks_)
         , rank_ntiles(ntiles_/nranks_){
            
-    //std::tie(nrows, ncols, nnz) = get_text_info(inputFile);
     std::tie(nrows, ncols, nnz) = IO::get_text_info<Weight>(inputFile);
-            
+    populate_tiling();
+    IO::read_text_file<Weight>(inputFile, tiles, tile_height, tile_width);
+    tile_exchange();
+    tile_sort();
+    tile_load();
+    compress_tile();
+}
+
+template<typename Weight>
+void Tiling<Weight>::populate_tiling() {
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
@@ -124,21 +134,14 @@ Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrow
         std::exit(Env::finalize()); 
     }
     
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: Process-based%s\n", TILING_TYPES[tiling_type]);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: Process-based%s\n", TILING_TYPES[tiling_type]);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrowgrps      x ncolgrps      = [%d x %d]\n", nrowgrps, ncolgrps);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rowgrp_nranks x colgrp_nranks = [%d x %d]\n", rowgrp_nranks, colgrp_nranks);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows         x ncols         = [%d x %d]\n", nrows, ncols);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                           = [%d]\n", nnz);
     print_tiling("rank");
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nrowgrps      x ncolgrps      = [%d x %d]\n", nrowgrps, ncolgrps);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: rowgrp_nranks x colgrp_nranks = [%d x %d]\n", rowgrp_nranks, colgrp_nranks);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nrows         x ncols         = [%d x %d]\n", nrows, ncols);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: nnz                           = [%d]\n", nnz);
-    
-    IO::read_text_file<Weight>(inputFile, tiles, tile_height, tile_width);
-    tile_exchange();
-    tile_sort();
-    tile_load();
-    print_tiling("nedges");
-
 }
 
 template<typename Weight>
@@ -409,6 +412,12 @@ void Tiling<Weight>::tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t 
     }
 }
 
+template<typename Weight>
+void Tiling<Weight>::compress_tile() {
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compress: Start compressing tile... \n");
+    
+            
+}
 
 
 
