@@ -100,12 +100,11 @@ int main(int argc, char **argv) {
       //  a->ptr[i] = i;
     printf("%lu %lu %d %d\n", a->nitems, a->nbytes, a->ptr[1], a->ptr[a->nitems-1]);
     
-    */
-    
     delete a;
     
-    //uint32_t
+    */
     
+    //uint32_t
     
     
     Net<WGT> N(TILING_TYPE::_1D_ROW_, atoi(argv[2]), ((std::string) argv[5])) ;
