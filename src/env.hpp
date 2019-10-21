@@ -13,6 +13,7 @@
 #include <numa.h>
 #include <thread>
 #include <stdarg.h>
+#include <unistd.h>
 
 //#include "log.hpp"
 
@@ -20,7 +21,7 @@ namespace Env {
     int nranks = 0;
     int rank = 0;
     int nthreads = 0;
-    
+    uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
     int init();
     double clock();
     void barrier();
@@ -31,7 +32,7 @@ int Env::init() {
     int status = 0;
     int required = MPI_THREAD_MULTIPLE;
     int provided = -1;
-    
+
     MPI_Init_thread(nullptr, nullptr, required, &provided);
     if((provided < MPI_THREAD_SINGLE) or (provided > MPI_THREAD_MULTIPLE)) {
         status = 1;
