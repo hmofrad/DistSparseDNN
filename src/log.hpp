@@ -11,13 +11,13 @@
 
 namespace Logging {
     bool enabled = false;
-    bool print_at_rank_zero = true;
+    const bool print_at_rank_zero = true;
     enum LOG_LEVEL {VOID, TRACE, DEBUG, INFO, WARN, ERROR, FATAL};
     const char* LOG_LEVELS[] = {"VOID", "TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
     void print(int log_level, const char* format, ...);
 }
 
-void Logging::print(int log_level, const char* format, ...) {
+void Logging::print(const int log_level, const char* format, ...) {
     if(enabled) {
         if((print_at_rank_zero and !Env::rank) or (not print_at_rank_zero)) {
             if(Logging::LOG_LEVELS[log_level] != LOG_LEVELS[VOID]) {
