@@ -19,11 +19,11 @@ template<typename Data_Type>
 struct Data_Block {
     public:
         Data_Block();
-        Data_Block(uint64_t nitems_);
+        Data_Block(const uint64_t nitems_);
         ~Data_Block();
         void allocate();
         void deallocate();
-        void reallocate(uint64_t nitems_);
+        void reallocate(const uint64_t nitems_);
         void clear();
         
         uint64_t nitems;
@@ -32,7 +32,7 @@ struct Data_Block {
 };
 
 template<typename Data_Type>
-Data_Block<Data_Type>::Data_Block(uint64_t nitems_) : nitems(nitems_), nbytes(nitems_ * sizeof(Data_Type)), ptr(nullptr) {
+Data_Block<Data_Type>::Data_Block(const uint64_t nitems_) : nitems(nitems_), nbytes(nitems_ * sizeof(Data_Type)), ptr(nullptr) {
     allocate();
 }
 
@@ -68,7 +68,7 @@ void Data_Block<Data_Type>::deallocate() {
 }
 
 template<typename Data_Type>
-void Data_Block<Data_Type>::reallocate(uint64_t nitems_) {
+void Data_Block<Data_Type>::reallocate(const uint64_t nitems_) {
     if(nbytes) {
         uint64_t old_nbytes = nbytes;
         uint64_t new_nbytes = nitems_ * sizeof(Data_Type);
