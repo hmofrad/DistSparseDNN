@@ -1,6 +1,6 @@
 /*
  * text2bin.cpp: text2bin converter (Plaintext weighted edge list --> binary weighted edge list)
- * Compile and run: g++ -o text2bin text2bin.cpp  -std=c++14 -DNDEBUG -O3 -flto -fwhole-program -march=native
+ * Compile and run: g++ -o text2bin text2bin.cpp -std=c++14 -DNDEBUG -O3 -flto -fwhole-program -march=native
  * (c) Mohammad Hasanzadeh Mofrad, 2019
  * (e) m.hasanzadeh.mofrad@gmail.com 
  */
