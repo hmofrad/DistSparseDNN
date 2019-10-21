@@ -20,6 +20,8 @@
 #include "tiling.hpp"
 #include "net.hpp"
 
+#include "allocator.hpp"
+
 /*
 
 
@@ -67,7 +69,47 @@ int main(int argc, char **argv) {
     }    
     WGT biasValue = neuralNetBias[idxN];
     */
+    
+    /*
+    struct Data_Block<uint32_t> *a = new Data_Block<uint32_t>(1025);
+    uint32_t*aa = a->ptr;
+    
+    
+    for(uint32_t i = 0; i < a->nitems; i++)
+        a->ptr[i] = i;
+    printf("%lu %lu %d %d\n", a->nitems, a->nbytes, a->ptr[1], a->ptr[a->nitems-1]);
+    
+    a->reallocate(3000);
+    
+    
+    //for(uint32_t i = 0; i < a->nitems; i++)
+      ///  a->ptr[i] = i;
+    printf("%lu %lu %d %d\n", a->nitems, a->nbytes, a->ptr[1], a->ptr[a->nitems-1]);
+    
+    a->reallocate(1000);
+    
+    
+    //for(uint32_t i = 0; i < a->nitems; i++)
+      //  a->ptr[i] = i;
+    printf("%lu %lu %d %d\n", a->nitems, a->nbytes, a->ptr[1], a->ptr[a->nitems-1]);
+    
+    a->reallocate(1000);
+    
+    
+    //for(uint32_t i = 0; i < a->nitems; i++)
+      //  a->ptr[i] = i;
+    printf("%lu %lu %d %d\n", a->nitems, a->nbytes, a->ptr[1], a->ptr[a->nitems-1]);
+    
+    */
+    
+    delete a;
+    
+    //uint32_t
+    
+    
+    
     Net<WGT> N(TILING_TYPE::_1D_ROW_, atoi(argv[2]), ((std::string) argv[5])) ;
+    return(Env::finalize());
     /*
     std::string featureFile = ((std::string) argv[5]) + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
     Logging::print(Logging::LOG_LEVEL::INFO, "Start reading the feature file %s\n", featureFile.c_str());
@@ -220,7 +262,7 @@ int main(int argc, char **argv) {
     
     
     
-    return(Env::finalize());
+    //return(Env::finalize());
     
     
     
