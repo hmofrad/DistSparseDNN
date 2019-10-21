@@ -21,7 +21,7 @@ namespace Env {
     int nranks = 0;
     int rank = 0;
     int nthreads = 0;
-    uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
+    const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
     int init();
     double clock();
     void barrier();
