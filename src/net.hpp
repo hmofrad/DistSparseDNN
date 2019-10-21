@@ -16,7 +16,7 @@ class Net {
         Net() {};
         ~Net() {};
         
-        Net(TILING_TYPE tiling_type_, uint32_t Nneurons_, std::string inputFile_prefix);
+        Net(const TILING_TYPE tiling_type_, const uint32_t Nneurons_, const std::string inputFile_prefix);
         
         std::vector<struct Triple<Weight>> triples;
         Tiling<Weight> tiling;
@@ -26,7 +26,7 @@ class Net {
 };
 
 template<typename Weight>
-Net<Weight>::Net(TILING_TYPE tiling_type, uint32_t Nneurons_, std::string inputFile_prefix) : Nneurons(Nneurons_) {
+Net<Weight>::Net(const TILING_TYPE tiling_type, const uint32_t Nneurons_, const std::string inputFile_prefix) : Nneurons(Nneurons_) {
     std::vector<Weight> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
     std::vector<uint32_t> NneuronsVector = {1024, 4096, 16384, 65536};    
     uint32_t idxN = std::distance(NneuronsVector.begin(), std::find(NneuronsVector.begin(), NneuronsVector.end(), Nneurons));
