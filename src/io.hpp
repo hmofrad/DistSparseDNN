@@ -18,15 +18,15 @@
 
 namespace IO {
     template<typename Weight>
-    std::tuple<uint32_t, uint32_t, uint64_t> get_text_info(std::string inputFile);
+    std::tuple<uint32_t, uint32_t, uint64_t> get_text_info(const std::string inputFile);
     //template<typename Weight>
     //std::tuple<uint64_t, uint64_t, uint64_t> read_text(std::string inputFile);
     template<typename Weight>
-    void read_text_file(std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, uint32_t tile_height, uint32_t tile_width);
+    void read_text_file(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width);
 }
 
 template<typename Weight>
-std::tuple<uint32_t, uint32_t, uint64_t> IO::get_text_info(std::string inputFile) {
+std::tuple<uint32_t, uint32_t, uint64_t> IO::get_text_info(const std::string inputFile) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Text info: Start collecting info from the input file %s\n", inputFile.c_str());
     uint32_t nrows = 0;
     uint32_t ncols = 0;    
@@ -57,7 +57,7 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::get_text_info(std::string inputFile
 }
 
 template<typename Weight>
-void IO::read_text_file(std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, uint32_t tile_height, uint32_t tile_width) {
+void IO::read_text_file(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start reading the input file %s\n", inputFile.c_str());
     
     uint64_t nrows = 0;
