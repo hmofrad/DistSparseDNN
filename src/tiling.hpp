@@ -16,6 +16,7 @@
 #include "tile.hpp"
 #include "io.hpp"
 #include "allocator.hpp"
+#include "SparseMat.hpp"
 
 
 enum TILING_TYPE {_1D_COL_, _1D_ROW_,_2D_};
@@ -27,7 +28,7 @@ class Tiling {
         Tiling() {};
         ~Tiling() {};
         
-        Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrowgrps_, uint32_t ncolgrps_, uint32_t nranks_, std::string inputFile);
+        Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const std::string inputFile);
         //Tiling( TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrowgrps_, uint32_t ncolgrps_, uint32_t nranks_, uint32_t rank_nthreads_);
         
         TILING_TYPE tiling_type;        
@@ -46,21 +47,21 @@ class Tiling {
         std::vector<std::vector<struct Tile<Weight>>> tiles;
         
     private:
-        void integer_factorize(uint32_t n, uint32_t& a, uint32_t& b);
+        void integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b);
         void populate_tiling();
-        void print_tiling(std::string field);
+        void print_tiling(const std::string field);
         bool assert_tiling();
-        void insert_triple(struct Triple<Weight> triple);
+        void insert_triple(const struct Triple<Weight> triple);
         void tile_exchange();
         void tile_sort();
         void tile_load();
-        void tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t nedges, uint32_t nedges_divisor, std::string nedges_type);        
+        void tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type);        
         void compress_tile();
 };
 
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
-Tiling<Weight>::Tiling(TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrowgrps_, uint32_t ncolgrps_, uint32_t nranks_, std::string inputFile) 
+Tiling<Weight>::Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const std::string inputFile) 
         :  tiling_type(tiling_type_), ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_) , nranks(nranks_)
         , rank_ntiles(ntiles_/nranks_){
            
@@ -145,7 +146,7 @@ void Tiling<Weight>::populate_tiling() {
 }
 
 template<typename Weight>
-void Tiling<Weight>::integer_factorize(uint32_t n, uint32_t& a, uint32_t& b) {
+void Tiling<Weight>::integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b) {
     a = b = sqrt(n);
     while (a * b != n) {
         b++;
@@ -173,9 +174,9 @@ bool Tiling<Weight>::assert_tiling() {
 }
 
 template<typename Weight>
-void Tiling<Weight>::print_tiling(std::string field) {
+void Tiling<Weight>::print_tiling(const std::string field) {
     if(!Env::rank) {    
-        uint32_t skip = 15;
+        const uint32_t skip = 15;
         for (uint32_t i = 0; i < nrowgrps; i++) {
             for (uint32_t j = 0; j < ncolgrps; j++) {  
                 auto& tile = tiles[i][j];   
@@ -200,7 +201,7 @@ void Tiling<Weight>::print_tiling(std::string field) {
 }
 
 template<typename Weight>
-void Tiling<Weight>::insert_triple(struct Triple<Weight> triple) {
+void Tiling<Weight>::insert_triple(const struct Triple<Weight> triple) {
     std::pair pair = std::make_pair((triple.row / tile_height), (triple.col / tile_width));
     tiles[pair.first][pair.second].triples.push_back(triple);
 }
@@ -310,7 +311,7 @@ template<typename Weight>
 void Tiling<Weight>::tile_sort() {
     Env::barrier();
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Start sorting tiles...\n");
-    ColSort<Weight> f_col;
+    const ColSort<Weight> f_col;
     
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
@@ -381,11 +382,11 @@ void Tiling<Weight>::tile_load() {
 }
 
 template<typename Weight>
-void Tiling<Weight>::tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t nedges, uint32_t nedges_divisor, std::string nedges_type) {
-    double imbalance_threshold = .2;
-    double balanced_ratio = nedges/nedges_divisor;
+void Tiling<Weight>::tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type) {
+    const double imbalance_threshold = .2;
+    const double balanced_ratio = nedges/nedges_divisor;
     double calculated_ratio = 0;
-    int32_t skip = 15;
+    const int32_t skip = 15;
     uint32_t count = 0;
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Balanced number of edges per %s = %lu \n", nedges_type.c_str(), (uint64_t) balanced_ratio);
@@ -415,8 +416,8 @@ void Tiling<Weight>::tile_load_print(std::vector<uint64_t> nedges_vec, uint64_t 
 template<typename Weight>
 void Tiling<Weight>::compress_tile() {
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile compress: Start compressing tile... \n");
-    
-            
+    struct CSC<Weight>* csc = new CSC<Weight>();
+    delete csc;        
 }
 
 
