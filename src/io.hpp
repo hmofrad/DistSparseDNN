@@ -27,6 +27,7 @@ namespace IO {
 
 template<typename Weight>
 std::tuple<uint32_t, uint32_t, uint64_t> IO::get_text_info(std::string inputFile) {
+    Logging::print(Logging::LOG_LEVEL::INFO, "Text info: Start collecting info from the input file %s\n", inputFile.c_str());
     uint32_t nrows = 0;
     uint32_t ncols = 0;    
     uint64_t nnz = 0;
@@ -51,6 +52,7 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::get_text_info(std::string inputFile
         nnz++;
     }
     fin.close();
+    Logging::print(Logging::LOG_LEVEL::INFO, "Text info: Done  collecting info from the input file %s\n", inputFile.c_str());
     return std::make_tuple(nrows + 1, ncols + 1, nnz);
 }
 
