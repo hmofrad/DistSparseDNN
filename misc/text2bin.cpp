@@ -9,15 +9,21 @@
 #include <fstream>
 #include <sstream>
 
+/* mode: 1 = Single column input text file
+         2 = Two columns input text file
+         3 = Three columns input text file (3rd column as double weights)
+ */
+
 int main(int argc, char **argv) {
     
-	if (argc != 3) {
-        std::cout << "Usage: " << argv[0] << " input.txt output.bin"  << std::endl;
+	if (argc != 4) {
+        std::cout << "Usage: " << argv[0] << " input.txt output.bin mode [1-3]"  << std::endl;
     	std::exit(1);
 	}
     
     std::string filepath_in  = argv[1];
     std::string filepath_out = argv[2];
+    int mode = atoi(argv[3]);
     
     std::ifstream fin(filepath_in.c_str(),   std::ios_base::in);
     if(!fin.is_open()) {
@@ -41,15 +47,29 @@ int main(int argc, char **argv) {
     while (std::getline(fin, line)) {
         iss.clear();
         iss.str(line);
-        //std::cout << "i=" << i << "j=" << j << std::endl;
-        iss >> i >> j >> w;
-        fout.write(reinterpret_cast<const char*>(&i), sizeof(uint32_t));
-        fout.write(reinterpret_cast<const char*>(&j), sizeof(uint32_t));
-        fout.write(reinterpret_cast<const char*>(&w), sizeof(double));
-            
-            num_edges++;
-            num_rows = (num_rows < i) ? i : num_rows;
-            num_cols = (num_cols < j) ? j : num_cols;
+
+        if(mode == 1) {
+            iss >> i;
+            fout.write(reinterpret_cast<const char*>(&i), sizeof(uint32_t));
+            //std::cout << "i=" << i << std::endl;
+        }
+        else if(mode == 2) {
+            iss >> i >> j;
+            fout.write(reinterpret_cast<const char*>(&i), sizeof(uint32_t));
+            fout.write(reinterpret_cast<const char*>(&j), sizeof(uint32_t));
+            //std::cout << "i=" << i << " j=" << j << std::endl;
+        }
+        else if(mode == 3) {
+            iss >> i >> j >> w;
+            fout.write(reinterpret_cast<const char*>(&i), sizeof(uint32_t));
+            fout.write(reinterpret_cast<const char*>(&j), sizeof(uint32_t));
+            fout.write(reinterpret_cast<const char*>(&w), sizeof(double));
+            //std::cout << "i=" << i << " j=" << j << " w=" << w << std::endl;
+        }
+        
+        num_edges++;
+        num_rows = (num_rows < i) ? i : num_rows;
+        num_cols = (num_cols < j) ? j : num_cols;
         
     }
     fout.close();
