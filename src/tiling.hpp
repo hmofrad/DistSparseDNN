@@ -28,7 +28,8 @@ class Tiling {
         Tiling() {};
         ~Tiling() {};
         
-        Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const std::string inputFile);
+        Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_,
+               const std::string input_file, const INPUT_TYPE input_type);
         //Tiling( TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrowgrps_, uint32_t ncolgrps_, uint32_t nranks_, uint32_t rank_nthreads_);
         
         TILING_TYPE tiling_type;        
@@ -61,17 +62,34 @@ class Tiling {
 
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
-Tiling<Weight>::Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const std::string inputFile) 
+Tiling<Weight>::Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
+                       const std::string input_file, const INPUT_TYPE input_type) 
         :  tiling_type(tiling_type_), ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_) , nranks(nranks_)
         , rank_ntiles(ntiles_/nranks_){
            
-    std::tie(nrows, ncols, nnz) = IO::get_text_info<Weight>(inputFile);
+    //std::tie(nrows, ncols, nnz) = IO::text_file_stat<Weight>(input_file);
+    
+    std::tie(nrows, ncols, nnz) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(input_file)
+                                                                     : IO::binary_file_stat<Weight>(input_file);
+    
     populate_tiling();
-    IO::read_text_file<Weight>(inputFile, tiles, tile_height, tile_width);
+    
+    if(INPUT_TYPE::_TEXT_ == input_type) {
+        IO::text_file_read<Weight>(input_file, tiles, tile_height, tile_width);
+    }
+    else {
+        IO::binary_file_read<Weight>(input_file, tiles, tile_height, tile_width);
+    }
+    
+    
+    //IO::text_file_read<Weight>(input_file, tiles, tile_height, tile_width);
+    //IO::binary_file_read<Weight>(input_file, tiles, tile_height, tile_width);
+    
     tile_exchange();
     tile_sort();
     tile_load();
     compress_tile();
+    
 }
 
 template<typename Weight>
