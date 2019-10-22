@@ -16,7 +16,7 @@ class Net {
         Net() {};
         ~Net() {};
         
-        Net(const TILING_TYPE tiling_type_, const uint32_t Nneurons_, const std::string inputFile_prefix);
+        Net(const TILING_TYPE tiling_type_, const uint32_t Nneurons_, const std::string inputFile_prefix, const INPUT_TYPE input_type);
         
         std::vector<struct Triple<Weight>> triples;
         Tiling<Weight> tiling;
@@ -26,7 +26,7 @@ class Net {
 };
 
 template<typename Weight>
-Net<Weight>::Net(const TILING_TYPE tiling_type, const uint32_t Nneurons_, const std::string inputFile_prefix) : Nneurons(Nneurons_) {
+Net<Weight>::Net(const TILING_TYPE tiling_type, const uint32_t Nneurons_, const std::string inputFile_prefix, const INPUT_TYPE input_type) : Nneurons(Nneurons_) {
     std::vector<Weight> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
     std::vector<uint32_t> NneuronsVector = {1024, 4096, 16384, 65536};    
     uint32_t idxN = std::distance(NneuronsVector.begin(), std::find(NneuronsVector.begin(), NneuronsVector.end(), Nneurons));
@@ -36,8 +36,19 @@ Net<Weight>::Net(const TILING_TYPE tiling_type, const uint32_t Nneurons_, const 
     }    
     Weight biasValue = neuralNetBias[idxN];
     
-    std::string featureFile = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
-    tiling =  Tiling<Weight>(tiling_type, (Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, featureFile);
+    std::string feature_file = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons);
+    feature_file += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
+    //printf("%s\n", feature_file.c_str());
+    
+/*    if(input_type == INPUT_TYPE::_TEXT_) {
+        featureFile = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
+    }
+    else {
+        featureFile = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons) + ".bin";
+  
+  }
+  */
+    tiling =  Tiling<Weight>(tiling_type, (Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, feature_file, input_type);
 
 }
 
