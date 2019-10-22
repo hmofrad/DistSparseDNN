@@ -15,7 +15,7 @@
 #include "env.hpp"
 #include "log.hpp"
 #include "triple.hpp"
-//#include "io.hpp"
+#include "io.hpp"
 
 #include "tiling.hpp"
 #include "net.hpp"
@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
     //uint32_t
     
     
-    Net<WGT> N(TILING_TYPE::_1D_ROW_, atoi(argv[2]), ((std::string) argv[5])) ;
+    Net<WGT> N(TILING_TYPE::_1D_ROW_, atoi(argv[2]), ((std::string) argv[5]), INPUT_TYPE::_BINARY_) ;
     return(Env::finalize());
     /*
     std::string featureFile = ((std::string) argv[5]) + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
