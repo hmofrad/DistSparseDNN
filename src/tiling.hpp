@@ -28,15 +28,18 @@ class Tiling {
         Tiling() {};
         ~Tiling() {};
         
-        Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_,
-               const std::string input_file, const INPUT_TYPE input_type);
+        Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_,
+               const std::string input_file, const INPUT_TYPE input_type,
+               const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type);
         //Tiling( TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrowgrps_, uint32_t ncolgrps_, uint32_t nranks_, uint32_t rank_nthreads_);
         
-        TILING_TYPE tiling_type;        
+          
         uint32_t ntiles, nrowgrps, ncolgrps;
         uint32_t nranks, rank_ntiles, rank_nrowgrps, rank_ncolgrps;
         uint32_t rowgrp_nranks, colgrp_nranks;
         uint32_t rank_nthreads;
+        
+        TILING_TYPE tiling_type;      
         
         uint32_t nthreads, thread_ntiles, thread_nrowgrps, thread_ncolgrps;
         uint32_t rowgrp_nthreads, colgrp_nthreads;
@@ -56,16 +59,17 @@ class Tiling {
         void tile_exchange();
         void tile_load();
         void tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type);        
+        void tile_sort();	
         void compress_tile();
         
 };
 
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
-Tiling<Weight>::Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
-                       const std::string input_file, const INPUT_TYPE input_type) 
-        :  tiling_type(tiling_type_), ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_) , nranks(nranks_)
-        , rank_ntiles(ntiles_/nranks_){
+Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
+                       const std::string input_file, const INPUT_TYPE input_type, const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type) 
+        : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_) , nranks(nranks_)
+        , rank_ntiles(ntiles_/nranks_), tiling_type(tiling_type_) {
            
     std::tie(nrows, ncols, nnz) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(input_file)
                                                                      : IO::binary_file_stat<Weight>(input_file);
@@ -81,6 +85,7 @@ Tiling<Weight>::Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, c
     
     tile_exchange();
     tile_load();
+    tile_sort();
     compress_tile();
 }
 
@@ -406,6 +411,25 @@ void Tiling<Weight>::tile_load_print(const std::vector<uint64_t> nedges_vec, con
     if(count) {
         Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Imbalance found among %d %ss are not balanced.\n", count, nedges_type.c_str());
     }
+}
+
+template<typename Weight>	
+void Tiling<Weight>::tile_sort() {	
+    Env::barrier();	
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Start sorting tiles...\n");	
+    const ColSort<Weight> f_col;	
+
+    for (uint32_t i = 0; i < nrowgrps; i++) {	
+        for (uint32_t j = 0; j < ncolgrps; j++) {	
+            auto& tile = tiles[i][j];	
+            auto& triples = tile.triples;	
+            if(not triples.empty()) {	
+                std::sort(triples.begin(), triples.end(), f_col);    	
+            }	
+        }	
+    }        	
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Done  sorting tiles.\n");	
+    Env::barrier();	
 }
 
 template<typename Weight>
