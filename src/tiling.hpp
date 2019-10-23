@@ -16,7 +16,7 @@
 #include "tile.hpp"
 #include "io.hpp"
 #include "allocator.hpp"
-#include "SparseMat.hpp"
+#include "spmat.hpp"
 
 
 enum TILING_TYPE {_1D_COL_, _1D_ROW_,_2D_};
@@ -26,7 +26,7 @@ template<typename Weight>
 class Tiling {
     public:
         Tiling() {};
-        ~Tiling() {};
+        ~Tiling();
         
         Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_,
                const std::string input_file, const INPUT_TYPE input_type);
@@ -47,6 +47,8 @@ class Tiling {
         
         std::vector<std::vector<struct Tile<Weight>>> tiles;
         
+        
+
     private:
         void integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b);
         void populate_tiling();
@@ -58,6 +60,7 @@ class Tiling {
         void tile_load();
         void tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type);        
         void compress_tile();
+        
 };
 
 /* Process-based tiling based on MPI ranks*/ 
@@ -86,11 +89,48 @@ Tiling<Weight>::Tiling(const TILING_TYPE tiling_type_, const uint32_t ntiles_, c
     //IO::binary_file_read<Weight>(input_file, tiles, tile_height, tile_width);
     
     tile_exchange();
-    tile_sort();
+    //tile_sort();
     tile_load();
+    //vec->resize(2);
+    //spmat1 = new Row_Compressed_Block<Weight>();
+    //vec[0] = new(int);
+    //vec[1] = new(int);
     compress_tile();
     
 }
+
+template<typename Weight>
+Tiling<Weight>::~Tiling() {
+    //printf("0.~tiling destructor %p\n", this);
+    
+      
+    //for (uint32_t i = 0; i < nrowgrps; i++) {
+  //      for (uint32_t j = 0; j < ncolgrps; j++) {
+//            auto& tile = tiles[i][j];
+          //  if(tile.rank == Env::rank) {
+                /*
+                //auto& spmat = tile.spmat;
+                printf("1.~tiling %d: %d %d %d %p %lu\n", Env::rank, i, j, tile.spmat != nullptr, tile.spmat, tile.spmat->nnz);
+                if(tile.spmat) {
+                    //tile.~Tile();
+                    delete tile.spmat;
+                    printf("3.~tiling %d: %d %d %d %p\n", Env::rank, i, j, tile.spmat != nullptr, tile.spmat);
+                    tile.spmat = nullptr;
+                }
+                //if(tile.spmat) {
+                  // delete tile.spmat;
+                   //tile.spmat = nullptr;
+                //}
+                printf("4.~tiling %d: %d %d %d %p \n", Env::rank, i, j, tile.spmat != nullptr, tile.spmat);
+                */
+        //    }
+      //  }
+    //}
+    
+
+    
+}
+
 
 template<typename Weight>
 void Tiling<Weight>::populate_tiling() {
@@ -140,7 +180,12 @@ void Tiling<Weight>::populate_tiling() {
     tile_width  = ncols / ncolgrps;
     
     
-    tiles.resize(nrowgrps, std::vector<struct Tile<Weight>>(ncolgrps));
+    
+    tiles.resize(nrowgrps);
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        tiles[i].resize(ncolgrps);
+    }
+    
     int32_t gcd_r = std::gcd(rowgrp_nranks, colgrp_nranks);
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
@@ -433,9 +478,45 @@ void Tiling<Weight>::tile_load_print(const std::vector<uint64_t> nedges_vec, con
 
 template<typename Weight>
 void Tiling<Weight>::compress_tile() {
+    Env::barrier();
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile compress: Start compressing tile... \n");
-    struct CSC<Weight>* csc = new CSC<Weight>();
-    delete csc;        
+    COMPRESSED_BLOCK_TYPE CT = COMPRESSED_BLOCK_TYPE::_ROW_MAJOR_;
+    
+   // struct Compressed_Block<Weight>* A;//  = new Compressed_Block<Weight>();
+    //if(CT == COMPRESSED_BLOCK_TYPE::_ROW_MAJOR_) {
+      //  A = new Row_Compressed_Block<Weight>();
+    //}
+    
+  
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(tile.rank == Env::rank) {
+                auto& triples = tile.triples;
+                auto& spmat = tile.spmat;
+                if(CT == COMPRESSED_BLOCK_TYPE::_ROW_MAJOR_) {
+                    //spmat
+                    //tile.spmat = new Row_Compressed_Block<Weight>();
+                    //spmat = std::make_unique<Row_Compressed_Block<Weight>>();
+                    spmat = std::make_shared<Row_Compressed_Block<Weight>>();
+                }
+                if(not triples.empty()) {
+                    //spmat->sort(triples);
+                    spmat->sort(triples);
+                    //std::cout << spmat.use_count() << std::endl;
+                    //tile.spmat1->sort(triples);
+                }
+            }
+        }
+    }    
+  
+    
+   // delete A;
+    Env::barrier();
+    
+    
+    //new TCSC_BASE<Weight, Integer_Type>(tile.triples.size(), c_nitems, r_nitems, sid);
+    //delete csc;        
 }
 
 
