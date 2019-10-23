@@ -14,19 +14,22 @@ template<typename Weight>
 class Net {
     public:
         Net() {};
-        ~Net() {};
+        ~Net();
         
-        Net(const TILING_TYPE tiling_type_, const uint32_t Nneurons_, const std::string inputFile_prefix, const INPUT_TYPE input_type);
+        Net(const uint32_t Nneurons_, const std::string inputFile_prefix, 
+            const TILING_TYPE tiling_type_ = TILING_TYPE::_1D_ROW_,
+            const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_);
         
         std::vector<struct Triple<Weight>> triples;
-        Tiling<Weight> tiling;
+        Tiling<Weight>* tiling;
         
         uint32_t Nneurons;
         Weight biasValue;
 };
 
 template<typename Weight>
-Net<Weight>::Net(const TILING_TYPE tiling_type, const uint32_t Nneurons_, const std::string inputFile_prefix, const INPUT_TYPE input_type) : Nneurons(Nneurons_) {
+Net<Weight>::Net(const uint32_t Nneurons_, const std::string inputFile_prefix,
+                 const TILING_TYPE tiling_type, const INPUT_TYPE input_type) : Nneurons(Nneurons_) {
     std::vector<Weight> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
     std::vector<uint32_t> NneuronsVector = {1024, 4096, 16384, 65536};    
     uint32_t idxN = std::distance(NneuronsVector.begin(), std::find(NneuronsVector.begin(), NneuronsVector.end(), Nneurons));
@@ -48,8 +51,19 @@ Net<Weight>::Net(const TILING_TYPE tiling_type, const uint32_t Nneurons_, const 
   
   }
   */
-    tiling =  Tiling<Weight>(tiling_type, (Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, feature_file, input_type);
+    tiling = new Tiling<Weight>(tiling_type, (Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, feature_file, input_type);
+    //printf("tiling ptr %p\n",  tiling.spmat1);
+    //delete tiling.spmat1;
+    //tiling.Del();
+    
+    
+    //printf("tiling is done\n");
+}
 
+template<typename Weight>
+Net<Weight>::~Net() {
+    //printf("NN destructor\n");
+    delete tiling;
 }
 
 
