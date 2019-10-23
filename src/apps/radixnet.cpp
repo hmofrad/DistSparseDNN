@@ -9,6 +9,8 @@
 #include <vector>
 #include <algorithm>
 #include <iostream>
+#include <memory>
+
 
 
 #include "radixnet.h"
@@ -36,7 +38,7 @@
 
 
 //#define HAS_EDGE_WEIGHT
-// make clean && make && mpirun -np 2 bin/./radixnet -n 1024 -l 120 data/MNIST data/DNN
+// make clean && make && mpirun.mpich -np 2 bin/./radixnet -n 1024 -l 120 data/MNIST data/DNN
 
 
 int main(int argc, char **argv) {
@@ -107,7 +109,10 @@ int main(int argc, char **argv) {
     //uint32_t
     
     
-    Net<WGT> N(TILING_TYPE::_1D_ROW_, atoi(argv[2]), ((std::string) argv[5]), INPUT_TYPE::_BINARY_) ;
+    //Net<WGT> N(TILING_TYPE::_1D_ROW_, atoi(argv[2]), ((std::string) argv[5]), INPUT_TYPE::_BINARY_) ;
+    Net<WGT> N(atoi(argv[2]), ((std::string) argv[5])) ;
+    //delete N.tiling;
+    //printf("Net is done\n");
     return(Env::finalize());
     /*
     std::string featureFile = ((std::string) argv[5]) + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
