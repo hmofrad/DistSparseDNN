@@ -14,7 +14,6 @@
 #include "env.hpp"
 #include "log.hpp"
 #include "tile.hpp"
-//#include "tiling.hpp"
 
 enum INPUT_TYPE {_TEXT_, _BINARY_};
 
@@ -88,9 +87,8 @@ void IO::text_file_read(const std::string inputFile, std::vector<std::vector<str
         curr_line++;
     }
     
-    //triples.resize(share);
     std::vector<struct Triple<Weight>> triples(share);
-    #pragma omp parallel // reduction(max : nrows, ncols)
+    #pragma omp parallel
     {
         int nthreads = Env::nthreads; 
         int tid = omp_get_thread_num();
