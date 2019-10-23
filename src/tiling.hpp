@@ -59,8 +59,8 @@ class Tiling {
         void tile_exchange();
         void tile_load();
         void tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type);        
-        void tile_sort();	
-        void compress_tile();
+        void tile_sort(COMPRESSED_FORMAT compression_type);	
+        void compress_tile(COMPRESSED_FORMAT compression_type);
         
 };
 
@@ -85,8 +85,8 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     
     tile_exchange();
     tile_load();
-    tile_sort();
-    compress_tile();
+    //tile_sort(compression_type);
+    compress_tile(compression_type);
 }
 
 template<typename Weight>
@@ -414,18 +414,31 @@ void Tiling<Weight>::tile_load_print(const std::vector<uint64_t> nedges_vec, con
 }
 
 template<typename Weight>	
-void Tiling<Weight>::tile_sort() {	
+void Tiling<Weight>::tile_sort(COMPRESSED_FORMAT compression_type) {	
     Env::barrier();	
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Start sorting tiles...\n");	
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Start sorting tiles for %s compression.\n", COMPRESSED_FORMATS[compression_type]);	
+    const RowSort<Weight> f_row;
     const ColSort<Weight> f_col;	
 
     for (uint32_t i = 0; i < nrowgrps; i++) {	
         for (uint32_t j = 0; j < ncolgrps; j++) {	
             auto& tile = tiles[i][j];	
-            auto& triples = tile.triples;	
+            //auto& triples = tile.triples;	
+            tile.sort(compression_type, f_row, f_col);
+/*
             if(not triples.empty()) {	
-                std::sort(triples.begin(), triples.end(), f_col);    	
-            }	
+                if((compression_type == COMPRESSED_FORMAT::_CSR_)  or
+                   (compression_type == COMPRESSED_FORMAT::_DCSR_) or
+                   (compression_type == COMPRESSED_FORMAT::_TCSR_)) {
+                        std::sort(triples.begin(), triples.end(), f_row);    	
+                }
+                else if((compression_type == COMPRESSED_FORMAT::_CSC_)  or
+                   (compression_type == COMPRESSED_FORMAT::_DCSC_) or
+                   (compression_type == COMPRESSED_FORMAT::_TCSC_)) {
+                        std::sort(triples.begin(), triples.end(), f_col);    	
+                }
+            }
+*/            
         }	
     }        	
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Done  sorting tiles.\n");	
@@ -433,9 +446,13 @@ void Tiling<Weight>::tile_sort() {
 }
 
 template<typename Weight>
-void Tiling<Weight>::compress_tile() {
+void Tiling<Weight>::compress_tile(COMPRESSED_FORMAT compression_type) {
     Env::barrier();
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compress: Start compressing tile... \n");
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compress: Start compressing tile using %s \n", COMPRESSED_FORMATS[compression_type]);
+    
+    const RowSort<Weight> f_row;
+    const ColSort<Weight> f_col;	
+    
     //COMPRESSED_BLOCK_TYPE CT = COMPRESSED_BLOCK_TYPE::_COL_MAJOR_;
     COMPRESSED_FORMAT CSF = COMPRESSED_FORMAT::_CSR_;
     for (uint32_t i = 0; i < nrowgrps; i++) {
@@ -443,6 +460,9 @@ void Tiling<Weight>::compress_tile() {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
                 auto& triples = tile.triples;
+                tile.sort(compression_type, f_row, f_col);
+                tile.allocate_compression(compression_type, tile_height, tile_width);
+                /*
                 auto& spmat = tile.spmat;
                 
                 if(CSF == COMPRESSED_FORMAT::_CSR_) {
@@ -451,17 +471,12 @@ void Tiling<Weight>::compress_tile() {
                 else if(CSF == COMPRESSED_FORMAT::_CSC_) {
                     spmat = std::make_shared<CSC<Weight>>();
                 }
-                //std::cout << spmat.use_count() << std::endl;
-                //if(not triples.empty()) {
-                    spmat->sort(triples);
-                    //spmat->sort(triples);
-                    //std::cout << spmat.use_count() << std::endl;
-                    //tile.spmat1->sort(triples);
-                //}
+                */
             }
         }
     }    
 
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compress: Done compressing tiles.\n");
     Env::barrier();      
 }
 
