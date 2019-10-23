@@ -14,14 +14,13 @@ template<typename Weight>
 class Net {
     public:
         Net() {};
-        ~Net();
+        ~Net() {};
         
         Net(const uint32_t Nneurons_, const std::string inputFile_prefix, 
             const TILING_TYPE tiling_type_ = TILING_TYPE::_1D_ROW_,
             const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_);
         
-        std::vector<struct Triple<Weight>> triples;
-        Tiling<Weight>* tiling;
+        std::unique_ptr<struct Tiling<Weight>> tiling = nullptr;
         
         uint32_t Nneurons;
         Weight biasValue;
@@ -41,30 +40,9 @@ Net<Weight>::Net(const uint32_t Nneurons_, const std::string inputFile_prefix,
     
     std::string feature_file = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons);
     feature_file += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
-    //printf("%s\n", feature_file.c_str());
     
-/*    if(input_type == INPUT_TYPE::_TEXT_) {
-        featureFile = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons) + ".tsv";
-    }
-    else {
-        featureFile = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons) + ".bin";
-  
-  }
-  */
-    tiling = new Tiling<Weight>(tiling_type, (Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, feature_file, input_type);
-    //printf("tiling ptr %p\n",  tiling.spmat1);
-    //delete tiling.spmat1;
-    //tiling.Del();
+    tiling = std::move(std::make_unique<Tiling<Weight>>(tiling_type, (Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, feature_file, input_type));
     
-    
-    //printf("tiling is done\n");
 }
-
-template<typename Weight>
-Net<Weight>::~Net() {
-    //printf("NN destructor\n");
-    delete tiling;
-}
-
 
 #endif 
