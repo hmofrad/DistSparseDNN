@@ -84,6 +84,16 @@ mkdir -p ${BIN_DIR_DNN}
 echo "Converting   DNN files from text (${TXT_DIR_DNN})   to binary (${BIN_DIR_DNN})"
 
 for N in "${NEURONS[@]}"; do
+	for L in "${LAYERS[@]}"; do
+		FILE_TSV=${TXT_DIR_DNN}/${DNN_FILE_PREFIX}${N}-l${L}-categories.tsv
+		FILE_BIN=${BIN_DIR_DNN}/${DNN_FILE_PREFIX}${N}-l${L}-categories.bin
+		if [ ! -f "${FILE_BIN}" ]; then
+			./${CONVERTER} ${FILE_TSV} ${FILE_BIN} 1
+		fi
+	done
+done
+
+for N in "${NEURONS[@]}"; do
 	FILE_TSV_PATH=${TXT_DIR_DNN}/${DNN_FILE_PREFIX}${N}
 	FILE_BIN_PATH=${BIN_DIR_DNN}/${DNN_FILE_PREFIX}${N}
 	if [ ! -d "${FILE_BIN_PATH}" ]; then
@@ -94,16 +104,6 @@ for N in "${NEURONS[@]}"; do
 			./${CONVERTER} ${FILE_TSV} ${FILE_BIN} 3
 		done
 	fi
-done
-
-for N in "${NEURONS[@]}"; do
-	for L in "${LAYERS[@]}"; do
-		FILE_TSV=${TXT_DIR_DNN}/${DNN_FILE_PREFIX}${N}-l${L}-categories.tsv
-		FILE_BIN=${BIN_DIR_DNN}/${DNN_FILE_PREFIX}${N}-l${L}-categories.bin
-		if [ ! -f "${FILE_BIN}" ]; then
-			./${CONVERTER} ${FILE_TSV} ${FILE_BIN} 1
-		fi
-	done
 done
 
 exit;
