@@ -22,11 +22,13 @@ namespace IO {
     std::tuple<uint32_t, uint32_t, uint64_t> text_file_stat(const std::string inputFile);
     template<typename Weight>
     void text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width);
+    void text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
     
     template<typename Weight>
     std::tuple<uint32_t, uint32_t, uint64_t> binary_file_stat(const std::string inputFile);
     template<typename Weight>
     void binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width);
+    void binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
 }
 
 template<typename Weight>
@@ -42,8 +44,8 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::text_file_stat(const std::string in
         std::exit(Env::finalize());
     }
     
-    std::string line;
     struct Triple<Weight> triple;
+    std::string line;
     std::istringstream iss;
     while (std::getline(fin, line)) {
         iss.clear();
@@ -134,7 +136,57 @@ void IO::text_file_read(const std::string inputFile, std::vector<std::vector<str
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done reading the input file %s\n", inputFile.c_str());
     Env::barrier();
- }
+}
+
+void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start reading the category file %s\n", inputFile.c_str());
+    
+    std::ifstream fin(inputFile.c_str(), std::ios_base::in);
+    if(not fin.is_open()) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
+        std::exit(Env::finalize());
+    }
+
+    uint32_t nlines = 0;
+    std::string line;
+    while (std::getline(fin, line)) {
+        nlines++;
+    }
+    fin.clear();
+    fin.seekg(0, std::ios_base::beg);
+    
+    uint32_t start = (!Env::rank) ? 0 : Env::rank * tile_height;
+    uint32_t end = (Env::rank + 1) * tile_height;
+    
+    uint32_t nCategories_local = 0;
+    uint32_t category = 0;
+    std::istringstream iss;
+    categories.resize(tile_height);
+    while (std::getline(fin, line)) {
+        iss.clear();
+        iss.str(line);
+        iss >> category;
+        if((!Env::rank and (category <  end)) or
+            (Env::rank and (category > start)
+                       and (category < end))) {
+            categories[category % tile_height] = 1;
+            nCategories_local++;
+        }
+    }
+    fin.close();
+
+    uint32_t nCategories_global = 0;
+    MPI_Allreduce(&nCategories_local, &nCategories_global, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Total number of categories %d\n", nCategories_global);
+    if(nlines != nCategories_global) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", inputFile.c_str());
+        std::exit(Env::finalize());
+    }
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done  reading the category file %s %d\n", inputFile.c_str());
+    Env::barrier();
+} 
+ 
  
 template<typename Weight>
 std::tuple<uint32_t, uint32_t, uint64_t> IO::binary_file_stat(const std::string inputFile) {
@@ -240,5 +292,58 @@ void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<s
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done reading the input file %s\n", inputFile.c_str());
     Env::barrier();
- }
+}
+ 
+ 
+
+void IO::binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the category file %s\n", inputFile.c_str());
+    
+    
+    
+    std::ifstream fin(inputFile.c_str(), std::ios_base::binary);
+    if(not fin.is_open()) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
+        std::exit(Env::finalize());
+    }
+    
+    uint64_t filesize, offset = 0;
+    fin.seekg (0, std::ios_base::end);
+    filesize = (uint64_t) fin.tellg();
+    fin.seekg(0, std::ios_base::beg);
+    
+    if(filesize % sizeof(uint32_t)) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", inputFile.c_str());
+        std::exit(Env::finalize());
+    }
+    
+    uint32_t start = (!Env::rank) ? 0 : Env::rank * tile_height;
+    uint32_t end = (Env::rank + 1) * tile_height;
+    
+    uint32_t nCategories_local = 0;
+    uint32_t category = 0;
+    categories.resize(tile_height);
+    while(offset < filesize) {
+        fin.read(reinterpret_cast<char*>(&category), sizeof(uint32_t));
+        offset += sizeof(uint32_t);
+        if((!Env::rank and (category <  end)) or
+            (Env::rank and (category > start)
+                       and (category < end))) {
+            categories[category % tile_height] = 1;
+            nCategories_local++;
+        }
+    }
+    fin.close();
+
+    uint32_t nCategories_global = 0;
+    MPI_Allreduce(&nCategories_local, &nCategories_global, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Total number of categories %d\n", nCategories_global);
+    if((filesize / sizeof(uint32_t)) != nCategories_global) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", inputFile.c_str());
+        std::exit(Env::finalize());
+    }
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done  reading the category file %s %d\n", inputFile.c_str());
+    Env::barrier();
+}  
 #endif
