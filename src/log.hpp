@@ -20,7 +20,7 @@ namespace Logging {
 void Logging::print(const int log_level, const char* format, ...) {
     if(enabled) {
         if((print_at_rank_zero and !Env::rank) or (not print_at_rank_zero)) {
-            if(Logging::LOG_LEVELS[log_level] != LOG_LEVELS[VOID]) {
+            if(strncmp(Logging::LOG_LEVELS[log_level], LOG_LEVELS[VOID], 4)) {
                 printf("%s[rank=%d] ", Logging::LOG_LEVELS[log_level], Env::rank);
             }
             va_list arglist;  
