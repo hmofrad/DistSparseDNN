@@ -17,8 +17,9 @@ class Net {
         ~Net() {};
         
         Net(const uint32_t Nneurons_, const std::string inputFile_prefix, 
+            const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_,
             const TILING_TYPE tiling_type_ = TILING_TYPE::_1D_ROW_,
-            const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_);
+            const COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSR_);
         
         std::unique_ptr<struct Tiling<Weight>> tiling = nullptr;
         
@@ -27,8 +28,8 @@ class Net {
 };
 
 template<typename Weight>
-Net<Weight>::Net(const uint32_t Nneurons_, const std::string inputFile_prefix,
-                 const TILING_TYPE tiling_type, const INPUT_TYPE input_type) : Nneurons(Nneurons_) {
+Net<Weight>::Net(const uint32_t Nneurons_, const std::string inputFile_prefix, const INPUT_TYPE input_type,
+                 const TILING_TYPE tiling_type, const COMPRESSED_FORMAT compression_type) : Nneurons(Nneurons_) {
     std::vector<Weight> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
     std::vector<uint32_t> NneuronsVector = {1024, 4096, 16384, 65536};    
     uint32_t idxN = std::distance(NneuronsVector.begin(), std::find(NneuronsVector.begin(), NneuronsVector.end(), Nneurons));
@@ -41,7 +42,8 @@ Net<Weight>::Net(const uint32_t Nneurons_, const std::string inputFile_prefix,
     std::string feature_file = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons);
     feature_file += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
     
-    tiling = std::move(std::make_unique<Tiling<Weight>>(tiling_type, (Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, feature_file, input_type));
+    tiling = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks,
+                         feature_file, input_type, tiling_type, compression_type));
     
 }
 
