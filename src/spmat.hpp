@@ -23,9 +23,10 @@ struct Compressed_Format {
         virtual ~Compressed_Format() {};
         virtual void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width) {};
         virtual void walk() {};
+        
+        uint64_t nnz;
         uint32_t nrows;
         uint32_t ncols;
-        uint64_t nnz;
         
         std::shared_ptr<struct Data_Block<uint32_t>> IA_blk;
         std::shared_ptr<struct Data_Block<uint32_t>> JA_blk;
@@ -37,7 +38,7 @@ struct Compressed_Format {
 template<typename Weight>
 struct CSR : public Compressed_Format<Weight> {
     public:
-        CSR(uint32_t nrows_, uint32_t ncols_, uint64_t nnz_);//CSR::nnz = 0; CSR::nrows = 0; CSR::ncols = 0;};
+        CSR(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_);//CSR::nnz = 0; CSR::nrows = 0; CSR::ncols = 0;};
         ~CSR(){};
         
         void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width);
@@ -46,10 +47,10 @@ struct CSR : public Compressed_Format<Weight> {
 
 
 template<typename Weight>
-CSR<Weight>::CSR(uint32_t nrows_, uint32_t ncols_, uint64_t nnz_) {
+CSR<Weight>::CSR(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
+    CSR::nnz = nnz_;
     CSR::nrows = nrows_; 
     CSR::ncols = ncols_;
-    CSR::nnz = nnz_;
     
     CSR::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSR::nrows + 1));
     CSR::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSR::nnz));
@@ -85,7 +86,6 @@ void CSR<Weight>::populate(std::vector<struct Triple<Weight>>& triples, uint32_t
 
 template<typename Weight>
 void CSR<Weight>::walk() {    
-
     uint32_t* IA = CSR::IA_blk->ptr;
     uint32_t* JA = CSR::JA_blk->ptr;
     Weight* A = CSR::A_blk->ptr;
@@ -102,7 +102,13 @@ void CSR<Weight>::walk() {
             //std::cout << "    i=" << i << ",j=" << JA[j] <<  ",value=" << A[j] << std::endl;
         }
     }
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compress: CSR checksum=%f, Count=%lu\n", sum, count);
+    
+    if(count != CSR::nnz) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Compression failed\n");
+        std::exit(Env::finalize());     
+    }
+    
+    //std::cout << "Checksum=" << sum << ",Count=" << count << std::endl;
 }
 
 
