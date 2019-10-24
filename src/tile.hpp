@@ -24,7 +24,7 @@ struct Tile{
         //std::unique_ptr<struct Compressed_Format<Weight>> spmat;
         
         int32_t rank;
-        uint64_t nedges;
+        uint64_t nedges = 0;
 };
 
 template<typename Weight>
@@ -49,10 +49,12 @@ void Tile<Weight>::sort(const COMPRESSED_FORMAT compression_type, const RowSort<
 template<typename Weight>
 void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type, uint32_t tile_height, uint32_t tile_width) {            
     if(compression_type == COMPRESSED_FORMAT::_CSR_) {
-        spmat = std::make_shared<CSR<Weight>>(tile_height, tile_width, triples.size());
+        spmat = std::make_shared<CSR<Weight>>(triples.size(), tile_height, tile_width);
         //spmat.reset((tile_height, tile_width, triples.size()));
         spmat->populate(triples, tile_height, tile_width);
-        //spmat->walk();
+        spmat->walk();
+        triples.clear();
+        triples.shrink_to_fit();
     }
     /*
     else if(compression_type == COMPRESSED_FORMAT::_DCSR_) {
