@@ -196,22 +196,21 @@ void Tiling<Weight>::print_tiling(const std::string field) {
             for (uint32_t j = 0; j < ncolgrps; j++) {  
                 auto& tile = tiles[i][j];   
                 if(field.compare("rank") == 0) 
-                    printf("%d ", tile.rank);
+                    Logging::print(Logging::LOG_LEVEL::VOID, "%d ", tile.rank);
                 else if(field.compare("nedges") == 0) 
-                    printf("%lu ", tile.nedges);
-                
+                    Logging::print(Logging::LOG_LEVEL::VOID, "%d ", tile.nedges);
                 if(j > skip) {
-                    printf("...");
+                    Logging::print(Logging::LOG_LEVEL::VOID, "...");
                     break;
                 }
             }
-            printf("\n");
+            Logging::print(Logging::LOG_LEVEL::VOID, "\n");
             if(i > skip) {
-                printf(".\n.\n.\n");
+                Logging::print(Logging::LOG_LEVEL::VOID, ".\n.\n.\n");
                 break;
             }
         }
-        //printf("\n");
+        //Logging::print(Logging::LOG_LEVEL::VOID, "\n");
     }
 }
 
@@ -373,7 +372,7 @@ void Tiling<Weight>::tile_load() {
     tile_load_print(rank_nedges, nedges, Env::nranks, "rank");
     tile_load_print(rowgrp_nedges, nedges, nrowgrps, "row group");
     tile_load_print(colgrp_nedges, nedges, ncolgrps, "column group");
-    
+    print_tiling("nedges");
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Done calculating imbalance.\n");
     Env::barrier();
 }
@@ -413,7 +412,7 @@ void Tiling<Weight>::tile_load_print(const std::vector<uint64_t> nedges_vec, con
 template<typename Weight>
 void Tiling<Weight>::compress_tile(COMPRESSED_FORMAT compression_type) {
     Env::barrier();
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compress: Start compressing tile using %s \n", COMPRESSED_FORMATS[compression_type]);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Start compressing tile using %s \n", COMPRESSED_FORMATS[compression_type]);
     
     const RowSort<Weight> f_row;
     const ColSort<Weight> f_col;	
@@ -422,14 +421,13 @@ void Tiling<Weight>::compress_tile(COMPRESSED_FORMAT compression_type) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
-                auto& triples = tile.triples;
                 tile.sort(compression_type, f_row, f_col);
                 tile.compress(compression_type, tile_height, tile_width);
             }
         }
     }    
 
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compress: Done compressing tiles.\n");
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Done compressing tiles.\n");
     Env::barrier();      
 }
 
