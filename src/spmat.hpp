@@ -27,19 +27,6 @@ struct Compressed_Format {
         uint32_t ncols;
         uint64_t nnz;
         
-        /*
-        uint32_t* JA;
-        uint32_t* IA;
-        Weight*   A;
-        struct Data_Block<uint32_t>* IA_blk;
-        struct Data_Block<uint32_t>* JA_blk;
-        struct Data_Block<Weight>* A_blk;
-        
-        uint32_t* IA;
-        uint32_t* JA;
-        Weight*   A;
-        */
-        
         std::shared_ptr<struct Data_Block<uint32_t>> IA_blk;
         std::shared_ptr<struct Data_Block<uint32_t>> JA_blk;
         std::shared_ptr<struct Data_Block<Weight>>  A_blk;
@@ -67,29 +54,19 @@ CSR<Weight>::CSR(uint32_t nrows_, uint32_t ncols_, uint64_t nnz_) {
     CSR::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSR::nrows + 1));
     CSR::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSR::nnz));
     CSR::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSR::nnz));
-    
-
-    
-    
-                     //printf("Compress %d %d %lu %lu\n", CSR::nrows, CSR::ncols, CSR::nnz, CSR::A_blk->nitems);
 }
 
 template<typename Weight>
 void CSR<Weight>::populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width) {
-    //printf("Compress %d %d\n", tile_height, tile_width);
-    //printf("Compress %lu %lu %lu\n", CSR::IA_blk->nitems, CSR::JA_blk->nitems, CSR::A_blk->nitems);
-    
     uint32_t* IA = CSR::IA_blk->ptr;
     uint32_t* JA = CSR::JA_blk->ptr;
     Weight* A = CSR::A_blk->ptr;
-    
     
     uint32_t i = 1;
     uint32_t j = 0; 
     IA[0] = 0;
     for(auto &triple: triples) {
         std::pair pair = std::make_pair((triple.row % tile_height), (triple.col % tile_width));
-        //printf("%d %d %d %d %f\n", i, j, triple.row, triple.col, triple.weight);
         while((i - 1) != pair.first) {
             i++;
             IA[i] = IA[i - 1];
@@ -99,54 +76,16 @@ void CSR<Weight>::populate(std::vector<struct Triple<Weight>>& triples, uint32_t
         A[j] = triple.weight;
         j++;
     }
-    ///printf("%d %d %d %d\n", i, j, CSR::nrows, (i + 1) <= CSR::nrows);
+    
     while(i < CSR::nrows) {
-       ///  printf("%d %d %d %d\n", i, j, CSR::nrows, (i + 1) <= CSR::nrows);
         i++;
         IA[i] = IA[i - 1];
     }
-
-    
-    /*
-    if(ncols and nnz and triples.size()) {
-        uint32_t i = 0;
-        uint32_t j = 1;        
-        JA[0] = 0;
-        for(auto &triple : triples) {
-            while((j - 1) != triple.col) {
-                j++;
-                JA[j] = JA[j - 1];
-            }                  
-            JA[j]++;
-            IA[i] = triple.row;
-            A[i] = triple.weight;
-            i++;
-        }
-        while((j + 1) <= ncols) {
-            j++;
-            JA[j] = JA[j - 1];
-        }
-    }
-    */    
-    
-    
-    /*
-    JA = nullptr;
-    IA = nullptr;
-    A  = nullptr;
-    if(nrows and ncols and nnz) {
-        JA_blk = new Data_Block<uint32_t>(&JA, (ncols + 1), (ncols + 1) * sizeof(uint32_t), page_aligned);
-        IA_blk = new Data_Block<uint32_t>(&IA, nnz, nnz * sizeof(uint32_t), page_aligned);
-        A_blk  = new Data_Block<Weight>(&A,  nnz, nnz * sizeof(Weight), page_aligned);
-        nbytes = IA_blk->nbytes + JA_blk->nbytes + A_blk->nbytes;
-        JA[0] = 0;
-    }
-    
-    */
 }
 
 template<typename Weight>
 void CSR<Weight>::walk() {    
+
     uint32_t* IA = CSR::IA_blk->ptr;
     uint32_t* JA = CSR::JA_blk->ptr;
     Weight* A = CSR::A_blk->ptr;
@@ -154,14 +93,13 @@ void CSR<Weight>::walk() {
     double sum = 0;
     uint64_t count = 0;
     for(uint32_t i = 0; i < CSR::nrows; i++) {
-        //printf("i=%d: %d\n", i, IA[i + 1] - IA[i]);
-        
+        //std::cout << "i=" << i << ": " << IA[i + 1] - IA[i] << std::endl;
         for(uint32_t j = IA[i]; j < IA[i + 1]; j++) {
             (void) JA[j];
             (void) A[j];
             sum += A[j];
             count++;
-          //  std::cout << "    i=" << i << ",j=" << JA[j] <<  ",value=" << A[j] << std::endl;
+            //std::cout << "    i=" << i << ",j=" << JA[j] <<  ",value=" << A[j] << std::endl;
         }
     }
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile compress: CSR checksum=%f, Count=%lu\n", sum, count);
