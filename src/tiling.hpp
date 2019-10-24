@@ -59,9 +59,7 @@ class Tiling {
         void tile_exchange();
         void tile_load();
         void tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type);        
-        void tile_sort(COMPRESSED_FORMAT compression_type);	
         void compress_tile(COMPRESSED_FORMAT compression_type);
-        
 };
 
 /* Process-based tiling based on MPI ranks*/ 
@@ -85,7 +83,6 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     
     tile_exchange();
     tile_load();
-    //tile_sort(compression_type);
     compress_tile(compression_type);
 }
 
@@ -413,38 +410,6 @@ void Tiling<Weight>::tile_load_print(const std::vector<uint64_t> nedges_vec, con
     }
 }
 
-template<typename Weight>	
-void Tiling<Weight>::tile_sort(COMPRESSED_FORMAT compression_type) {	
-    Env::barrier();	
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Start sorting tiles for %s compression.\n", COMPRESSED_FORMATS[compression_type]);	
-    const RowSort<Weight> f_row;
-    const ColSort<Weight> f_col;	
-
-    for (uint32_t i = 0; i < nrowgrps; i++) {	
-        for (uint32_t j = 0; j < ncolgrps; j++) {	
-            auto& tile = tiles[i][j];	
-            //auto& triples = tile.triples;	
-            tile.sort(compression_type, f_row, f_col);
-/*
-            if(not triples.empty()) {	
-                if((compression_type == COMPRESSED_FORMAT::_CSR_)  or
-                   (compression_type == COMPRESSED_FORMAT::_DCSR_) or
-                   (compression_type == COMPRESSED_FORMAT::_TCSR_)) {
-                        std::sort(triples.begin(), triples.end(), f_row);    	
-                }
-                else if((compression_type == COMPRESSED_FORMAT::_CSC_)  or
-                   (compression_type == COMPRESSED_FORMAT::_DCSC_) or
-                   (compression_type == COMPRESSED_FORMAT::_TCSC_)) {
-                        std::sort(triples.begin(), triples.end(), f_col);    	
-                }
-            }
-*/            
-        }	
-    }        	
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Done  sorting tiles.\n");	
-    Env::barrier();	
-}
-
 template<typename Weight>
 void Tiling<Weight>::compress_tile(COMPRESSED_FORMAT compression_type) {
     Env::barrier();
@@ -453,25 +418,13 @@ void Tiling<Weight>::compress_tile(COMPRESSED_FORMAT compression_type) {
     const RowSort<Weight> f_row;
     const ColSort<Weight> f_col;	
     
-    //COMPRESSED_BLOCK_TYPE CT = COMPRESSED_BLOCK_TYPE::_COL_MAJOR_;
-    COMPRESSED_FORMAT CSF = COMPRESSED_FORMAT::_CSR_;
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
                 auto& triples = tile.triples;
                 tile.sort(compression_type, f_row, f_col);
-                tile.allocate_compression(compression_type, tile_height, tile_width);
-                /*
-                auto& spmat = tile.spmat;
-                
-                if(CSF == COMPRESSED_FORMAT::_CSR_) {
-                    spmat = std::make_shared<CSR<Weight>>();
-                }
-                else if(CSF == COMPRESSED_FORMAT::_CSC_) {
-                    spmat = std::make_shared<CSC<Weight>>();
-                }
-                */
+                tile.compress(compression_type, tile_height, tile_width);
             }
         }
     }    
