@@ -17,7 +17,7 @@ struct Tile{
         ~Tile() {};
         
         void sort(const COMPRESSED_FORMAT compression_type, const RowSort<Weight> f_row, const ColSort<Weight> f_col);
-        void allocate_compression(const COMPRESSED_FORMAT compression_type, uint32_t tile_height, uint32_t tile_width);
+        void compress(const COMPRESSED_FORMAT compression_type, uint32_t tile_height, uint32_t tile_width);
         
         std::vector<struct Triple<Weight>> triples;
         std::shared_ptr<struct Compressed_Format<Weight>> spmat = nullptr;
@@ -47,12 +47,12 @@ void Tile<Weight>::sort(const COMPRESSED_FORMAT compression_type, const RowSort<
 
 
 template<typename Weight>
-void Tile<Weight>::allocate_compression(const COMPRESSED_FORMAT compression_type, uint32_t tile_height, uint32_t tile_width) {            
+void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type, uint32_t tile_height, uint32_t tile_width) {            
     if(compression_type == COMPRESSED_FORMAT::_CSR_) {
         spmat = std::make_shared<CSR<Weight>>(tile_height, tile_width, triples.size());
         //spmat.reset((tile_height, tile_width, triples.size()));
         spmat->populate(triples, tile_height, tile_width);
-        spmat->walk();
+        //spmat->walk();
     }
     /*
     else if(compression_type == COMPRESSED_FORMAT::_DCSR_) {
