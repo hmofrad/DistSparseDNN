@@ -31,14 +31,14 @@ int main(int argc, char **argv) {
         std::exit(Env::finalize());   
     }
 
-    if(argc != 7) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "USAGE = %s -n <Nneurons> -l <maxLayers> <path_to_input> <path_to_dnn> <Ninput_instances> <Ninput_features>\n", argv[0]);
+    if(argc != 9) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "USAGE = %s -m <NinputInstances> -n <Nneurons> -l <maxLayers> <path_to_input> <path_to_dnn>\n", argv[0]);
         std::exit(Env::finalize());     
     }
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Radix-Net sparse DNN for MNIST dataset Implementation\n");
     Logging::print(Logging::LOG_LEVEL::INFO, "MPI ranks = %d, Threads per rank = %d\n", Env::nranks, Env::nthreads);
-    Net<WGT> N(atoi(argv[2]), ((std::string) argv[5]), atoi(argv[4]), ((std::string) argv[6])) ;
+    Net<WGT> N(atoi(argv[2]), atoi(argv[4]), ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]));//, INPUT_TYPE::_TEXT_) ;
     Logging::print(Logging::LOG_LEVEL::INFO, "Total IO time %f\n", Env::io_time);
     return(Env::finalize());
 }
