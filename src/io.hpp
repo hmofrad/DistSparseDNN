@@ -21,13 +21,13 @@ namespace IO {
     template<typename Weight>
     std::tuple<uint32_t, uint32_t, uint64_t> text_file_stat(const std::string inputFile);
     template<typename Weight>
-    void text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width);
+    void text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank);
     void text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
     
     template<typename Weight>
     std::tuple<uint32_t, uint32_t, uint64_t> binary_file_stat(const std::string inputFile);
     template<typename Weight>
-    void binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width);
+    void binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank);
     void binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
 }
 
@@ -58,12 +58,15 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::text_file_stat(const std::string in
     }
     fin.close();
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done  collecting info from the input file %s\n", inputFile.c_str());
+    Env::barrier();
+    
     Env::io_time += Env::toc();
+    
     return std::make_tuple(nrows + 1, ncols + 1, nnz);
 }
 
 template<typename Weight>
-void IO::text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width) {
+void IO::text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank) {
     Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start reading the input file %s\n", inputFile.c_str());
@@ -91,6 +94,15 @@ void IO::text_file_read(const std::string inputFile, std::vector<std::vector<str
     while(curr_line < start_line) {
         std::getline(fin, line);
         curr_line++;
+    }
+    
+    if(one_rank) {
+        share = nlines;
+        start_line = 0;
+        end_line = nlines;
+        curr_line = 0;
+        fin.clear();
+        fin.seekg(0, std::ios_base::beg);
     }
     
     std::vector<struct Triple<Weight>> triples(share);
@@ -235,12 +247,12 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::binary_file_stat(const std::string 
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done  collecting info from the input file %s\n", inputFile.c_str());
     
     Env::io_time += Env::toc();
-    
+    Env::barrier();
     return std::make_tuple(nrows + 1, ncols + 1, nnz);
 } 
  
 template<typename Weight>
-void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width) {
+void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank) {
     Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the input file %s\n", inputFile.c_str());
@@ -264,13 +276,21 @@ void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<s
     
     uint64_t nTriples = filesize / sizeof(struct Triple<Weight>);
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: File size is %lu bytes with %lu triples\n", filesize, nTriples);
-
+    
     uint64_t share = (nTriples / Env::nranks) * sizeof(struct Triple<Weight>);
+    
     uint64_t start_offset = Env::rank * share;
     uint64_t end_offset = (Env::rank != Env::nranks - 1) ? ((Env::rank + 1) * share) : filesize;
     share = (Env::rank == Env::nranks - 1) ? end_offset - start_offset : share;
     uint64_t share_tripels = share/sizeof(struct Triple<Weight>);
-
+    
+    if(one_rank) {
+        share = filesize;
+        start_offset = 0;
+        end_offset = filesize;
+        share_tripels = share/sizeof(struct Triple<Weight>);
+    }
+    
     std::vector<struct Triple<Weight>> triples(share_tripels);    
     #pragma omp parallel
     {
