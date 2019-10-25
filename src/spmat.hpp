@@ -31,7 +31,6 @@ struct Compressed_Format {
         std::shared_ptr<struct Data_Block<uint32_t>> IA_blk;
         std::shared_ptr<struct Data_Block<uint32_t>> JA_blk;
         std::shared_ptr<struct Data_Block<Weight>>  A_blk;
-        
 };
 
 
