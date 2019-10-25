@@ -432,8 +432,6 @@ void Tiling<Weight>::compress_tile(COMPRESSED_FORMAT compression_type) {
 }
 
 
-
-
 /* Thread-based tiling based on MPI ranks*/ 
 /*
 template<typename Weight>
