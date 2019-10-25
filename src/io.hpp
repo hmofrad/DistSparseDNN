@@ -33,6 +33,7 @@ namespace IO {
 
 template<typename Weight>
 std::tuple<uint32_t, uint32_t, uint64_t> IO::text_file_stat(const std::string inputFile) {
+    Env::tic();
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start collecting info from the input file %s\n", inputFile.c_str());
     uint32_t nrows = 0;
     uint32_t ncols = 0;    
@@ -57,11 +58,14 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::text_file_stat(const std::string in
     }
     fin.close();
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done  collecting info from the input file %s\n", inputFile.c_str());
+    Env::io_time += Env::toc();
     return std::make_tuple(nrows + 1, ncols + 1, nnz);
 }
 
 template<typename Weight>
 void IO::text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width) {
+    Env::tic();
+    
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start reading the input file %s\n", inputFile.c_str());
     
     std::ifstream fin(inputFile.c_str(), std::ios_base::in);
@@ -136,9 +140,13 @@ void IO::text_file_read(const std::string inputFile, std::vector<std::vector<str
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done reading the input file %s\n", inputFile.c_str());
     Env::barrier();
+    
+    Env::io_time += Env::toc();
 }
 
 void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
+    Env::tic();
+    
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start reading the category file %s\n", inputFile.c_str());
     
     std::ifstream fin(inputFile.c_str(), std::ios_base::in);
@@ -185,11 +193,15 @@ void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done  reading the category file %s %d\n", inputFile.c_str());
     Env::barrier();
+    
+    Env::io_time += Env::toc();
 } 
  
  
 template<typename Weight>
 std::tuple<uint32_t, uint32_t, uint64_t> IO::binary_file_stat(const std::string inputFile) {
+    Env::tic();
+    
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start collecting info from the input file %s\n", inputFile.c_str());
     uint32_t nrows = 0;
     uint32_t ncols = 0;    
@@ -221,11 +233,15 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::binary_file_stat(const std::string 
     }
     fin.close();
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done  collecting info from the input file %s\n", inputFile.c_str());
+    
+    Env::io_time += Env::toc();
+    
     return std::make_tuple(nrows + 1, ncols + 1, nnz);
 } 
  
 template<typename Weight>
 void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width) {
+    Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the input file %s\n", inputFile.c_str());
     
@@ -292,14 +308,16 @@ void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<s
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done reading the input file %s\n", inputFile.c_str());
     Env::barrier();
+    
+    Env::io_time += Env::toc();
 }
  
  
 
 void IO::binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
+    Env::tic();
+    
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the category file %s\n", inputFile.c_str());
-    
-    
     
     std::ifstream fin(inputFile.c_str(), std::ios_base::binary);
     if(not fin.is_open()) {
@@ -345,5 +363,7 @@ void IO::binary_file_categories(const std::string inputFile, std::vector<uint32_
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done  reading the category file %s %d\n", inputFile.c_str());
     Env::barrier();
+    
+    Env::io_time += Env::toc();
 }  
 #endif
