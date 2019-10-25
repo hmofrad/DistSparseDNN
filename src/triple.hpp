@@ -44,12 +44,4 @@ struct RowSort {
                                               : (a.row < b.row));
     }
 };
-
-/*
-template <>
-struct ColSort {
-    return((a.col == b.col) ? (a.row < b.row) : (a.col < b.col));
-};
-*/
-
 #endif
