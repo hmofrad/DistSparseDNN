@@ -19,7 +19,9 @@ namespace Logging {
 
 void Logging::print(const int log_level, const char* format, ...) {
     if(enabled) {
-        if((print_at_rank_zero and !Env::rank) or (not print_at_rank_zero)) {
+        if((print_at_rank_zero and !Env::rank) or 
+           (not print_at_rank_zero) or
+           (print_at_rank_zero and !strncmp(Logging::LOG_LEVELS[log_level], LOG_LEVELS[ERROR], 4))) {
             if(strncmp(Logging::LOG_LEVELS[log_level], LOG_LEVELS[VOID], 4)) {
                 printf("%s[rank=%d] ", Logging::LOG_LEVELS[log_level], Env::rank);
             }
