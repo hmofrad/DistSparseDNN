@@ -28,7 +28,7 @@ class Tiling {
         Tiling() {};
         ~Tiling() {};
         
-        Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_,
+        Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const uint32_t nrows_, const uint32_t ncols_,
                const std::string input_file, const INPUT_TYPE input_type,
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type);
         //Tiling( TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrowgrps_, uint32_t ncolgrps_, uint32_t nranks_, uint32_t rank_nthreads_);
@@ -49,6 +49,8 @@ class Tiling {
         uint32_t tile_height, tile_width;
         
         std::vector<std::vector<struct Tile<Weight>>> tiles;
+        
+        bool one_rank = false;
 
     private:
         void integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b);
@@ -64,25 +66,33 @@ class Tiling {
 
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
-Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
+Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type, const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type) 
         : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_) , nranks(nranks_)
         , rank_ntiles(ntiles_/nranks_), tiling_type(tiling_type_) {
+            
+    one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;           
            
     std::tie(nrows, ncols, nnz) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(input_file)
                                                                      : IO::binary_file_stat<Weight>(input_file);
     
+    nrows = (nrows_ > 0) ? nrows_ : nrows; 
+    ncols = (ncols_ > 0) ? ncols_ : ncols; 
+                     
     populate_tiling();
-    
+ 
     if(INPUT_TYPE::_TEXT_ == input_type) {
-        IO::text_file_read<Weight>(input_file, tiles, tile_height, tile_width);
+        IO::text_file_read<Weight>(input_file, tiles, tile_height, tile_width, one_rank);
     }
     else {
-        IO::binary_file_read<Weight>(input_file, tiles, tile_height, tile_width);
+        IO::binary_file_read<Weight>(input_file, tiles, tile_height, tile_width, one_rank);
     }
     
-    tile_exchange();
-    tile_load();
+    if(not one_rank) {
+        tile_exchange();
+        tile_load();
+    }
+
     compress_tile(compression_type);
 }
 
@@ -145,7 +155,13 @@ void Tiling<Weight>::populate_tiling() {
             tile.rank = (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
         }
     }
-    if(not assert_tiling()) {
+    
+    if(one_rank) {
+        auto& single_tile = tiles[0][0];
+        single_tile.rank = Env::rank;
+    }
+    
+    if((not one_rank) and (not assert_tiling())) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
     }
