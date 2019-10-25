@@ -22,10 +22,18 @@ namespace Env {
     int rank = 0;
     int nthreads = 0;
     const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
+    double start_time = 0;
+    double end_time = 0;
+    
+    double io_time = 0;
+    double compression_time = 0;
+    
     int init();
-    double clock();
     void barrier();
     int finalize();
+    double clock();
+    void tic();
+    double toc();
 }
 
 int Env::init() {
@@ -58,6 +66,18 @@ double Env::clock() {
     return(MPI_Wtime());
 }
 
+void Env::tic() {
+    start_time = Env::clock();
+}
+
+double Env::toc() {
+    end_time = Env::clock();
+    double elapsed_time = end_time - start_time;
+    start_time = 0;
+    end_time = 0;
+    return(elapsed_time);
+}
+
 void Env::barrier() {
     MPI_Barrier(MPI_COMM_WORLD);
 }
@@ -69,6 +89,8 @@ int Env::finalize() {
     return((ret == MPI_SUCCESS) ? 0 : 1);
     //std::exit(code);
 }
+
+
 
 
  /*
