@@ -18,28 +18,48 @@ class Net {
         Net() {};
         ~Net() {};
         
-        Net(const uint32_t Nneurons_, const std::string inputFile_prefix, 
-            const uint32_t maxLayers_, const std::string layerFile_prefix,
+        Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, 
+            const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
             const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_,
             const TILING_TYPE tiling_type_ = TILING_TYPE::_1D_ROW_,
             const COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSR_);
         
-        std::unique_ptr<struct Tiling<Weight>> tiling = nullptr;
+        void inferenceReLU();
+        
+        std::unique_ptr<struct Tiling<Weight>> inputFeatures = nullptr;
         std::vector<uint32_t> trueCategories;
         std::vector<std::unique_ptr<struct Tiling<Weight>>> layers;
         std::vector<std::vector<Weight>> biasDenseVecs;
         std::vector<std::vector<Weight>> spaDenseVec;
-        
+
+        uint32_t NinputInstanses;        
         uint32_t Nneurons;
         Weight biasValue;
         uint32_t maxLayers;
 };
 
 template<typename Weight>
-Net<Weight>::Net(const uint32_t Nneurons_, const std::string inputFile_prefix, 
+Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, const std::string inputFile_prefix, 
                  const uint32_t maxLayers_, const std::string layerFile_prefix,
                  const INPUT_TYPE input_type, const TILING_TYPE tiling_type, 
-                 const COMPRESSED_FORMAT compression_type) : Nneurons(Nneurons_), maxLayers(maxLayers_) {
+                 const COMPRESSED_FORMAT compression_type) : NinputInstanses(NinputInstanses_), Nneurons(Nneurons_), maxLayers(maxLayers_) {
+    
+        
+    
+    
+    //int i = 0;
+    //layers.resize(maxLayers);
+    //std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "/n" + std::to_string(Nneurons) + "-l" + std::to_string(i+1);
+    //layerFile += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
+    //layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, layerFile, input_type, tiling_type, compression_type)); 
+    
+    //printf("EXITING\n");
+    //Env::finalize();
+    //exit(0);
+    
+    
+    
+    
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing input feature file for %d neurons.\n", Nneurons);  
     std::vector<Weight> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
@@ -54,9 +74,9 @@ Net<Weight>::Net(const uint32_t Nneurons_, const std::string inputFile_prefix,
     std::string feature_file = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons);
     feature_file += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
     
-    tiling = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks,
+    inputFeatures = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, (NinputInstanses+1), (Nneurons+1),
                         feature_file, input_type, tiling_type, compression_type));
-    
+
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", Nneurons, maxLayers); 
     std::vector<uint32_t> maxLayersVector = {120, 480, 1920};
     uint32_t idxL = std::distance(maxLayersVector.begin(), std::find(maxLayersVector.begin(), maxLayersVector.end(), maxLayers));
@@ -70,29 +90,32 @@ Net<Weight>::Net(const uint32_t Nneurons_, const std::string inputFile_prefix,
     //printf("INFO: Start reading the category file %s\n", categoryFile.c_str());
     
     if(INPUT_TYPE::_TEXT_ == input_type) {
-        IO::text_file_categories(categoryFile, trueCategories, tiling->tile_height);
+        IO::text_file_categories(categoryFile, trueCategories, inputFeatures->tile_height);
     }
     else {
-        IO::binary_file_categories(categoryFile, trueCategories, tiling->tile_height);
+        IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->tile_height);
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
     Logging::enabled = false; 
+    //maxLayers = 1 ;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
         std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "/n" + std::to_string(Nneurons) + "-l" + std::to_string(i+1);
         layerFile += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
-        layers[i] = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks,
-                         layerFile, input_type, tiling_type, compression_type)); 
-        biasDenseVecs[i] = std::vector<Weight>(tiling->tile_height, biasValue);
+        //layers[i] = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks,
+        //                 layerFile, input_type, tiling_type, compression_type)); 
+        //biasDenseVecs[i] = std::vector<Weight>(inputFeatures->tile_height, biasValue);
+        layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, inputFeatures->ncols, inputFeatures->ncols, layerFile, input_type, tiling_type, compression_type)); 
+        //break;
+        biasDenseVecs[i] = std::vector<Weight>(inputFeatures->tile_height, biasValue);
     }
-    spaDenseVec.resize(tiling->tile_height);
+    //spaDenseVec.resize(inputFeatures->tile_height);
+    spaDenseVec.resize(inputFeatures->tile_height);
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method.\n"); 
-    uint32_t nrows = 0;
-    uint32_t ncols = 0;
-    uint64_t nnz = 0;
+    
     
     //std::tie(nrows, ncols, nnz) =  spmm_sym();
     
@@ -108,7 +131,22 @@ Net<Weight>::Net(const uint32_t Nneurons_, const std::string inputFile_prefix,
     */
     
     
-    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: inferenceReLU? %d %d %lu\n", nrows, ncols, nnz); 
+    
 }
+
+template<typename Weight>
+void Net<Weight>::inferenceReLU() {
+    uint32_t nrows = 0;
+    uint32_t ncols = 0;
+    uint64_t nnz = 0;
+    
+    //std::tie(nrows, ncols, nnz) =  spmm_sym();
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: inferenceReLU? %d %d %lu\n", nrows, ncols, nnz); 
+    
+}
+
+    
+
 
 #endif 
