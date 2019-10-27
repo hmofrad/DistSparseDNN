@@ -33,11 +33,10 @@ struct Compressed_Format {
         std::shared_ptr<struct Data_Block<Weight>>  A_blk;
 };
 
-
 template<typename Weight>
 struct CSR : public Compressed_Format<Weight> {
     public:
-        CSR(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_);//CSR::nnz = 0; CSR::nrows = 0; CSR::ncols = 0;};
+        CSR(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_);
         ~CSR(){};
         
         void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width);
@@ -101,14 +100,90 @@ void CSR<Weight>::walk() {
             //std::cout << "    i=" << i << ",j=" << JA[j] <<  ",value=" << A[j] << std::endl;
         }
     }
-    
     if(count != CSR::nnz) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Compression failed\n");
         std::exit(Env::finalize());     
     }
-    
     //std::cout << "Checksum=" << sum << ",Count=" << count << std::endl;
 }
+
+
+
+template<typename Weight>
+struct CSC : public Compressed_Format<Weight> {
+    public:
+        CSC(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_);
+        ~CSC(){};
+        
+        void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width);
+        void walk();
+};
+
+
+template<typename Weight>
+CSC<Weight>::CSC(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
+    CSC::nnz = nnz_;
+    CSC::nrows = nrows_; 
+    CSC::ncols = ncols_;
+    
+    CSC::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::nnz));
+    CSC::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::ncols + 1));
+    CSC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSC::nnz));
+}
+
+template<typename Weight>
+void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width) {
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight* A = CSC::A_blk->ptr;
+    
+    uint32_t i = 0;
+    uint32_t j = 1; 
+    JA[0] = 0;
+    for(auto &triple: triples) {
+        std::pair pair = std::make_pair((triple.row % tile_height), (triple.col % tile_width));
+        while((j - 1) != pair.second) {
+            j++;
+            JA[j] = JA[j - 1];
+        }                  
+        JA[j]++;
+        IA[i] = pair.first;
+        A[i] = triple.weight;
+        i++;
+    }
+    
+    while(j < CSC::ncols) {
+        j++;
+        JA[j] = JA[j - 1];
+    }
+}
+
+template<typename Weight>
+void CSC<Weight>::walk() {    
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight* A = CSC::A_blk->ptr;
+    
+    double sum = 0;
+    uint64_t count = 0;
+    for(uint32_t j = 0; j < CSC::ncols; j++) {
+        //std::cout << "j=" << j << ": " << JA[j + 1] - JA[j] << std::endl;
+        for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
+            (void) IA[i];
+            (void) A[i];
+            sum += A[i];
+            count++;
+            //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
+        }
+    }
+    if(count != CSC::nnz) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Compression failed\n");
+        std::exit(Env::finalize());     
+    }
+    //std::cout << "Checksum=" << sum << ",Count=" << count << std::endl;
+}
+
+
 
 
 /*
