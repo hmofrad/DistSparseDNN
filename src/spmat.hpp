@@ -24,6 +24,8 @@ struct Compressed_Format {
         virtual void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width) {};
         virtual void walk() {};
         
+        COMPRESSED_FORMAT compression_type;
+        
         uint64_t nnz;
         uint32_t nrows;
         uint32_t ncols;
@@ -46,6 +48,7 @@ struct CSR : public Compressed_Format<Weight> {
 
 template<typename Weight>
 CSR<Weight>::CSR(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
+    Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_CSR_;
     CSR::nnz = nnz_;
     CSR::nrows = nrows_; 
     CSR::ncols = ncols_;
@@ -122,6 +125,7 @@ struct CSC : public Compressed_Format<Weight> {
 
 template<typename Weight>
 CSC<Weight>::CSC(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
+    Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_CSC_;
     CSC::nnz = nnz_;
     CSC::nrows = nrows_; 
     CSC::ncols = ncols_;
