@@ -92,6 +92,14 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         tile_exchange();
         tile_load();
     }
+    else {
+        for (uint32_t i = 0; i < nrowgrps; i++) {
+            for (uint32_t j = 0; j < ncolgrps; j++) {
+                tiles[i][j].nedges = tiles[i][j].triples.size();
+            }
+        }
+        print_tiling("nedges");
+    }
 
     compress_tile(compression_type);
 }
