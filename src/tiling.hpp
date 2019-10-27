@@ -157,8 +157,11 @@ void Tiling<Weight>::populate_tiling() {
     }
     
     if(one_rank) {
-        auto& single_tile = tiles[0][0];
-        single_tile.rank = Env::rank;
+        for (uint32_t i = 0; i < nrowgrps; i++) {
+            for (uint32_t j = 0; j < ncolgrps; j++) {
+                tiles[i][j].rank = Env::rank;
+            }
+        }
     }
     
     if((not one_rank) and (not assert_tiling())) {
