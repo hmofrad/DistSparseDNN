@@ -46,17 +46,17 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     
         
     
-    
-    //int i = 0;
-    //layers.resize(maxLayers);
-    //std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "/n" + std::to_string(Nneurons) + "-l" + std::to_string(i+1);
-    //layerFile += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
+  /*  
+    int i = 0;
+    layers.resize(maxLayers);
+    std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "/n" + std::to_string(Nneurons) + "-l" + std::to_string(i+1);
+    layerFile += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
     //layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, layerFile, input_type, tiling_type, compression_type)); 
-    
+    layers[i] = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, 1, (Nneurons+1), (Nneurons+1), layerFile, input_type, tiling_type, compression_type)); 
     //printf("EXITING\n");
     //Env::finalize();
     //exit(0);
-    
+*/    
     
     
     
@@ -107,15 +107,16 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         //layers[i] = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks,
         //                 layerFile, input_type, tiling_type, compression_type)); 
         //biasDenseVecs[i] = std::vector<Weight>(inputFeatures->tile_height, biasValue);
-        layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, inputFeatures->ncols, inputFeatures->ncols, layerFile, input_type, tiling_type, compression_type)); 
+        layers[i] = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, 1, inputFeatures->ncols, inputFeatures->ncols, layerFile, input_type, tiling_type, compression_type)); 
         //break;
-        biasDenseVecs[i] = std::vector<Weight>(inputFeatures->tile_height, biasValue);
+        biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
     }
     //spaDenseVec.resize(inputFeatures->tile_height);
-    spaDenseVec.resize(inputFeatures->tile_height);
+    spaDenseVec.resize(inputFeatures->ncols);
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method.\n"); 
     
+    inferenceReLU();
     
     //std::tie(nrows, ncols, nnz) =  spmm_sym();
     
@@ -139,6 +140,8 @@ void Net<Weight>::inferenceReLU() {
     uint32_t nrows = 0;
     uint32_t ncols = 0;
     uint64_t nnz = 0;
+    
+    
     
     //std::tie(nrows, ncols, nnz) =  spmm_sym();
     
