@@ -45,8 +45,12 @@ inline std::tuple<uint32_t, uint32_t, uint64_t> spmm_sym(std::shared_ptr<struct 
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols);
             std::exit(Env::finalize()); 
         }
+                
+        nrows = A_nrows;
+        ncols = B_ncols;
         
-        //printf("CSR: %d %d %lu %d %d\n", A->compression_type, B->compression_type, nnz, nrows, ncols);
+        Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM _CSR_ not implemented.\n");
+        std::exit(Env::finalize()); 
     }
     else if((A->compression_type == COMPRESSED_FORMAT::_CSC_) and (B->compression_type == COMPRESSED_FORMAT::_CSC_)) {
         const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
@@ -69,8 +73,9 @@ inline std::tuple<uint32_t, uint32_t, uint64_t> spmm_sym(std::shared_ptr<struct 
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols);
             std::exit(Env::finalize()); 
         }
-        Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d] %lu\n", A_nrows, A_ncols, B_nrows, B_ncols, s.size());
-        /*
+        nrows = A_nrows;
+        ncols = B_ncols;
+       
         for(uint32_t j = 0; j < B_ncols; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
@@ -79,49 +84,14 @@ inline std::tuple<uint32_t, uint32_t, uint64_t> spmm_sym(std::shared_ptr<struct 
                 }
             }
             for(uint32_t i = 0; i < A_nrows; i++) {
-                if(s[i]) {
+                if(s[i]){
                     nnzmax++;
                     s[i] = 0;
                 }
             }
         }
-        
-        */
-        
-        
-        printf("CSC: %d %d %lu %d %d\n", A->compression_type, B->compression_type, nnzmax, nrows, ncols);
     }
-    
-    
-    
-    /*
-    if((compression_type == COMPRESSED_FORMAT::_CSR_)  or
-    spmat = std::make_shared<CSR<Weight>>(triples.size(), tile_height, tile_width);
-    const uint64_t nnz = static_cast<CSR<Weight>(tile.compressor)->nnz;
-    
-    uint32_t* IA = CSC::IA_blk->ptr;
-    uint32_t* JA = CSC::JA_blk->ptr;
-    Weight* A = CSC::A_blk->ptr;
-    
-    uint64_t nnzmax_local = 0;
-    
-    for(uint32_t j = start; j < end; j++) {
-        for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
-            uint32_t l = B_IA[k];
-            for(uint32_t m = A_JA[l]; m < A_JA[l+1]; m++) {
-                s_A[A_IA[m]] = 1;
-            }
-        }
-        for(uint32_t i = 0; i < A_nrows; i++) {
-            if(s_A[i]) {
-                nnzmax_local++;
-                s_A[i] = 0;
-            }
-        }
-    }
-    */
-  
-    return std::make_tuple(nrows + 1, ncols + 1, nnzmax);
+    return std::make_tuple(nrows, ncols, nnzmax);
 }
 
 inline void spmm() {
