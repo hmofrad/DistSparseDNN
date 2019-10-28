@@ -24,13 +24,15 @@ class Net {
             const TILING_TYPE tiling_type_ = TILING_TYPE::_1D_ROW_,
             const COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSC_);
         
-        void inferenceReLU(TILING_TYPE tiling_type);
+        void inferenceReLU(TILING_TYPE tiling_type, COMPRESSED_FORMAT compression_type);
         
         std::unique_ptr<struct Tiling<Weight>> inputFeatures = nullptr;
         std::vector<uint32_t> trueCategories;
         std::vector<std::unique_ptr<struct Tiling<Weight>>> layers;
         std::vector<std::vector<Weight>> biasDenseVecs;
         std::vector<std::vector<Weight>> spaDenseVec;
+        
+        std::unique_ptr<struct Tiling<Weight>> output = nullptr;
 
         uint32_t NinputInstanses;        
         uint32_t Nneurons;
@@ -76,9 +78,19 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     
     //inputFeatures = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, Env::nranks, (NinputInstanses+1), (Nneurons+1),
     //                    feature_file, input_type, tiling_type, compression_type));
-    inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, (NinputInstanses+1), (Nneurons+1),
-                        feature_file, input_type, tiling_type, compression_type));
-
+    
+    uint64_t nnz = 0;
+    uint32_t nrows = 0;
+    uint32_t ncols = 0;
+    
+    std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(feature_file)
+                                                                     : IO::binary_file_stat<Weight>(feature_file);
+                                                                     
+    nrows = ((NinputInstanses + 1) > nrows) ? (NinputInstanses + 1) : nrows; 
+    ncols = ((Nneurons+1) > ncols) ? (Nneurons+1) : ncols;                                                                      
+    
+    inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, feature_file, input_type, tiling_type, compression_type));
+    
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", Nneurons, maxLayers); 
     std::vector<uint32_t> maxLayersVector = {120, 480, 1920};
     uint32_t idxL = std::distance(maxLayersVector.begin(), std::find(maxLayersVector.begin(), maxLayersVector.end(), maxLayers));
@@ -111,44 +123,49 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         //biasDenseVecs[i] = std::vector<Weight>(inputFeatures->tile_height, biasValue);
         //layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, 1, Env::nranks, 1, (Nneurons+1), (Nneurons+1), layerFile, input_type, tiling_type, compression_type)); 
         
-        layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
-        inputFeatures->ncols, inputFeatures->ncols, layerFile, input_type, tiling_type, compression_type)); 
+        std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(layerFile)
+                                                                     : IO::binary_file_stat<Weight>(layerFile);                                                                     
+        nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
+        ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols;                                                                      
         
-        /*
-        if(tiling_type == TILING_TYPE::_1D_ROW_) {
-            layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, 1, Env::nranks, 1, 
-            inputFeatures->ncols, inputFeatures->ncols, layerFile, input_type, tiling_type, compression_type)); 
-        }
-        else if(tiling_type == TILING_TYPE::_1D_COL_) {
-            layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, 1, 
-            inputFeatures->ncols, inputFeatures->ncols, layerFile, input_type, tiling_type, compression_type)); 
-        }
-        else if (tiling_type == TILING_TYPE::_2D_) {
-            
-            layers[i] = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, 1, 
-            inputFeatures->ncols, inputFeatures->ncols, layerFile, input_type, tiling_type, compression_type)); 
-        }
-        */
+        
+        layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, nnz, nrows, ncols, layerFile, input_type, tiling_type, compression_type)); 
+        
+        
+        //if(tiling_type == TILING_TYPE::_1D_ROW_) {
+        //    layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, 1, Env::nranks, 1, 
+        //    inputFeatures->ncols, inputFeatures->ncols, layerFile, input_type, tiling_type, compression_type)); 
+        //}
+        //else if(tiling_type == TILING_TYPE::_1D_COL_) {
+        //    layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, 1, 
+        //    inputFeatures->ncols, inputFeatures->ncols, layerFile, input_type, tiling_type, compression_type)); 
+        //}
+        //else if (tiling_type == TILING_TYPE::_2D_) {
+        //    
+        //   layers[i] = std::move(std::make_unique<Tiling<Weight>>((Env::nranks * Env::nranks), Env::nranks, Env::nranks, 1, 
+        //    inputFeatures->ncols, inputFeatures->ncols, layerFile, input_type, tiling_type, compression_type)); 
+        //}
+        
         
         //break;
         biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
     }
     spaDenseVec.resize(1);
     spaDenseVec[0].resize(inputFeatures->tile_height);
-    /*
-    if(tiling_type == TILING_TYPE::_1D_ROW_) {
-        spaDenseVec.resize(inputFeatures->rank_ncolgrps);
-        for(uint32_t i = 0; i < inputFeatures->rank_ncolgrps; i++) {
-            spaDenseVec[i].resize(inputFeatures->tile_width);
-        }
-    }
-    else if(tiling_type == TILING_TYPE::_1D_COL_) {
-        spaDenseVec.resize(inputFeatures->rank_nrowgrps);
-        for(uint32_t i = 0; i < inputFeatures->rank_nrowgrps; i++) {
-            spaDenseVec[i].resize(inputFeatures->tile_width);
-        }
-    }
-    */
+    
+    //if(tiling_type == TILING_TYPE::_1D_ROW_) {
+    //    spaDenseVec.resize(inputFeatures->rank_ncolgrps);
+    //    for(uint32_t i = 0; i < inputFeatures->rank_ncolgrps; i++) {
+    //        spaDenseVec[i].resize(inputFeatures->tile_width);
+    //    }
+    //}
+    //else if(tiling_type == TILING_TYPE::_1D_COL_) {
+    //    spaDenseVec.resize(inputFeatures->rank_nrowgrps);
+    //    for(uint32_t i = 0; i < inputFeatures->rank_nrowgrps; i++) {
+    //        spaDenseVec[i].resize(inputFeatures->tile_width);
+    //    }
+    //}
+    
     
     //printf("spaDenseVec[i]. = %lu\n", spaDenseVec[0].size());
     
@@ -156,7 +173,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method.\n"); 
     
-    inferenceReLU(tiling_type);
+    inferenceReLU(tiling_type, compression_type);
     
     //std::tie(nrows, ncols, nnz) =  spmm_sym();
     
@@ -176,12 +193,12 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
 }
 
 template<typename Weight>
-void Net<Weight>::inferenceReLU(TILING_TYPE tiling_type) {
+void Net<Weight>::inferenceReLU(TILING_TYPE tiling_type, COMPRESSED_FORMAT compression_type) {
     uint32_t nrows = 0;
     uint32_t ncols = 0;
     uint64_t nnz = 0;
     
-    if(!Env::rank) {
+    //if(!Env::rank) {
         if(tiling_type == TILING_TYPE::_1D_ROW_) {
             int l = 0;
             for (uint32_t i = 0; i < inputFeatures->nrowgrps; i++) {
@@ -194,17 +211,22 @@ void Net<Weight>::inferenceReLU(TILING_TYPE tiling_type) {
                         auto& B_spmat = B_tile.spmat;
                         auto& S_spa = spaDenseVec[j];
                         std::tie(nrows, ncols, nnz) =  spmm_sym(A_spmat, B_spmat, S_spa);
+                        output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
+                            nnz, nrows, ncols, tiling_type, compression_type)); 
+                        
+                        Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: inferenceReLU? %d %d %lu\n", nrows, ncols, nnz); 
+                        printf("%d: [%d %d] [%d %d] [%lu]\n", Env::rank, i, j, nrows, ncols, nnz);
                     }
-                    break;
+                    //break;
                 }
             }
         }
-    }
+   // }
     
     
     //std::tie(nrows, ncols, nnz) =  spmm_sym();
     
-    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: inferenceReLU? %d %d %lu\n", nrows, ncols, nnz); 
+
     
 }
 
