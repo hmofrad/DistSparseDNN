@@ -28,9 +28,15 @@ class Tiling {
         Tiling() {};
         ~Tiling() {};
         
-        Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const uint32_t nrows_, const uint32_t ncols_,
-               const std::string input_file, const INPUT_TYPE input_type,
+        Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
+               const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
+               const std::string input_file, const INPUT_TYPE input_type, 
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type);
+                
+        Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, 
+               const uint32_t nranks_, const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+               const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type);
+               
         //Tiling( TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrowgrps_, uint32_t ncolgrps_, uint32_t nranks_, uint32_t rank_nthreads_);
         
           
@@ -39,13 +45,16 @@ class Tiling {
         uint32_t rowgrp_nranks, colgrp_nranks;
         uint32_t rank_nthreads;
         
-        TILING_TYPE tiling_type;      
+           
         
         uint32_t nthreads, thread_ntiles, thread_nrowgrps, thread_ncolgrps;
         uint32_t rowgrp_nthreads, colgrp_nthreads;
         
+        uint64_t nnz;        
         uint32_t nrows, ncols;
-        uint64_t nnz;
+        
+        TILING_TYPE tiling_type;
+
         uint32_t tile_height, tile_width;
         
         std::vector<std::vector<struct Tile<Weight>>> tiles;
@@ -66,18 +75,19 @@ class Tiling {
 
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
-Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const uint32_t nrows_, const uint32_t ncols_,
-                       const std::string input_file, const INPUT_TYPE input_type, const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type) 
-        : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_) , nranks(nranks_)
-        , rank_ntiles(ntiles_/nranks_), tiling_type(tiling_type_) {
+Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+                       const std::string input_file, const INPUT_TYPE input_type,
+                       const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type) 
+        : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
+          nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
             
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;           
            
-    std::tie(nrows, ncols, nnz) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(input_file)
-                                                                     : IO::binary_file_stat<Weight>(input_file);
+    //std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(input_file)
+    //                                                                 : IO::binary_file_stat<Weight>(input_file);
     
-    nrows = (nrows_ > 0) ? nrows_ : nrows; 
-    ncols = (ncols_ > 0) ? ncols_ : ncols; 
+    //nrows = (nrows_ > 0) ? nrows_ : nrows; 
+    //ncols = (ncols_ > 0) ? ncols_ : ncols; 
                      
     populate_tiling();
  
@@ -103,6 +113,16 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 
     compress_tile(compression_type);
 }
+
+
+template<typename Weight>
+Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+                       const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type) 
+                     : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
+                      nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
+            printf("This constructor %lu %d %d\n", nnz, nrows, ncols);
+}
+
 
 template<typename Weight>
 void Tiling<Weight>::populate_tiling() {
