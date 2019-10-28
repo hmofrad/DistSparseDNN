@@ -19,25 +19,26 @@ enum INPUT_TYPE {_TEXT_, _BINARY_};
 
 namespace IO {
     template<typename Weight>
-    std::tuple<uint32_t, uint32_t, uint64_t> text_file_stat(const std::string inputFile);
+    std::tuple<uint64_t, uint32_t, uint32_t> text_file_stat(const std::string inputFile);
     template<typename Weight>
     void text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank);
     void text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
     
     template<typename Weight>
-    std::tuple<uint32_t, uint32_t, uint64_t> binary_file_stat(const std::string inputFile);
+    std::tuple<uint64_t, uint32_t, uint32_t> binary_file_stat(const std::string inputFile);
     template<typename Weight>
     void binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank);
     void binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
 }
 
 template<typename Weight>
-std::tuple<uint32_t, uint32_t, uint64_t> IO::text_file_stat(const std::string inputFile) {
+std::tuple<uint64_t, uint32_t, uint32_t> IO::text_file_stat(const std::string inputFile) {
     Env::tic();
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start collecting info from the input file %s\n", inputFile.c_str());
+    uint64_t nnz = 0;
     uint32_t nrows = 0;
     uint32_t ncols = 0;    
-    uint64_t nnz = 0;
+
     
     std::ifstream fin(inputFile.c_str(), std::ios_base::in);
     if(not fin.is_open()) {
@@ -62,7 +63,7 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::text_file_stat(const std::string in
     
     Env::io_time += Env::toc();
     
-    return std::make_tuple(nrows + 1, ncols + 1, nnz);
+    return std::make_tuple(nnz, nrows + 1, ncols + 1);
 }
 
 template<typename Weight>
@@ -211,13 +212,14 @@ void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>
  
  
 template<typename Weight>
-std::tuple<uint32_t, uint32_t, uint64_t> IO::binary_file_stat(const std::string inputFile) {
+std::tuple<uint64_t, uint32_t, uint32_t> IO::binary_file_stat(const std::string inputFile) {
     Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start collecting info from the input file %s\n", inputFile.c_str());
+    uint64_t nnz = 0;
     uint32_t nrows = 0;
     uint32_t ncols = 0;    
-    uint64_t nnz = 0;
+    
     
     std::ifstream fin(inputFile.c_str(), std::ios_base::binary);
     if(not fin.is_open()) {
@@ -248,7 +250,7 @@ std::tuple<uint32_t, uint32_t, uint64_t> IO::binary_file_stat(const std::string 
     
     Env::io_time += Env::toc();
     Env::barrier();
-    return std::make_tuple(nrows + 1, ncols + 1, nnz);
+    return std::make_tuple(nnz, nrows + 1, ncols + 1);
 } 
  
 template<typename Weight>
