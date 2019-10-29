@@ -33,10 +33,12 @@ class Tiling {
                const std::string input_file, const INPUT_TYPE input_type, 
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type);
                 
-        Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, 
-               const uint32_t nranks_, const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+        Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_,
+               const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type);
-               
+        
+
+        
         //Tiling( TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrowgrps_, uint32_t ncolgrps_, uint32_t nranks_, uint32_t rank_nthreads_);
         
           
@@ -75,7 +77,8 @@ class Tiling {
 
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
-Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
+                       const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type) 
         : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
@@ -116,11 +119,128 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 
 
 template<typename Weight>
-Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
+                       const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type) 
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                       nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
-            
+    
+    std::vector<uint64_t> ranks_nnz(nranks); 
+    std::vector<uint32_t> ranks_nrows(nranks);    
+    std::vector<uint32_t> ranks_ncols(nranks);    
+    for (uint32_t r = 0; r < nranks; r++) {
+        if (r != (uint32_t) Env::rank) {
+            MPI_Sendrecv(&nnz, 1, MPI_UNSIGNED_LONG, r, 0, &ranks_nnz[r], 1, MPI_UNSIGNED_LONG,
+                                                        r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                                                        
+            MPI_Sendrecv(&nrows, 1, MPI_UNSIGNED, r, 0, &ranks_nrows[r], 1, MPI_UNSIGNED,
+                                                        r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);                                                        
+                                                        
+            MPI_Sendrecv(&ncols, 1, MPI_UNSIGNED, r, 0, &ranks_ncols[r], 1, MPI_UNSIGNED,
+                                                        r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);                                                        
+        }
+        else {
+            ranks_nnz[r] = nnz;
+            ranks_nrows[r] = nrows;
+            ranks_ncols[r] = ncols;
+        }
+    }
+    
+    if(!Env::rank) {
+        for(auto& i: ranks_nnz) {
+            printf("%lu ", i);
+        }
+        printf("\n");
+        for(auto& i: ranks_nrows) {
+            printf("%d ", i);
+        }
+        printf("\n");
+        for(auto& i: ranks_ncols) {
+            printf("%d ", i);
+        }
+        printf("\n");
+    }
+    
+    if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    if ((tiling_type == TILING_TYPE::_1D_ROW_)) {
+        rowgrp_nranks = 1;
+        colgrp_nranks = nranks;
+        if(rowgrp_nranks * colgrp_nranks != nranks) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+            std::exit(Env::finalize()); 
+        }
+    }
+    else {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    rank_nrowgrps = nrowgrps / colgrp_nranks;
+    rank_ncolgrps = ncolgrps / rowgrp_nranks;        
+    if(rank_nrowgrps * rank_ncolgrps != rank_ntiles) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    
+    tile_height = nrows;
+    tile_width = ncols;
+    if ((tiling_type == TILING_TYPE::_1D_ROW_)) {
+        nnz = std::accumulate(ranks_nnz.begin(), ranks_nnz.end(), 0);
+        nrows = std::accumulate(ranks_nrows.begin(), ranks_nrows.end(), 0);
+        ncols = ncols;
+    }
+    else {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    tiles.resize(nrowgrps);
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        tiles[i].resize(ncolgrps);
+    }
+    
+    int32_t gcd_r = std::gcd(rowgrp_nranks, colgrp_nranks);
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            tile.rank = (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
+        }
+    }
+    
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: Process-based%s\n", TILING_TYPES[tiling_type]);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrowgrps      x ncolgrps      = [%d x %d]\n", nrowgrps, ncolgrps);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rowgrp_nranks x colgrp_nranks = [%d x %d]\n", rowgrp_nranks, colgrp_nranks);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows         x ncols         = [%d x %d]\n", nrows, ncols);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                           = [%d]\n", nnz);
+    print_tiling("rank");
+    
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(tile.rank == Env::rank) {
+                tile.nedges = ranks_nnz[Env::rank];
+            }
+        }
+    }
+    
+    tile_load();
+    
+    //populate_tiling();
+    
+    //tile_height = nrows;
+    //tile_width = ncols;
+    //nrows = 
+    
+    
+    /*    
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;   
     //printf(">>> %lu\n", nnz);
     populate_tiling();
@@ -137,8 +257,10 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         }
         print_tiling("nedges");
     }
-    
-    compress_tile(compression_type);    
+          
+    */
+    compress_tile(compression_type);  
+
 }
 
 
@@ -496,7 +618,7 @@ void Tiling<Weight>::compress_tile(COMPRESSED_FORMAT compression_type) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
                 tile.sort(compression_type, f_row, f_col);
-                tile.compress(compression_type, nnz, tile_height, tile_width);
+                tile.compress(compression_type, tile.nedges, tile_height, tile_width);
             }
         }
     }    
