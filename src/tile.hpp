@@ -52,7 +52,7 @@ void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type, uint64_t n
         if(compression_type == COMPRESSED_FORMAT::_CSR_) {
             spmat = std::make_shared<CSR<Weight>>(triples.size(), tile_height, tile_width);
             spmat->populate(triples, tile_height, tile_width);
-            spmat->walk();
+            //spmat->walk();
             triples.clear();
             triples.shrink_to_fit();
         }
@@ -67,7 +67,7 @@ void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type, uint64_t n
         else if(compression_type == COMPRESSED_FORMAT::_CSC_) {
             spmat = std::make_shared<CSC<Weight>>(triples.size(), tile_height, tile_width);
             spmat->populate(triples, tile_height, tile_width);
-            spmat->walk();
+            //spmat->walk();
             triples.clear();
             triples.shrink_to_fit();
         } 
