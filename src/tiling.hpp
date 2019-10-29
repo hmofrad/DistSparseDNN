@@ -120,7 +120,25 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type) 
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                       nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
-            printf("This constructor %lu %d %d\n", nnz, nrows, ncols);
+            
+    one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;   
+    //printf(">>> %lu\n", nnz);
+    populate_tiling();
+    if(one_rank) {
+        for (uint32_t i = 0; i < nrowgrps; i++) {
+            for (uint32_t j = 0; j < ncolgrps; j++) {
+                //auto& tile = tiles[i][j];
+                tiles[i][j].nedges = nnz;
+          //                  printf(">>> %d %d %d %d %lu\n", Env::rank, tile.rank, i, j, tile.nedges);
+                //if(tile.rank == Env::rank) {
+                  //  tile.nedges = nnz;
+                //}
+            }
+        }
+        print_tiling("nedges");
+    }
+    
+    compress_tile(compression_type);    
 }
 
 
@@ -193,7 +211,6 @@ void Tiling<Weight>::populate_tiling() {
     }
     
     if((not one_rank) and (ntiles == nranks *nranks)) {
-        printf("dddddd\n");
         if(not assert_tiling()) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed1\n");
             std::exit(Env::finalize()); 
@@ -393,7 +410,7 @@ void Tiling<Weight>::tile_load() {
         for(uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             if(Env::rank == tile.rank){
-                nedges_grid[Env::rank][k] = tile.triples.size();
+                nedges_grid[Env::rank][k] = (tile.nedges) ? tile.nedges : tile.triples.size();
                 k++;
             }
         }
@@ -479,7 +496,7 @@ void Tiling<Weight>::compress_tile(COMPRESSED_FORMAT compression_type) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
                 tile.sort(compression_type, f_row, f_col);
-                tile.compress(compression_type, tile_height, tile_width);
+                tile.compress(compression_type, nnz, tile_height, tile_width);
             }
         }
     }    
