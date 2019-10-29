@@ -16,12 +16,15 @@
 enum COMPRESSED_FORMAT {_CSR_, _DCSR_, _TCSR_, _CSC_, _DCSC_, _TCSC_};
 const char* COMPRESSED_FORMATS[] = {"_CSR_", "_DCSR_", "_TCSR_", "_CSC_", "_DCSC_", "_TCSC_"};
 
+
+
 template<typename Weight>
 struct Compressed_Format {
     public:
         Compressed_Format() {};
         virtual ~Compressed_Format() {};
         virtual void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width) {};
+        virtual void populate_spa(std::vector<Weight>& spa, std::vector<Weight> bias, uint32_t col) {};
         virtual void walk() {};
         
         COMPRESSED_FORMAT compression_type;
@@ -119,7 +122,10 @@ struct CSC : public Compressed_Format<Weight> {
         ~CSC(){};
         
         void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width);
+        void populate_spa(std::vector<Weight>& spa, std::vector<Weight> bias, uint32_t col);
         void walk();
+        
+        uint64_t nnz_i = 0;
 };
 
 
@@ -186,6 +192,72 @@ void CSC<Weight>::walk() {
     }
     //std::cout << "Checksum=" << sum << ",Count=" << count << std::endl;
 }
+
+template<typename Weight>
+void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bias, uint32_t col) {
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight* A = CSC::A_blk->ptr;
+    
+    Weight YMIN = 0;
+    Weight YMAX = 32;
+    //Weight   *x_A = x_vector->A;
+    //Weight   *spa_A = spa_vector->A;
+    //Weight value = 0;
+    //auto &idx = Env::offset_nnz[tid];
+    
+    //printf("rank=%d b_s=%lu s_s%lu nrows=%d ncols=%d col=%d nnz=%lu/%lu\n", Env::rank, bias.size(), spa.size(), CSC::nrows, CSC::ncols, col, nnz_i, CSC::nnz);
+    //std::exit(0);
+    
+    JA[col+1] += JA[col];
+    for(uint32_t i = 0; i < CSC::nrows; i++) {
+        if(spa[i]) {
+            /*
+            JA[col+1]++;
+            IA[nnz_i] = i;
+            spa[i] += bias[col];
+            if(spa[i] < YMIN) {
+                A[nnz_i] = YMIN;
+            }
+            else if(spa[i] > YMAX) {
+                A[nnz_i] = YMAX;
+            }
+            else {
+                A[nnz_i] = spa[i];
+            }
+            */
+            spa[i] = 0;
+            CSC::nnz_i++;
+        }
+    }
+    
+    
+    /*
+    JA[col+1] += JA[col];
+    for(uint32_t i = 0; i < CSC::nrows; i++) {
+        if(spa[i]) {
+            spa[i] += bias[col];
+            if(spa[i] < YMIN) {
+                spa[i] = YMIN;
+            }
+            else if(spa[i] > YMAX) {
+                spa[i] = YMAX;
+            }
+            if(spa[i]) {
+                JA[col+1]++;
+                IA[nnz_i] = i;
+                A[nnz_i] = spa[i];
+                nnz_i++;
+                spa[i] = 0;
+            }
+        }
+    }
+    */
+    
+}
+
+
+
 
 
 
