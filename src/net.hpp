@@ -172,7 +172,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method.\n"); 
-    
+    Env::barrier();
     inferenceReLU(tiling_type, compression_type);
     
     //std::tie(nrows, ncols, nnz) =  spmm_sym();
@@ -209,13 +209,20 @@ void Net<Weight>::inferenceReLU(TILING_TYPE tiling_type, COMPRESSED_FORMAT compr
                         //for (uint32_t k = 0; k < inputFeatures->nrowgrps; k++) {
                         auto& B_tile = layers[l]->tiles[0][j];
                         auto& B_spmat = B_tile.spmat;
-                        auto& S_spa = spaDenseVec[j];
-                        std::tie(nrows, ncols, nnz) =  spmm_sym(A_spmat, B_spmat, S_spa);
-                        output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
+                        auto& s_spa = spaDenseVec[j];
+                        std::tie(nrows, ncols, nnz) =  spmm_sym(A_spmat, B_spmat, s_spa);
+                        Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: inferenceReLU? %d %d %lu %lu\n", nrows, ncols, nnz, inputFeatures->tile_height); 
+                        //output.reset();
+                        output = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
                             nnz, nrows, ncols, tiling_type, compression_type)); 
-                        
-                        Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: inferenceReLU? %d %d %lu\n", nrows, ncols, nnz); 
-                        printf("%d: [%d %d] [%d %d] [%lu]\n", Env::rank, i, j, nrows, ncols, nnz);
+                        auto& C_tile = output->tiles[0][j];
+                           // if(Env::rank == C_tile.rank) {    
+                                auto& b_bias = biasDenseVecs[l];                            
+                                auto& C_spmat = C_tile.spmat;
+                                spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias);
+                            //}
+                        //Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: inferenceReLU? %d %d %lu\n", nrows, ncols, nnz); 
+                        //printf("%d: [%d %d] [%d %d] [%lu]\n", Env::rank, i, j, nrows, ncols, nnz);
                     }
                     //break;
                 }
