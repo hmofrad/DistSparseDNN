@@ -3,6 +3,8 @@
  * (c) Mohammad Hasanzadeh Mofrad, 2019
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
+ 
+// make clean && make && time mpirun.mpich -np 4 bin/./radixnet -m 60000 -n 1024 -l 120 data1/bin/MNIST data1/bin/DNN 
 
 #include <stdio.h>
 #include <stdlib.h>
