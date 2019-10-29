@@ -25,6 +25,9 @@ struct Compressed_Format {
         virtual ~Compressed_Format() {};
         virtual void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width) {};
         virtual void populate_spa(std::vector<Weight>& spa, std::vector<Weight> bias, uint32_t col) {};
+        virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_fmt) {};
+        virtual void adjust() {};
+        virtual void reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {};
         virtual void walk() {};
         
         COMPRESSED_FORMAT compression_type;
@@ -111,6 +114,8 @@ void CSR<Weight>::walk() {
         std::exit(Env::finalize());     
     }
     //std::cout << "Checksum=" << sum << ",Count=" << count << std::endl;
+    Logging::print(Logging::LOG_LEVEL::INFO, "Checksum= %f, Count=%d\n", sum, count);
+    
 }
 
 
@@ -123,7 +128,10 @@ struct CSC : public Compressed_Format<Weight> {
         
         void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width);
         void populate_spa(std::vector<Weight>& spa, std::vector<Weight> bias, uint32_t col);
+        void repopulate(const std::shared_ptr<struct CSC<Weight>> other_csc);
         void walk();
+        void reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_);
+        void adjust();
         
         uint64_t nnz_i = 0;
 };
@@ -183,6 +191,8 @@ void CSC<Weight>::walk() {
             (void) A[i];
             sum += A[i];
             count++;
+            if(!A[i])
+                printf("%d %f\n", i, A[i]);
             //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
         }
     }
@@ -191,6 +201,7 @@ void CSC<Weight>::walk() {
         std::exit(Env::finalize());     
     }
     //std::cout << "Checksum=" << sum << ",Count=" << count << std::endl;
+    Logging::print(Logging::LOG_LEVEL::INFO, "Checksum= %f, Count=%d\n", sum, count);
 }
 
 template<typename Weight>
@@ -212,30 +223,6 @@ void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bia
     JA[col+1] += JA[col];
     for(uint32_t i = 0; i < CSC::nrows; i++) {
         if(spa[i]) {
-            /*
-            JA[col+1]++;
-            IA[nnz_i] = i;
-            spa[i] += bias[col];
-            if(spa[i] < YMIN) {
-                A[nnz_i] = YMIN;
-            }
-            else if(spa[i] > YMAX) {
-                A[nnz_i] = YMAX;
-            }
-            else {
-                A[nnz_i] = spa[i];
-            }
-            */
-            spa[i] = 0;
-            CSC::nnz_i++;
-        }
-    }
-    
-    
-    /*
-    JA[col+1] += JA[col];
-    for(uint32_t i = 0; i < CSC::nrows; i++) {
-        if(spa[i]) {
             spa[i] += bias[col];
             if(spa[i] < YMIN) {
                 spa[i] = YMIN;
@@ -243,6 +230,7 @@ void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bia
             else if(spa[i] > YMAX) {
                 spa[i] = YMAX;
             }
+                       // printf("%f %f\n", spa[i], bias[col]);
             if(spa[i]) {
                 JA[col+1]++;
                 IA[nnz_i] = i;
@@ -252,11 +240,124 @@ void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bia
             }
         }
     }
+}
+
+
+template<typename Weight>
+void CSC<Weight>::reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
+    //if(!Env::rank)
+        //printf("reallocate me %lu --> %lu %d\n",CSC::nnz, nnz_, nnz_ > CSC::nnz);
+    
+    if(CSC::ncols != ncols_) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot reallocate.\n");
+        std::exit(Env::finalize());     
+    }
+    nnz_i = 0;
+    CSC::nnz = nnz_;
+    CSC::nrows = nrows_; 
+    CSC::ncols = ncols_;
+    
+    CSC::IA_blk->reallocate(CSC::nnz);
+    CSC::A_blk->reallocate(CSC::nnz);
+    CSC::IA_blk->clear();
+    CSC::JA_blk->clear();
+    CSC::A_blk->clear();
+    
+    
+    
+    
+}
+
+template<typename Weight>
+void CSC<Weight>::adjust(){
+    /*
+    if(CSC::nnz > nnz_i) {
+        CSC::IA_blk->reallocate(nnz_i);
+        CSC::A_blk->reallocate(nnz_i);
+    }
+    */
+    CSC::nnz = nnz_i;
+    
+}
+
+template<typename Weight>
+void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other_csc){
+    printf("repopulate\n");
+    
+    //uint364_t  other_nnz_i = other_csc->nnzi;
+    uint64_t  other_nnz   = other_csc->nnz;
+    uint32_t  other_nrows = other_csc->nrows;
+    uint32_t  other_ncols = other_csc->ncols;
+    uint32_t* other_JA    = other_csc->JA_blk->ptr;
+    uint32_t* other_IA    = other_csc->IA_blk->ptr;
+    Weight*   other_A     = other_csc->A_blk->ptr;
+    
+    //printf("%d %d %lu %lu\n", other_ncols, CSC::ncols, other_nnz, CSC::nnz);
+    
+    if(CSC::ncols != other_ncols) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot repopulate.\n");
+        std::exit(Env::finalize());     
+    }
+    
+    /*
+    nnz = o_idx;
+    nnzmax = o_idx;
+    IA_blk->reallocate(&IA, nnz, (nnz * sizeof(uint32_t)));
+    A_blk->reallocate(&A, nnz, (nnz * sizeof(Weight)));            
+    clear();
     */
     
 }
 
+/*
+template<typename Weight>
+inline void CSC<Weight>::repopulate(struct CSC<Weight> *other_csc, int tid){
+    uint32_t o_ncols = other_csc->numcols();
+    uint32_t o_nnz = other_csc->numnonzeros();
+    uint32_t o_idx = other_csc->idx;
+    uint32_t *o_JA = other_csc->JA;
+    uint32_t *o_IA = other_csc->IA;
+    Weight   *o_A  = other_csc->A;
+    
+    if(ncols != o_ncols) {
+        fprintf(stderr, "Error: Cannot repopulate CSC\n");
+        exit(1);
+    }
+    
+    if(!tid) {
+        nnz = o_idx;
+        nnzmax = o_idx;
+        IA_blk->reallocate(&IA, nnz, (nnz * sizeof(uint32_t)));
+        A_blk->reallocate(&A, nnz, (nnz * sizeof(Weight)));            
+        clear();
+    }
+    #pragma omp barrier
 
+    uint32_t start_col = Env::start_col[tid];
+    uint32_t end_col = Env::end_col[tid];
+    uint64_t offset = 0;
+    uint64_t idx = 0;
+    JA[start_col] = 0;
+    if(tid) {
+        JA[start_col] = o_JA[start_col];
+        for(int32_t i = 0; i < tid; i++) {
+            //JA[start_col] += (Env::offset_nnz[i] - Env::start_nnz[i]);
+            offset += (Env::end_nnz[i] - Env::offset_nnz[i]);
+        }
+        idx = JA[start_col];
+    }
+
+    for(uint32_t j = start_col; j < end_col; j++) {
+        JA[j+1] = JA[j];
+        for(uint32_t i = o_JA[j] + offset; i < o_JA[j + 1] + offset; i++) {
+            JA[j+1]++;
+            IA[idx] = o_IA[i];
+            A[idx]  = o_A[i];
+            idx++;
+        }
+    }
+}
+*/
 
 
 
