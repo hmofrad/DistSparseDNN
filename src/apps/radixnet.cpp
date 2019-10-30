@@ -13,8 +13,6 @@
 #include <iostream>
 #include <memory>
 
-
-
 #include "radixnet.h"
 #include "env.hpp"
 #include "log.hpp"
@@ -40,7 +38,8 @@ int main(int argc, char **argv) {
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Radix-Net sparse DNN for MNIST dataset Implementation\n");
     Logging::print(Logging::LOG_LEVEL::INFO, "MPI ranks = %d, Threads per rank = %d\n", Env::nranks, Env::nthreads);
+    
     Net<WGT> N(atoi(argv[2]), atoi(argv[4]), ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]));//, INPUT_TYPE::_TEXT_) ;
-    Logging::print(Logging::LOG_LEVEL::INFO, "Total IO time %f\n", Env::io_time);
+
     return(Env::finalize());
 }
