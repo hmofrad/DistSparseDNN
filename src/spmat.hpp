@@ -16,8 +16,6 @@
 enum COMPRESSED_FORMAT {_CSR_, _DCSR_, _TCSR_, _CSC_, _DCSC_, _TCSC_};
 const char* COMPRESSED_FORMATS[] = {"_CSR_", "_DCSR_", "_TCSR_", "_CSC_", "_DCSC_", "_TCSC_"};
 
-
-
 template<typename Weight>
 struct Compressed_Format {
     public:
@@ -212,14 +210,7 @@ void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bia
     
     Weight YMIN = 0;
     Weight YMAX = 32;
-    //Weight   *x_A = x_vector->A;
-    //Weight   *spa_A = spa_vector->A;
-    //Weight value = 0;
-    //auto &idx = Env::offset_nnz[tid];
-    
-    //printf("rank=%d b_s=%lu s_s%lu nrows=%d ncols=%d col=%d nnz=%lu/%lu\n", Env::rank, bias.size(), spa.size(), CSC::nrows, CSC::ncols, col, nnz_i, CSC::nnz);
-    //std::exit(0);
-    
+
     JA[col+1] += JA[col];
     for(uint32_t i = 0; i < CSC::nrows; i++) {
         if(spa[i]) {
@@ -230,7 +221,6 @@ void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bia
             else if(spa[i] > YMAX) {
                 spa[i] = YMAX;
             }
-                       // printf("%f %f\n", spa[i], bias[col]);
             if(spa[i]) {
                 JA[col+1]++;
                 IA[nnz_i] = i;
@@ -245,13 +235,11 @@ void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bia
 
 template<typename Weight>
 void CSC<Weight>::reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
-    //if(!Env::rank)
-        //printf("reallocate me %lu --> %lu %d\n",CSC::nnz, nnz_, nnz_ > CSC::nnz);
-    
     if(CSC::ncols != ncols_) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot reallocate.\n");
         std::exit(Env::finalize());     
     }
+    
     nnz_i = 0;
     CSC::nnz = nnz_;
     CSC::nrows = nrows_; 
@@ -262,10 +250,6 @@ void CSC<Weight>::reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
     CSC::IA_blk->clear();
     CSC::JA_blk->clear();
     CSC::A_blk->clear();
-    
-    
-    
-    
 }
 
 template<typename Weight>
@@ -282,9 +266,7 @@ void CSC<Weight>::adjust(){
 
 template<typename Weight>
 void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other_csc){
-    printf("repopulate\n");
     
-    //uint364_t  other_nnz_i = other_csc->nnzi;
     uint64_t  other_nnz   = other_csc->nnz;
     uint32_t  other_nrows = other_csc->nrows;
     uint32_t  other_ncols = other_csc->ncols;
@@ -292,21 +274,35 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other_csc
     uint32_t* other_IA    = other_csc->IA_blk->ptr;
     Weight*   other_A     = other_csc->A_blk->ptr;
     
-    //printf("%d %d %lu %lu\n", other_ncols, CSC::ncols, other_nnz, CSC::nnz);
-    
     if(CSC::ncols != other_ncols) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot repopulate.\n");
         std::exit(Env::finalize());     
     }
+    nnz_i = 0;
+    CSC::nnz = other_nnz;
+    CSC::nrows = other_nrows; 
+    CSC::ncols = other_ncols;
     
-    /*
-    nnz = o_idx;
-    nnzmax = o_idx;
-    IA_blk->reallocate(&IA, nnz, (nnz * sizeof(uint32_t)));
-    A_blk->reallocate(&A, nnz, (nnz * sizeof(Weight)));            
-    clear();
-    */
+    CSC::IA_blk->reallocate(CSC::nnz);
+    CSC::A_blk->reallocate(CSC::nnz);
+    CSC::IA_blk->clear();
+    CSC::JA_blk->clear();
+    CSC::A_blk->clear();
     
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight* A = CSC::A_blk->ptr;
+    
+    JA[0] = 0;
+    for(uint32_t j = 0; j < CSC::ncols; j++) {
+        JA[j+1] = JA[j];
+        for(uint32_t i = other_JA[j]; i < other_JA[j + 1] ; i++) {
+            JA[j+1]++;
+            IA[nnz_i] = other_IA[i];
+            A[nnz_i]  = other_A[i];
+            nnz_i++;
+        }
+    }
 }
 
 /*
