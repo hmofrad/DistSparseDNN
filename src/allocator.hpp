@@ -82,10 +82,9 @@ void Data_Block<Data_Type>::reallocate(const uint64_t nitems_) {
             if(new_nbytes > old_nbytes) {
                 memset(ptr + nitems, 0, new_nbytes - old_nbytes); // If grow, zeros the added memory
             }
+            nitems = nitems_;
+            nbytes = new_nbytes;
         }
-
-        nitems = nitems_;
-        nbytes = new_nbytes;
     }
 }
 
