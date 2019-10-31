@@ -24,6 +24,7 @@ struct Tile{
         //std::unique_ptr<struct Compressed_Format<Weight>> spmat;
         
         int32_t rank;
+        int32_t thread;
         uint64_t nedges = 0;
 };
 
