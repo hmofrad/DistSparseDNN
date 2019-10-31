@@ -28,6 +28,12 @@ namespace Env {
     double io_time = 0;
     double compression_time = 0;
     
+    std::vector<uint64_t> nnz_t;
+    //std::vector<uint64_t> nnz_o;
+    std::vector<uint64_t> start_col;
+    std::vector<uint64_t> end_col;
+    
+    
     int init();
     void barrier();
     int finalize();
@@ -56,7 +62,10 @@ int Env::init() {
         status = 1;
     }
     
-    Env::nthreads = omp_get_max_threads();    
+    Env::nthreads = omp_get_max_threads(); 
+
+    nnz_t.resize(Env::nthreads);
+    //nnz_o.resize(Env::nthreads);
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
