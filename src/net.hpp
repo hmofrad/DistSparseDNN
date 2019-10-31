@@ -96,7 +96,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    Logging::enabled = false; 
+    //Logging::enabled = false; 
     maxLayers = 1;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
@@ -114,16 +114,15 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
 
         biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
     }
-    
+    /*
     spaDenseVec.resize(1);
     spaDenseVec[0].resize(inputFeatures->tile_height);
-    /*
+    */
     
     spaDenseVec.resize(Env::nthreads);
-    for(int i = 0; i < Env::nthreads; i++)
+    for(int32_t i = 0; i < Env::nthreads; i++)
         spaDenseVec[i].resize(inputFeatures->tile_height);
     
-    */
     
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method.\n"); 
@@ -171,22 +170,113 @@ void Net<Weight>::stats(std::vector<double>& vec, double& sum, double& mean, dou
 
 template<typename Weight>
 void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
-    //uint32_t nrows = 0;
-    //uint32_t ncols = 0;
-    //uint64_t nnz = 0;
     
     uint64_t nnz = 0;
-    uint32_t nrows = 0; //inputFeatures->nrows;
-    uint32_t ncols = 0; //layers[0]->ncols;
+    //std::vector<uint64_t> nnz_t(Env::nthreads);
+    uint32_t nrows = inputFeatures->nrows;
+    uint32_t ncols = layers[0]->ncols;
     
-    auto& A_tile = inputFeatures->tiles[Env::rank][0];
-    auto& A0_spmat = A_tile.spmat;
-    auto& B_tile = layers[0]->tiles[0][0];
-    auto& B0_spmat = B_tile.spmat;
-    auto& s_spa = spaDenseVec[0];
-    std::tie(nnz, nrows, ncols) =  spmm_sym(A0_spmat, B0_spmat, s_spa);
-    output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
+    //auto& B_tile = layers[0]->tiles[0][0];
+    //auto& B0_spmat = B_tile.spmat;
+    //auto& s_spa = spaDenseVec[0];
+    //std::tie(nnz, nrows, ncols) =  spmm_sym(A0_spmat, B0_spmat, s_spa);
+    //output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
     
+    #pragma omp parallel reduction(+:nnz)
+    {
+        int tid = omp_get_thread_num();
+        
+        auto& A_tile = inputFeatures->tiles[Env::rank][0];
+        auto& A0_spmat = A_tile.spmat;
+        auto& B_tile = layers[0]->tiles[0][tid];
+        auto& B0_spmat = B_tile.spmat;
+        auto& s_spa = spaDenseVec[tid];
+        std::tie(Env::nnz_t[tid], std::ignore, std::ignore) =  spmm_sym(A0_spmat, B0_spmat, s_spa);
+        nnz += Env::nnz_t[tid];
+    }
+    output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
+                       nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
+
+    
+  //          #pragma omp barrier
+    //    if(!tid) {
+                
+    for(auto& n: Env::nnz_t)
+        printf("%lu ", n);
+    printf("\n");
+            
+            
+//    nnz = std::accumulate(Env::nnz_t.begin(), Env::nnz_t.end(), 0);
+    //nnz_t[0] = 0;
+    //uint64_t sum = 0;
+    //uint64_t temp1 = Env::nnz_t[0];
+    
+    std::vector<uint64_t> nnz_s(Env::nthreads);
+    nnz_s[0] = 0;
+    for(int32_t i = 1; i < Env::nthreads; i++) {
+        //uint64_t temp = Env::nnz_t[i];
+        //Env::nnz_t[i] = sum + Env::nnz_t[i-1];
+        nnz_s[i] = nnz_s[i-1] + Env::nnz_t[i];
+        //sum += temp + temp1;
+        //temp1 = 0;
+    }
+    Env::nnz_t = nnz_s;
+    /*
+       offset_nnz[0] = 0;
+    start_nnz[0] = 0;
+    end_nnz[0] = length_nnz[0];
+    uint64_t nnzmax = length_nnz[0];
+    for(uint32_t i = 1; i < Env::nthreads; i++) {
+        start_nnz[i] = end_nnz[i-1];
+        end_nnz[i] = start_nnz[i] + length_nnz[i];
+        offset_nnz[i] = start_nnz[i];
+        nnzmax += length_nnz[i];
+    }
+    
+*/
+    
+    for(auto& n: Env::nnz_t)
+        printf("%lu ", n);
+    printf("\n");
+
+    
+    
+  //  printf(">>>>%lu %d %d\n", nnz, nrows, ncols);
+//}
+//#pragma omp barrier
+
+    auto& C_tile = output->tiles[Env::rank][0];    
+    auto& C_spmat = C_tile.spmat;
+    auto& b_bias = biasDenseVecs[0];
+    //spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias);
+    
+    
+    
+
+    
+    /*
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        uint32_t share = ncols/Env::nthreads;
+        uint32_t start = share * tid;
+        uint32_t end = start + share;
+        start_col[tid] = start;
+        end_col[tid] = end;
+        printf("%d %d %d\n", tid, start, end);
+
+    }
+    */
+    
+    
+    
+    //auto& C_tile = output->tiles[Env::rank][0];    
+    //auto& C_spmat = C_tile.spmat;
+    //auto& b_bias = biasDenseVecs[0];
+    //spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias);
+    //printf("%lu %d %d\n", nnz, nrows, ncols);
+
+    maxLayers = 0;
     for (uint32_t l = 0; l < maxLayers; l++) {
         Logging::print(Logging::LOG_LEVEL::INFO, "Layer %d SpMM.\n", l); 
         if(not(l%2)) {
