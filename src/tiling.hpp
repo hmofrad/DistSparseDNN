@@ -371,6 +371,16 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         print_tiling("nedges");
     }
     
+    if (tiling_type == TILING_TYPE::_1D_COL_) {
+        uint32_t share = ncols/Env::nthreads;
+        for (uint32_t i = 0; i < nrowgrps; i++) {
+            for (uint32_t j = 0; j < ncolgrps; j++) {
+                tiles[i][j].start_col = share * j;
+                tiles[i][j].end_col = share * (j+1);
+            }
+        }
+    }
+    
     compress_tile(compression_type);
     
 }
