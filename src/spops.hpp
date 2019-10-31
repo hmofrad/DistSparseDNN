@@ -155,7 +155,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
 
 
 template<typename Weight>
-inline bool validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>> A,
+inline char validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>> A,
                                       std::vector<uint32_t> trueCategories) {
     const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
     const uint64_t A_nnz   = A_CSC->nnz;
@@ -172,16 +172,18 @@ inline bool validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>
         }
     }
 
-    bool tf = true;
+    char me = 1;
     uint32_t j = 0;
     for(uint32_t i = 0; i < A_nrows; i++) {
         if(trueCategories[i] != allCategories[i]) {
-            tf = false;
+            me = 0;
             break;
         }
     }
-
-    return(tf);
+    char all = 0;
+    MPI_Allreduce(&me, &all, 1, MPI_CHAR, MPI_SUM, MPI_COMM_WORLD);
+    
+    return((all == Env::nranks));
 }
 
 #endif
