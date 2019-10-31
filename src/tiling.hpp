@@ -37,18 +37,18 @@ class Tiling {
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type);
         
+        Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const uint32_t rank_nthreads_, 
+               const uint32_t threads_ntiles_, const uint32_t threads_nrowgrps_, const uint32_t threads_ncolgrps_, const uint32_t nthreads_,
+               const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
+               const std::string input_file, const INPUT_TYPE input_type, 
+               const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type);
 
-        
-        //Tiling( TILING_TYPE tiling_type_, uint32_t ntiles_, uint32_t nrowgrps_, uint32_t ncolgrps_, uint32_t nranks_, uint32_t rank_nthreads_);
-        
-          
         uint32_t ntiles, nrowgrps, ncolgrps;
         uint32_t nranks, rank_ntiles, rank_nrowgrps, rank_ncolgrps;
         uint32_t rowgrp_nranks, colgrp_nranks;
         uint32_t rank_nthreads;
         
-           
-        
+        uint32_t threads_ntiles, threads_nrowgrps, threads_ncolgrps;
         uint32_t nthreads, thread_ntiles, thread_nrowgrps, thread_ncolgrps;
         uint32_t rowgrp_nthreads, colgrp_nthreads;
         
@@ -84,13 +84,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
           nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
             
-    one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;           
-           
-    //std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(input_file)
-    //                                                                 : IO::binary_file_stat<Weight>(input_file);
-    
-    //nrows = (nrows_ > 0) ? nrows_ : nrows; 
-    //ncols = (ncols_ > 0) ? ncols_ : ncols; 
+    one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;
                      
     populate_tiling();
  
@@ -116,7 +110,6 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 
     compress_tile(compression_type);
 }
-
 
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
@@ -232,36 +225,108 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     }
     
     tile_load();
-    
-    //populate_tiling();
-    
-    //tile_height = nrows;
-    //tile_width = ncols;
-    //nrows = 
-    
-    
-    /*    
-    one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;   
-    //printf(">>> %lu\n", nnz);
+    compress_tile(compression_type);  
+
+}
+
+
+template<typename Weight>
+Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, const uint32_t rank_nthreads_,  
+                       const uint32_t threads_ntiles_, const uint32_t threads_nrowgrps_, const uint32_t threads_ncolgrps_, const uint32_t nthreads_, 
+                       const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+                       const std::string input_file, const INPUT_TYPE input_type,
+                       const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type)
+            : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), rank_nthreads(rank_nthreads_), 
+              threads_ntiles(threads_ntiles_) , threads_nrowgrps(threads_nrowgrps_), threads_ncolgrps(threads_ncolgrps_), nthreads(nthreads_), thread_ntiles(threads_ntiles_/nthreads_),
+              nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
+
+    one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;              
+    // Processes
     populate_tiling();
-    if(one_rank) {
+    
+    // Threads
+    if((thread_ntiles * nthreads != threads_ntiles) or (threads_nrowgrps * threads_ncolgrps != threads_ntiles)) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    if ((tiling_type == TILING_TYPE::_1D_ROW_)) {
+        rowgrp_nthreads = 1;
+        colgrp_nthreads = nthreads;
+    }
+    else if (tiling_type == TILING_TYPE::_1D_COL_) {
+        rowgrp_nthreads =  nthreads;
+        colgrp_nthreads = 1;
+    }
+    else if (tiling_type == TILING_TYPE::_2D_) {
+        rowgrp_nthreads = rowgrp_nranks;
+        colgrp_nthreads = nrowgrps / rowgrp_nthreads;
+    }
+
+    if(rowgrp_nthreads * colgrp_nthreads != nthreads) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    thread_nrowgrps = threads_nrowgrps / colgrp_nthreads;
+    thread_ncolgrps = threads_ncolgrps / rowgrp_nthreads;
+    if(thread_nrowgrps * thread_ncolgrps != thread_ntiles) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    nrows = nrows_;
+    while(nrows % threads_nrowgrps)
+        nrows++;
+    
+    ncols = ncols_;
+    while(ncols % threads_ncolgrps)
+        ncols++;
+    
+    tile_height = nrows / threads_nrowgrps;
+    tile_width  = ncols / threads_ncolgrps;
+    
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: Thread-based%s\n", TILING_TYPES[tiling_type]);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information:         nrowgrps x ncolgrps         = [%d x %d]\n", threads_nrowgrps, threads_ncolgrps);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: rowgrp_nthreads  x colgrp_nthreads  = [%d x %d]\n", rowgrp_nthreads, colgrp_nthreads);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: thread_nrowgrps  x thread_ncolgrps  = [%d x %d]\n", thread_nrowgrps, thread_ncolgrps);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows            x ncols            = [%d x %d]\n", nrows, ncols);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height      x tile_width       = [%d x %d]\n", tile_height, tile_width);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                                 = [%d]\n", nnz);
+    
+    
+    
+    
+    
+    /*        
+
+                     
+    populate_tiling();
+ 
+    if(INPUT_TYPE::_TEXT_ == input_type) {
+        IO::text_file_read<Weight>(input_file, tiles, tile_height, tile_width, one_rank);
+    }
+    else {
+        IO::binary_file_read<Weight>(input_file, tiles, tile_height, tile_width, one_rank);
+    }
+    
+    if(not one_rank) {
+        tile_exchange();
+        tile_load();
+    }
+    else {
         for (uint32_t i = 0; i < nrowgrps; i++) {
             for (uint32_t j = 0; j < ncolgrps; j++) {
-                //auto& tile = tiles[i][j];
-                tiles[i][j].nedges = nnz;
-          //                  printf(">>> %d %d %d %d %lu\n", Env::rank, tile.rank, i, j, tile.nedges);
-                //if(tile.rank == Env::rank) {
-                  //  tile.nedges = nnz;
-                //}
+                tiles[i][j].nedges = tiles[i][j].triples.size();
             }
         }
         print_tiling("nedges");
     }
-          
-    */
-    compress_tile(compression_type);  
 
+    compress_tile(compression_type);
+    */
 }
+
 
 
 template<typename Weight>
