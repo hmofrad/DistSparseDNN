@@ -23,7 +23,9 @@ struct Compressed_Format {
         virtual ~Compressed_Format() {};
         virtual void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width) {};
         virtual void populate_spa(std::vector<Weight>& spa, std::vector<Weight> bias, uint32_t col) {};
+        virtual void populate_spa_t(std::vector<Weight>& spa, std::vector<Weight> bias, const uint32_t& col, uint64_t& nnz_index) {};
         virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_fmt) {};
+        virtual void refine_t(const uint32_t start_col, const uint32_t end_col, const int32_t tid) {};
         virtual void adjust() {};
         virtual void reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {};
         virtual void walk() {};
@@ -126,10 +128,12 @@ struct CSC : public Compressed_Format<Weight> {
         
         void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width);
         void populate_spa(std::vector<Weight>& spa, std::vector<Weight> bias, uint32_t col);
+        void populate_spa_t(std::vector<Weight>& spa, std::vector<Weight> bias, const uint32_t col, uint64_t& nnz_index);
         void repopulate(const std::shared_ptr<struct CSC<Weight>> other_csc);
         void walk();
         void reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_);
         void adjust();
+        void refine_t(const uint32_t start_col, const uint32_t end_col, const int32_t tid);
         
         uint64_t nnz_i = 0;
 };
@@ -189,8 +193,8 @@ void CSC<Weight>::walk() {
             (void) A[i];
             sum += A[i];
             count++;
-            if(!A[i])
-                printf("%d %f\n", i, A[i]);
+            //if(!A[i])
+              //  printf("%d %f\n", i, A[i]);
             //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
         }
     }
@@ -231,6 +235,131 @@ void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bia
         }
     }
 }
+
+
+template<typename Weight>
+inline void CSC<Weight>::populate_spa_t(std::vector<Weight>& spa, std::vector<Weight> bias, const uint32_t col, uint64_t& nnz_index) {
+    uint64_t& k = nnz_index;
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight*    A = CSC::A_blk->ptr;
+    
+    Weight YMIN = 0;
+    Weight YMAX = 32;
+    int n = 0;
+    //JA[col+1] += JA[col] +;
+    //uint64_t k = ((JA[col] - JA[start_col]) + nnz_offset);
+    //uint64_t k = JA[col];
+    //nnz_offset + JA[start_col] - JA[col];
+    //if(nnz_offset == 0)
+    //printf("col=%d off=%lu k=%lu\n", col, nnz_offset, k);
+    JA[col+1] += JA[col];
+    for(uint32_t i = 0; i < CSC::nrows; i++) {
+        if(spa[i]) {
+            spa[i] += bias[col];
+            if(spa[i] < YMIN) {
+                spa[i] = YMIN;
+            }
+            else if(spa[i] > YMAX) {
+                spa[i] = YMAX;
+            }
+            if(spa[i]) {
+                JA[col+1]++;
+                IA[k] = i;
+                A[k] = spa[i];
+                k++;
+                spa[i] = 0;
+                n++;
+            }
+        }
+    }
+    //if(nnz_offset == 0)
+    //    printf("n=%d %d\n", n, JA[col+1] - JA[col]);
+}
+
+
+template<typename Weight>
+inline void CSC<Weight>::refine_t(const uint32_t start_col, const uint32_t end_col, const int32_t tid) {
+    printf("REFINE %d %d %d\n", start_col, end_col, tid);
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight*    A = CSC::A_blk->ptr;
+    
+    //if(!Env::rank) {
+    printf("tid=%d, start_col=%d end_col=%d JA[start_col]=%d JA[end_col]=%d\n", tid, start_col, end_col, JA[start_col], JA[end_col-1]);
+    //}
+    
+    //uint32_t start_col = Env::start_col[tid];
+    //uint32_t end_col = Env::end_col[tid];
+    /*
+    if(tid == 0) {
+        JA[0] = 0;
+        for(uint32_t j = start_col+1; j < end_col; j++) {
+            JA[j] += JA[j-1];
+        }
+    }
+    else {
+        JA[start_col] = 0;
+        for(int32_t i = 0; i < tid; i++) {
+            JA[start_col] += (Env::offset_nnz[i] - Env::start_nnz[i]);
+        }
+        
+        for(uint32_t j = start_col+1; j < end_col; j++) {
+            JA[j] += JA[j-1];
+        }
+    }
+    
+    if((tid == Env::nthreads - 1)) {
+        JA[end_col] += JA[end_col-1];
+    }
+    
+    
+    if(tid == 0) {
+        idx = 0;
+        for(uint32_t i = 0; i < Env::nthreads; i++) {    
+            idx += (Env::offset_nnz[i] - Env::start_nnz[i]);
+        }
+    }
+    */
+    
+    
+    /*
+    uint32_t start_col = Env::start_col[tid];
+    uint32_t end_col = Env::end_col[tid];
+    
+    if(tid == 0) {
+        JA[0] = 0;
+        for(uint32_t j = start_col+1; j < end_col; j++) {
+            JA[j] += JA[j-1];
+        }
+    }
+    else {
+        JA[start_col] = 0;
+        for(int32_t i = 0; i < tid; i++) {
+            JA[start_col] += (Env::offset_nnz[i] - Env::start_nnz[i]);
+        }
+        
+        for(uint32_t j = start_col+1; j < end_col; j++) {
+            JA[j] += JA[j-1];
+        }
+    }
+    
+    if((tid == Env::nthreads - 1)) {
+        JA[end_col] += JA[end_col-1];
+    }
+    
+    
+    if(tid == 0) {
+        idx = 0;
+        for(uint32_t i = 0; i < Env::nthreads; i++) {    
+            idx += (Env::offset_nnz[i] - Env::start_nnz[i]);
+        }
+    }
+    */
+    
+    
+}
+
 
 
 template<typename Weight>
