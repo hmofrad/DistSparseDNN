@@ -88,6 +88,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
                 }
             }
         }
+
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
@@ -101,7 +102,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                  std::shared_ptr<struct Compressed_Format<Weight>> B,
                  std::shared_ptr<struct Compressed_Format<Weight>> C,
                  std::vector<Weight> s,
-                 std::vector<Weight> b) {
+                 std::vector<Weight> b,
+                 const uint32_t B_start_col,
+                 const uint32_t B_end_col,
+                 int32_t tid) {
                      
     if((A->compression_type == COMPRESSED_FORMAT::_CSC_) and 
        (B->compression_type == COMPRESSED_FORMAT::_CSC_) and
@@ -122,14 +126,21 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         const uint32_t* B_IA   = B_CSC->IA_blk->ptr;
         const uint32_t* B_JA   = B_CSC->JA_blk->ptr;
         const Weight*    B_A   = B_CSC->A_blk->ptr;
+        //const uint32_t start = B_CSC->start_col;
+        //const uint32_t end = B_CSC->end_col;
         
         const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C);
         const uint64_t C_nnz   = C_CSC->nnz;
         const uint32_t C_nrows = C_CSC->nrows;
         const uint32_t C_ncols = C_CSC->ncols;
         const uint32_t* C_IA   = C_CSC->IA_blk->ptr;
-        const uint32_t* C_JA   = C_CSC->JA_blk->ptr;
+        uint32_t* C_JA   = C_CSC->JA_blk->ptr;
         const Weight*    C_A   = C_CSC->A_blk->ptr;
+        
+        uint64_t nnz_index = Env::nnz_t[tid];
+        //uint64_t nnz_index = nnz_offset;
+        C_JA[B_start_col] = Env::nnz_t[tid];
+        printf("C_JA[B_start_col]= %d\n", C_JA[B_start_col]);
         
         if(A_ncols != B_nrows) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols);
@@ -143,9 +154,13 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                     s[A_IA[m]] += (B_A[k] * A_A[m]);
                 }
             }
-            C_CSC->populate_spa(s, b, j);
+            //C_CSC->populate_spa(s, b, j);
+            C_CSC->populate_spa_t(s, b, j, nnz_index);
         }
-        C_CSC->adjust();
+        printf("%d %lu %lu %lu\n", tid, nnz_index, Env::nnz_t[tid], nnz_index - Env::nnz_t[tid]);
+        //C_CSC->adjust();
+        #pragma omp barrier
+        C_CSC->refine_t(B_start_col, B_end_col, tid);
    }
    else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
