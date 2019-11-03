@@ -14,7 +14,8 @@
 template<typename Weight>
 inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct Compressed_Format<Weight>> A,
                                                          std::shared_ptr<struct Compressed_Format<Weight>> B,
-                                                         std::vector<Weight> s) {
+                                                         std::vector<Weight> s,
+                                                         int32_t tid) {
 
     uint64_t nnzmax = 0;
     uint32_t nrows = 0;
@@ -77,6 +78,8 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         for(uint32_t j = 0; j < B_ncols; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
+                //uint32_t l = (l == start_col) B_IA[k];
+                //for(uint32_t i = JA[start_col] + displacement_nnz; i < JA[start_col + 1]; i++) {
                 for(uint32_t m = A_JA[l]; m < A_JA[l+1]; m++) {
                     s[A_IA[m]] = 1;
                 }
