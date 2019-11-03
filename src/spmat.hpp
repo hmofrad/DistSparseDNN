@@ -23,12 +23,13 @@ struct Compressed_Format {
         virtual ~Compressed_Format() {};
         virtual void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width) {};
         virtual void populate_spa(std::vector<Weight>& spa, std::vector<Weight> bias, uint32_t col) {};
-        virtual void populate_spa_t(std::vector<Weight>& spa, std::vector<Weight> bias, const uint32_t& col, uint64_t& nnz_index) {};
+        virtual void populate_spa_t(std::vector<Weight>& spa, std::vector<Weight> bias, const uint32_t& col, int32_t tid) {};
         virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_fmt) {};
         virtual void refine_t(const uint32_t start_col, const uint32_t end_col, const int32_t tid) {};
-        virtual void adjust() {};
+        virtual void adjust(int32_t tid) {};
         virtual void reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {};
         virtual void walk() {};
+        virtual void walk_t(int32_t tid) {};
         
         COMPRESSED_FORMAT compression_type;
         
@@ -38,7 +39,8 @@ struct Compressed_Format {
         
         std::shared_ptr<struct Data_Block<uint32_t>> IA_blk;
         std::shared_ptr<struct Data_Block<uint32_t>> JA_blk;
-        std::shared_ptr<struct Data_Block<Weight>>  A_blk;
+        //std::shared_ptr<struct Data_Block<int32_t>> JD_blk;
+        std::shared_ptr<struct Data_Block<Weight>>   A_blk;
 };
 
 template<typename Weight>
@@ -128,11 +130,12 @@ struct CSC : public Compressed_Format<Weight> {
         
         void populate(std::vector<struct Triple<Weight>>& triples, uint32_t tile_height, uint32_t tile_width);
         void populate_spa(std::vector<Weight>& spa, std::vector<Weight> bias, uint32_t col);
-        void populate_spa_t(std::vector<Weight>& spa, std::vector<Weight> bias, const uint32_t col, uint64_t& nnz_index);
+        void populate_spa_t(std::vector<Weight>& spa, std::vector<Weight> bias, const uint32_t col, int32_t tid);
         void repopulate(const std::shared_ptr<struct CSC<Weight>> other_csc);
         void walk();
+        void walk_t(int32_t tid);
         void reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_);
-        void adjust();
+        void adjust(int32_t tid);
         void refine_t(const uint32_t start_col, const uint32_t end_col, const int32_t tid);
         
         uint64_t nnz_i = 0;
@@ -148,6 +151,7 @@ CSC<Weight>::CSC(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
     
     CSC::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::nnz));
     CSC::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::ncols + 1));
+    //CSC::JD_blk = std::move(std::make_shared<struct Data_Block<int32_t>>(CSC::ncols + 1));
     CSC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSC::nnz));
 }
 
@@ -200,11 +204,84 @@ void CSC<Weight>::walk() {
     }
     if(count != CSC::nnz) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Compression failed\n");
-        std::exit(Env::finalize());     
+        std::exit(Env::finalize());  
     }
     //std::cout << "Checksum=" << sum << ",Count=" << count << std::endl;
     Logging::print(Logging::LOG_LEVEL::INFO, "Checksum= %f, Count=%d\n", sum, count);
 }
+
+
+template<typename Weight>
+void CSC<Weight>::walk_t(int32_t tid) {  
+/*
+    std::vector<double> sum;
+    std::vector<uint64_t> count;
+    if(!tid) {
+        sum.resize(Env::nthreads);
+        count.resize(Env::nthreads);
+    }
+    #pragma omp barrier
+    */
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight*    A = CSC::A_blk->ptr;
+    
+    //double sum = 0;
+    //uint64_t count = 0;
+    
+    
+    uint32_t start_col = Env::start_col[tid];
+    uint32_t end_col = Env::end_col[tid];
+    uint32_t displacement_nnz = Env::displacement_nnz[tid];
+    //printf("%d %d %d %d\n", tid, start_col, end_col, displacement);
+    
+   // printf("%d %d %d %d %d %d %d\n", tid, start_col, end_col, displacement, JA[end_col-1], (JA[end_col]), JA[end_col + 1]);
+    //printf("%d %d %d %d %d %d %d\n", tid, start_col, end_col, displacement, JA[start_col-1], JA[start_col], JA[start_col + 1]);
+    
+
+    for(uint32_t j = start_col; j < end_col-1; j++) {
+        //std::cout << "j=" << j << ": " << JA[j + 1] - JA[j] << std::endl;
+        for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
+            (void) IA[i];
+            (void) A[i];
+            Env::checksum[tid] += A[i];
+            Env::checkcount[tid]++;
+            //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
+        }
+    }    
+    
+    //std::cout << "j=" << j << ": " << JA[j + 1] - JA[j] - displacement << std::endl;
+    for(uint32_t i = JA[start_col] + displacement_nnz; i < JA[start_col + 1]; i++) {
+        (void) IA[i];
+        (void) A[i];
+        Env::checksum[tid] += A[i];
+        Env::checkcount[tid]++;
+        //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
+    }
+    
+    
+  
+    
+    //std::cout << "tid=" << tid <<  ",Checksum=" << checksum << ",Checkcount=" << count << std::endl;
+
+    //#pragma omp barrier
+    //if(!tid)
+    #pragma omp barrier  
+    if(!tid) {
+        double   total_sum = std::accumulate(Env::checksum.begin(), Env::checksum.end(), 0);
+        uint64_t total_count = std::accumulate(Env::checkcount.begin(), Env::checkcount.end(), 0);
+        
+        if(total_count != CSC::nnz) {
+            Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!!\n");
+        }
+        
+        Logging::print(Logging::LOG_LEVEL::INFO, "Checksum= %f, Count=%d\n", total_sum, total_count);
+    }
+    #pragma omp barrier    
+}
+
+
+
 
 template<typename Weight>
 void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bias, uint32_t col) {
@@ -238,25 +315,27 @@ void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bia
 
 
 template<typename Weight>
-inline void CSC<Weight>::populate_spa_t(std::vector<Weight>& spa, std::vector<Weight> bias, const uint32_t col, uint64_t& nnz_index) {
-    uint64_t& k = nnz_index;
+inline void CSC<Weight>::populate_spa_t(std::vector<Weight>& spa, std::vector<Weight> bias, const uint32_t col, int32_t tid) {
+    uint64_t&  k = Env::index_nnz[tid];
+    uint32_t   c = col + Env::start_col[tid];
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
     
     Weight YMIN = 0;
     Weight YMAX = 32;
-    int n = 0;
+    //int n = 0;
     //JA[col+1] += JA[col] +;
-    //uint64_t k = ((JA[col] - JA[start_col]) + nnz_offset);
+    //uint64_t k = ((JA[col] - JA[start_col]) + offset_nnz);
     //uint64_t k = JA[col];
-    //nnz_offset + JA[start_col] - JA[col];
-    //if(nnz_offset == 0)
-    //printf("col=%d off=%lu k=%lu\n", col, nnz_offset, k);
-    JA[col+1] += JA[col];
+    //offset_nnz + JA[start_col] - JA[col];
+    //if(offset_nnz == 0)
+    //printf("col=%d off=%lu k=%lu\n", col, offset_nnz, k);
+    //JA[col+1] = JA[col];
+    JA[c] = k;
     for(uint32_t i = 0; i < CSC::nrows; i++) {
         if(spa[i]) {
-            spa[i] += bias[col];
+            spa[i] += bias[c];
             if(spa[i] < YMIN) {
                 spa[i] = YMIN;
             }
@@ -264,33 +343,108 @@ inline void CSC<Weight>::populate_spa_t(std::vector<Weight>& spa, std::vector<We
                 spa[i] = YMAX;
             }
             if(spa[i]) {
-                JA[col+1]++;
+                JA[c]++;
                 IA[k] = i;
                 A[k] = spa[i];
                 k++;
                 spa[i] = 0;
-                n++;
+                //n++;
             }
         }
     }
-    //if(nnz_offset == 0)
+    //if(offset_nnz == 0)
     //    printf("n=%d %d\n", n, JA[col+1] - JA[col]);
 }
 
 
 template<typename Weight>
 inline void CSC<Weight>::refine_t(const uint32_t start_col, const uint32_t end_col, const int32_t tid) {
-    printf("REFINE %d %d %d\n", start_col, end_col, tid);
+    //printf("REFINE %d %d %d\n", start_col, end_col, tid);
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
+    //int32_t* JD = CSC::JD_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
     
-    //if(!Env::rank) {
-    printf("tid=%d, start_col=%d end_col=%d JA[start_col]=%d JA[end_col]=%d\n", tid, start_col, end_col, JA[start_col], JA[end_col-1]);
-    //}
+    
+//    uint32_t displacement = (!tid) ? 0 : Env::offset_nnz[tid] - Env::index_nnz[tid-1];
+  //  Env::displacement_nnz[tid] = displacement;
+    
+    
     
     //uint32_t start_col = Env::start_col[tid];
     //uint32_t end_col = Env::end_col[tid];
+    /*
+    JA[start_col] += Env::offset_nnz[tid];
+    for(uint32_t j = start_col+1; j < end_col; j++) {
+        JA[j] += JA[j-1];
+    }
+    JA[end_col] += (tid == Env::nthreads - 1) ? JA[end_col-1] : 0;
+    
+    //int32_t displacement = (!tid) ? 0 : Env::index_nnz[tid-1] - Env::offset_nnz[tid];
+    JD[start_col] = (tid) ? (Env::index_nnz[tid-1] - Env::offset_nnz[tid]) : 0;
+    */
+    
+    //printf("%d %d\n", tid, displacement);
+    
+    
+    //for(uint32_t j = start_col; j < end_col; j++) {
+    //    JD[j] = displacement;
+    //}        
+    
+    
+    
+    /*
+    int32_t displacement = 0;
+    for(int32_t i = 0; i < tid; i++) {
+        displacement += (Env::index_nnz[i-1] - Env::offset_nnz[i]);
+    }
+    
+   
+    
+    
+    JA[start_col] = 0;
+    for(int32_t i = 0; i < tid; i++) {
+        JA[start_col] += (Env::index_nnz[i] - Env::offset_nnz[i]);
+    }
+    
+
+    
+    for(uint32_t j = start_col+1; j < end_col; j++) {
+        JA[j] += JA[j-1];
+    }
+    
+    JA[end_col] += (tid == Env::nthreads - 1) ? JA[end_col-1] : 0;
+    */
+    
+   // printf("tid=%d start=%d end=%d nnz=%lu,%lu %d,%d d=%d\n", tid, start_col, end_col, Env::offset_nnz[tid],  Env::index_nnz[tid], JA[end_col-1], JA[end_col], 0);
+    
+    
+    //    if((tid == Env::nthreads - 1)) {
+      //  JA[end_col] += JA[end_col-1];
+    //}
+    /*
+    #pragma omp barrier    
+    if(tid == 1) {
+        for(uint32_t j = start_col; j < end_col; j++) {
+        std::cout << start_col << "," << end_col << " j=" << j << ": " << JA[j + 1] - JA[j]  << ": " << JA[j] << " : " << (JA[j+1] - JA[j]) - Env::displacement_nnz[tid] << std::endl;
+       // break;
+        
+        }
+    }
+    */
+    
+    
+    
+    /*
+    if(tid == 0) {
+        idx = 0;
+        for(uint32_t i = 0; i < Env::nthreads; i++) {    
+            idx += (Env::offset_nnz[i] - Env::start_nnz[i]);
+        }
+    }
+    */
+    
+    
     /*
     if(tid == 0) {
         JA[0] = 0;
@@ -308,7 +462,34 @@ inline void CSC<Weight>::refine_t(const uint32_t start_col, const uint32_t end_c
             JA[j] += JA[j-1];
         }
     }
+    */
     
+    
+    
+    
+     /*
+    if(tid) {
+        uint32_t c = start_col-3;
+        printf("%d %d\n", c, JA[c]);
+        c++;
+        printf("%d %d\n", c, JA[c]);
+        c++;
+        printf("%d %d\n", c, JA[c]);
+        c++;
+        printf("%d %d\n", c, JA[c]);
+        c++;
+        printf("%d %d\n", c, JA[c]);
+        c++;
+        printf("%d %d\n", c, JA[c]);
+        c++;
+        printf("%d %d\n", c, JA[c]);
+        c++;
+        printf("%d %d\n", c, JA[c]);
+    }   
+    */
+    
+    
+    /*
     if((tid == Env::nthreads - 1)) {
         JA[end_col] += JA[end_col-1];
     }
@@ -382,14 +563,34 @@ void CSC<Weight>::reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
 }
 
 template<typename Weight>
-void CSC<Weight>::adjust(){
+void CSC<Weight>::adjust(int32_t tid){
     /*
     if(CSC::nnz > nnz_i) {
         CSC::IA_blk->reallocate(nnz_i);
         CSC::A_blk->reallocate(nnz_i);
     }
     */
-    CSC::nnz = nnz_i;
+    
+        
+    uint32_t displacement = (tid == (Env::nthreads - 1)) ? 0 : Env::offset_nnz[tid+1] - Env::index_nnz[tid];
+    Env::displacement_nnz[tid] = displacement;
+    #pragma omp barrier
+    if(!tid) {
+        CSC::nnz_i = 0;
+        for(int32_t i = 0; i < Env::nthreads; i++) {    
+            CSC::nnz_i += (Env::index_nnz[i] - Env::offset_nnz[i]);
+        }
+    }
+    
+    if(!tid) printf("NNNN %lu %lu MMMM\n", CSC::nnz, CSC::nnz_i);
+    /*
+    nnz_i = 0;
+    for(int32_t i = 0; i < Env::nthreads; i++) {    
+        nnz_i += (Env::index_nnz[i] - Env::offset_nnz[i]);
+    }
+    */
+    
+    //CSC::nnz = nnz_i;
     
 }
 
