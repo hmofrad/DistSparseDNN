@@ -172,7 +172,7 @@ template<typename Weight>
 void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
     
     uint64_t nnz = 0;
-    //std::vector<uint64_t> nnz_t(Env::nthreads);
+    //std::vector<uint64_t> offset_nnz(Env::nthreads);
     uint32_t nrows = inputFeatures->tile_height;
     uint32_t ncols = layers[0]->ncols;
     printf("%d %d %d\n", nrows, ncols, Env::nthreads);
@@ -188,6 +188,12 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
     {
         int tid = omp_get_thread_num();
         
+        Env::start_col[tid] = (ncols/Env::nthreads) * tid;
+        Env::end_col[tid]   = (ncols/Env::nthreads) * (tid+1);
+        
+        
+        
+        
         auto& A_tile = inputFeatures->tiles[Env::rank][0];
         auto& A0_spmat = A_tile.spmat;
         auto& B_tile = layers[0]->tiles[0][tid];
@@ -197,21 +203,23 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
         //if(!Env::rank)
         //printf("Rank=%d tid=%d csc=%d\n", Env::rank, tid, B0_spmat == NULL);
         
-        std::tie(Env::nnz_t[tid], std::ignore, std::ignore) =  spmm_sym(A0_spmat, B0_spmat, s_spa);
+        std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A0_spmat, B0_spmat, s_spa);
         
-        //nnz += Env::nnz_t[tid];
+        //nnz += Env::offset_nnz[tid];
         
         #pragma omp barrier
         if(!tid) {
-            nnz = std::accumulate(Env::nnz_t.begin(), Env::nnz_t.end(), 0);
+            nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
             output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
             uint64_t sum = 0;
             for(int32_t i = Env::nthreads - 1; i > 0; i--) {
-                sum += Env::nnz_t[i];
-                Env::nnz_t[i] = nnz - sum;
+                sum += Env::offset_nnz[i];
+                Env::offset_nnz[i] = nnz - sum;
+                Env::index_nnz[i] = Env::offset_nnz[i];
             }
-            Env::nnz_t[0] = 0;                               
+            Env::offset_nnz[0] = 0;                               
+            Env::index_nnz[0] = 0;
         }
         #pragma omp barrier
         auto& C_tile = output->tiles[Env::rank][0];    
@@ -220,7 +228,7 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
         const uint32_t B_start_col = B_tile.start_col;
         const uint32_t B_end_end = B_tile.end_col;
         //printf("%d %d\n", B_start_col, B_end_end);
-        spmm(A0_spmat, B0_spmat, C_spmat, s_spa, b_bias, B_start_col, B_end_end, tid);
+        spmm(A0_spmat, B0_spmat, C_spmat, s_spa, b_bias, tid);
     }
     //auto& C_tile = output->tiles[Env::rank][0];
     //auto& C_spmat = C_tile.spmat;
@@ -237,15 +245,15 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
   //          #pragma omp barrier
     //    if(!tid) {
                 
-    //for(auto& n: Env::nnz_t)
+    //for(auto& n: Env::offset_nnz)
     //    printf("%lu ", n);
     //printf("\n");
             
             
-//    nnz = std::accumulate(Env::nnz_t.begin(), Env::nnz_t.end(), 0);
-    //nnz_t[0] = 0;
+//    nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
+    //offset_nnz[0] = 0;
     //uint64_t sum = 0;
-    //uint64_t temp1 = Env::nnz_t[0];
+    //uint64_t temp1 = Env::offset_nnz[0];
     
     
     //std::vector<uint64_t> nnz_s(Env::nthreads);
