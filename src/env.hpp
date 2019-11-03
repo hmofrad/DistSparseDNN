@@ -31,8 +31,8 @@ namespace Env {
     std::vector<uint64_t> offset_nnz; /* Thread Offset from the beginning of the compressed format data */
     std::vector<uint64_t> index_nnz;  /* Current index of thread pointing to where the new data will be inserted */
     std::vector<uint32_t> displacement_nnz; /* The part that a thread may skip cuasing some internal fragmentation */  
-    std::vector<uint64_t> start_col;
-    std::vector<uint64_t> end_col;
+    std::vector<uint32_t> start_col;
+    std::vector<uint32_t> end_col;
     std::vector<double> checksum;
     std::vector<uint64_t> checkcount;
     
