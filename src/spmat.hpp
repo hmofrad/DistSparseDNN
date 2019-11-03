@@ -239,9 +239,14 @@ void CSC<Weight>::walk_t(int32_t tid) {
     //printf("%d %d %d %d %d %d %d\n", tid, start_col, end_col, displacement, JA[start_col-1], JA[start_col], JA[start_col + 1]);
     
 
-    for(uint32_t j = start_col; j < end_col-1; j++) {
+    for(uint32_t j = start_col; j < end_col; j++) {
+        
+        uint32_t l = (j == start_col) ? displacement_nnz : 0;
+        //if(((j < (start_col+3)) or (j > (end_col-3))) and tid == 1)
+        //std::cout << "end=" << end_col << " j=" << j << ": " << "l=" << l << " ,jaj="  << JA[j] << ",jaj+1=" << JA[j+1] << ",difff=" <<  JA[j+1] - JA[j] << std::endl;
         //std::cout << "j=" << j << ": " << JA[j + 1] - JA[j] << std::endl;
-        for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
+        
+        for(uint32_t i = JA[j] + l; i < JA[j + 1]; i++) {
             (void) IA[i];
             (void) A[i];
             Env::checksum[tid] += A[i];
@@ -249,7 +254,7 @@ void CSC<Weight>::walk_t(int32_t tid) {
             //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
         }
     }    
-    
+    /*
     //std::cout << "j=" << j << ": " << JA[j + 1] - JA[j] - displacement << std::endl;
     for(uint32_t i = JA[start_col] + displacement_nnz; i < JA[start_col + 1]; i++) {
         (void) IA[i];
@@ -258,6 +263,7 @@ void CSC<Weight>::walk_t(int32_t tid) {
         Env::checkcount[tid]++;
         //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
     }
+    */
     
     
   
@@ -317,7 +323,7 @@ void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weight> bia
 template<typename Weight>
 inline void CSC<Weight>::populate_spa_t(std::vector<Weight>& spa, std::vector<Weight> bias, const uint32_t col, int32_t tid) {
     uint64_t&  k = Env::index_nnz[tid];
-    uint32_t   c = col + Env::start_col[tid];
+    uint32_t   c = col + Env::start_col[tid] + 1;
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
@@ -330,7 +336,8 @@ inline void CSC<Weight>::populate_spa_t(std::vector<Weight>& spa, std::vector<We
     //uint64_t k = JA[col];
     //offset_nnz + JA[start_col] - JA[col];
     //if(offset_nnz == 0)
-    //printf("col=%d off=%lu k=%lu\n", col, offset_nnz, k);
+        //if(tid == 1)
+    //printf("col=%d c=%d k=%lu\n", col, c, k);
     //JA[col+1] = JA[col];
     JA[c] = k;
     for(uint32_t i = 0; i < CSC::nrows; i++) {
@@ -571,18 +578,23 @@ void CSC<Weight>::adjust(int32_t tid){
     }
     */
     
+    
         
-    uint32_t displacement = (tid == (Env::nthreads - 1)) ? 0 : Env::offset_nnz[tid+1] - Env::index_nnz[tid];
+    uint32_t displacement = (tid == 0) ? 0 : Env::offset_nnz[tid] - Env::index_nnz[tid-1];
     Env::displacement_nnz[tid] = displacement;
     #pragma omp barrier
     if(!tid) {
+        //JA[end_col] += (tid == Env::nthreads - 1) ? JA[end_col-1] : 0;
         CSC::nnz_i = 0;
         for(int32_t i = 0; i < Env::nthreads; i++) {    
             CSC::nnz_i += (Env::index_nnz[i] - Env::offset_nnz[i]);
         }
+     //   printf("nnz= %lu nnz_i = %lu\n", CSC::nnz, CSC::nnz_i);
     }
     
-    if(!tid) printf("NNNN %lu %lu MMMM\n", CSC::nnz, CSC::nnz_i);
+    //printf("tid=%d start_c=%d end_c=%d offset=%lu index=%lu d=%d\n", tid, Env::start_col[tid], Env::end_col[tid], Env::offset_nnz[tid], Env::index_nnz[tid], Env::displacement_nnz[tid]);
+    
+
     /*
     nnz_i = 0;
     for(int32_t i = 0; i < Env::nthreads; i++) {    
