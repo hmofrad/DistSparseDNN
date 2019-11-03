@@ -28,10 +28,13 @@ namespace Env {
     double io_time = 0;
     double compression_time = 0;
     
-    std::vector<uint64_t> nnz_t;
-    //std::vector<uint64_t> nnz_o;
+    std::vector<uint64_t> offset_nnz; /* Thread Offset from the beginning of the compressed format data */
+    std::vector<uint64_t> index_nnz;  /* Current index of thread pointing to where the new data will be inserted */
+    std::vector<uint32_t> displacement_nnz; /* The part that a thread may skip cuasing some internal fragmentation */  
     std::vector<uint64_t> start_col;
     std::vector<uint64_t> end_col;
+    std::vector<double> checksum;
+    std::vector<uint64_t> checkcount;
     
     
     int init();
@@ -64,8 +67,13 @@ int Env::init() {
     
     Env::nthreads = omp_get_max_threads(); 
 
-    nnz_t.resize(Env::nthreads);
-    //nnz_o.resize(Env::nthreads);
+    offset_nnz.resize(Env::nthreads);
+    index_nnz.resize(Env::nthreads);
+    displacement_nnz.resize(Env::nthreads);
+    start_col.resize(Env::nthreads);
+    end_col.resize(Env::nthreads);
+    checksum.resize(Env::nthreads);
+    checkcount.resize(Env::nthreads);
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
