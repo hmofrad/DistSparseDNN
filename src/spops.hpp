@@ -103,8 +103,8 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                  std::shared_ptr<struct Compressed_Format<Weight>> C,
                  std::vector<Weight> s,
                  std::vector<Weight> b,
-                 const uint32_t B_start_col,
-                 const uint32_t B_end_col,
+                 //const uint32_t B_start_col,
+                 //const uint32_t B_end_col,
                  int32_t tid) {
                      
     if((A->compression_type == COMPRESSED_FORMAT::_CSC_) and 
@@ -137,10 +137,11 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         uint32_t* C_JA   = C_CSC->JA_blk->ptr;
         const Weight*    C_A   = C_CSC->A_blk->ptr;
         
-        uint64_t nnz_index = Env::nnz_t[tid];
-        //uint64_t nnz_index = nnz_offset;
-        C_JA[B_start_col] = Env::nnz_t[tid];
-        printf("C_JA[B_start_col]= %d\n", C_JA[B_start_col]);
+        //uint64_t& offset_nnz = Env::offset_nnz[tid];
+        //uint64_t& index_nnz = Env::index_nnz[tid];
+        //uint64_t index_nnz = offset_nnz;
+        //C_JA[B_start_col] = Env::offset_nnz[tid];
+        //printf("B_start_col=%d, C_JA[B_start_col]= %d\n", B_start_col, C_JA[B_start_col]);
         
         if(A_ncols != B_nrows) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols);
@@ -155,12 +156,17 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                 }
             }
             //C_CSC->populate_spa(s, b, j);
-            C_CSC->populate_spa_t(s, b, j, nnz_index);
+            C_CSC->populate_spa_t(s, b, j, tid);
         }
-        printf("%d %lu %lu %lu\n", tid, nnz_index, Env::nnz_t[tid], nnz_index - Env::nnz_t[tid]);
+        //printf("%d %lu %lu %lu\n", tid, index_nnz, Env::offset_nnz[tid], index_nnz - Env::offset_nnz[tid]);
         //C_CSC->adjust();
-        #pragma omp barrier
-        C_CSC->refine_t(B_start_col, B_end_col, tid);
+        //Env::index_nnz[tid] = index_nnz;
+        //#pragma omp barrier
+        //C_CSC->refine_t(B_start_col, B_end_col, tid);
+        //if(!tid) 
+        C_CSC->adjust(tid);
+        C_CSC->walk_t(tid);
+        
    }
    else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
