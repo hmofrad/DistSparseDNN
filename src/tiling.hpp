@@ -429,7 +429,10 @@ void Tiling<Weight>::populate_tiling() {
     while(nrows % nrowgrps)
         nrows++;
     
-    while(ncols % ncolgrps)
+    //while(ncols % ncolgrps)
+    //    ncols++;
+    
+    while(ncols % Env::nthreads)
         ncols++;
     
     tile_height = nrows / nrowgrps;
