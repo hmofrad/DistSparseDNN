@@ -83,7 +83,10 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 //l += (l == start_col) ? displacement_nnz : 0;
-                uint32_t n = (l == (end_col-1)) ? displacement_nnz : 0;
+                uint32_t n = (l == start_col) ? displacement_nnz : 0;
+                //uint32_t n = 0;
+                //if(l == (end_col - 1))
+                  //  printf("j=%d k=%d l=%d n=%d A[l]=%d A[l+1]=%d\n", j, k, l, n, A_JA[l], A_JA[l+1]);
                 for(uint32_t m = A_JA[l] + n; m < A_JA[l+1]; m++) {
                     s[A_IA[m]] = 1;
                 }
@@ -158,28 +161,31 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols);
             std::exit(Env::finalize()); 
         }
-
+        
         for(uint32_t j = 0; j < B_ncols; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
-                uint32_t n = (l == (end_col - 1)) ? displacement_nnz : 0;
-                if(l == (end_col - 1))
+                //uint32_t n = (l == (end_col - 1)) ? displacement_nnz : 0;
+                //uint32_t n = 0;
+                uint32_t n = (l == start_col) ? displacement_nnz : 0;
+                //if(l == (end_col - 1))
                     //printf("%d %d %d %d %d\n", j, k, l, n, A_JA[l]);
                 for(uint32_t m = A_JA[l] + n; m < A_JA[l+1]; m++) {
                     s[A_IA[m]] += (B_A[k] * A_A[m]);
                 }
             }
             //C_CSC->populate_spa(s, b, j);
+            //j += (tid == 0) ? 1 : 0;
             C_CSC->populate_spa_t(s, b, j, tid);
         }
         //printf("%d %lu %lu %lu\n", tid, index_nnz, Env::offset_nnz[tid], index_nnz - Env::offset_nnz[tid]);
         //C_CSC->adjust();
         //Env::index_nnz[tid] = index_nnz;
-        //#pragma omp barrier
+        #pragma omp barrier
         //C_CSC->refine_t(B_start_col, B_end_col, tid);
         //if(!tid) 
         C_CSC->adjust(tid);
-        //C_CSC->walk_t(tid);
+       // C_CSC->walk_t(tid);
         
    }
    else {
@@ -209,10 +215,11 @@ inline char validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>
         uint32_t end_col = Env::end_col[t];
         uint32_t displacement_nnz = Env::displacement_nnz[t];
         for(uint32_t j = start_col; j < end_col; j++) {
-            uint32_t l = (j == (end_col-1)) ? displacement_nnz : 0;
+            uint32_t n = (j == start_col) ? displacement_nnz : 0;
+            //uint32_t n = (j == (end_col-1)) ? displacement_nnz : 0;
             //if(i < 1000)
-            //printf("t=%d j=%d l=%d\n", t, j, l);
-            for(uint32_t i = A_JA[j] + l ; i < A_JA[j+1]; i++) {
+            //printf("t=%d j=%d n=%d d=%d[%d %d %d]\n", t, j, n, displacement_nnz, A_JA[j], A_JA[j+1], A_JA[j+1] - A_JA[j] - n);
+            for(uint32_t i = A_JA[j] + n ; i < A_JA[j+1]; i++) {
                 allCategories[A_IA[i]] = 1;
             }
         }
@@ -231,11 +238,14 @@ inline char validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>
     uint32_t j = 0;
     for(uint32_t i = 0; i < A_nrows; i++) {
         //if(i < 1000)
-        //printf("%d %d %d\n", i, trueCategories[i], allCategories[i]);
+        
         if(trueCategories[i] != allCategories[i]) {
             me = 0;
             //break;
         }
+        //else {
+          //printf("%d %d %d\n", i, trueCategories[i], allCategories[i]);  
+        //}
         //if(i == 1000) break;
     }
     char all = 0;
