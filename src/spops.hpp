@@ -67,7 +67,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         const uint32_t* B_IA   = B_CSC->IA_blk->ptr;
         const uint32_t* B_JA   = B_CSC->JA_blk->ptr;
         const Weight*    B_A   = B_CSC->A_blk->ptr;
-        
+        //Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM sym dimensions do not agree A[%d %d] B[%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols);
         if(A_ncols != B_nrows) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols);
             std::exit(Env::finalize()); 
@@ -75,12 +75,16 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         nrows = A_nrows;
         ncols = B_ncols;
         
+        uint32_t start_col = Env::start_col[tid];
+        uint32_t end_col = Env::end_col[tid];
+        uint32_t displacement_nnz = Env::displacement_nnz[tid];
+        
         for(uint32_t j = 0; j < B_ncols; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
-                //uint32_t l = (l == start_col) B_IA[k];
-                //for(uint32_t i = JA[start_col] + displacement_nnz; i < JA[start_col + 1]; i++) {
-                for(uint32_t m = A_JA[l]; m < A_JA[l+1]; m++) {
+                //l += (l == start_col) ? displacement_nnz : 0;
+                uint32_t n = (l == (end_col-1)) ? displacement_nnz : 0;
+                for(uint32_t m = A_JA[l] + n; m < A_JA[l+1]; m++) {
                     s[A_IA[m]] = 1;
                 }
             }
@@ -140,6 +144,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         uint32_t* C_JA   = C_CSC->JA_blk->ptr;
         const Weight*    C_A   = C_CSC->A_blk->ptr;
         
+        uint32_t start_col = Env::start_col[tid];
+        uint32_t end_col = Env::end_col[tid];
+        uint32_t displacement_nnz = Env::displacement_nnz[tid];
+        
         //uint64_t& offset_nnz = Env::offset_nnz[tid];
         //uint64_t& index_nnz = Env::index_nnz[tid];
         //uint64_t index_nnz = offset_nnz;
@@ -154,7 +162,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         for(uint32_t j = 0; j < B_ncols; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
-                for(uint32_t m = A_JA[l]; m < A_JA[l+1]; m++) {
+                uint32_t n = (l == (end_col - 1)) ? displacement_nnz : 0;
+                if(l == (end_col - 1))
+                    //printf("%d %d %d %d %d\n", j, k, l, n, A_JA[l]);
+                for(uint32_t m = A_JA[l] + n; m < A_JA[l+1]; m++) {
                     s[A_IA[m]] += (B_A[k] * A_A[m]);
                 }
             }
@@ -168,7 +179,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         //C_CSC->refine_t(B_start_col, B_end_col, tid);
         //if(!tid) 
         C_CSC->adjust(tid);
-        C_CSC->walk_t(tid);
+        //C_CSC->walk_t(tid);
         
    }
    else {
@@ -189,24 +200,47 @@ inline char validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>
     const uint32_t* A_JA   = A_CSC->JA_blk->ptr;
     const Weight*    A_A   = A_CSC->A_blk->ptr;
     
+    
+    
+    
+    std::vector<uint32_t> allCategories(A_nrows);
+    for(int32_t t = 0; t < Env::nthreads; t++) {
+        uint32_t start_col = Env::start_col[t];
+        uint32_t end_col = Env::end_col[t];
+        uint32_t displacement_nnz = Env::displacement_nnz[t];
+        for(uint32_t j = start_col; j < end_col; j++) {
+            uint32_t l = (j == (end_col-1)) ? displacement_nnz : 0;
+            //if(i < 1000)
+            //printf("t=%d j=%d l=%d\n", t, j, l);
+            for(uint32_t i = A_JA[j] + l ; i < A_JA[j+1]; i++) {
+                allCategories[A_IA[i]] = 1;
+            }
+        }
+    }
+    /*
     std::vector<uint32_t> allCategories(A_nrows);
     for(uint32_t j = 0; j < A_ncols; j++) {
+        uint32_t l = (j == start_col) ? displacement_nnz : 0;
         for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
             allCategories[A_IA[i]] = 1;
         }
     }
-
+    */
+    
     char me = 1;
     uint32_t j = 0;
     for(uint32_t i = 0; i < A_nrows; i++) {
+        //if(i < 1000)
+        //printf("%d %d %d\n", i, trueCategories[i], allCategories[i]);
         if(trueCategories[i] != allCategories[i]) {
             me = 0;
-            break;
+            //break;
         }
+        //if(i == 1000) break;
     }
     char all = 0;
     MPI_Allreduce(&me, &all, 1, MPI_CHAR, MPI_SUM, MPI_COMM_WORLD);
-    
+
     return((all == Env::nranks));
 }
 
