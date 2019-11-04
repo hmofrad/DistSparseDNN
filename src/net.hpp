@@ -176,7 +176,7 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
     //std::vector<uint64_t> offset_nnz(Env::nthreads);
     uint32_t nrows = inputFeatures->tile_height;
     uint32_t ncols = layers[0]->ncols;
-    printf("%d %d %d\n", nrows, ncols, Env::nthreads);
+    //printf("%d %d %d\n", nrows, ncols, Env::nthreads);
     
     //auto& B_tile = layers[0]->tiles[0][0];
     //auto& B0_spmat = B_tile.spmat;
@@ -184,16 +184,13 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
     //std::tie(nnz, nrows, ncols) =  spmm_sym(A0_spmat, B0_spmat, s_spa);
     //output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
     //printf(">>> Rank=%d csc=%d\n", Env::rank, layers[0]->tiles[0][0].spmat == NULL);
-    
+    /*
     #pragma omp parallel
     {
         int tid = omp_get_thread_num();
         
         Env::start_col[tid] = (ncols/Env::nthreads) * tid;
         Env::end_col[tid]   = (ncols/Env::nthreads) * (tid+1);
-        
-        
-        
         
         auto& A_tile = inputFeatures->tiles[Env::rank][0];
         auto& A0_spmat = A_tile.spmat;
@@ -211,8 +208,6 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
         #pragma omp barrier
         if(!tid) {
             nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
-            output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
-                               nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
             uint64_t sum = 0;
             for(int32_t i = Env::nthreads - 1; i > 0; i--) {
                 sum += Env::offset_nnz[i];
@@ -221,121 +216,103 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
             }
             Env::offset_nnz[0] = 0;                               
             Env::index_nnz[0] = 0;
+            
+            output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
+                nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
         }
         #pragma omp barrier
-        auto& C_tile = output->tiles[Env::rank][0];    
-        auto& C_spmat = C_tile.spmat;
+        auto& C0_tile = output->tiles[Env::rank][0];    
+        auto& C0_spmat = C0_tile.spmat;
         auto& b_bias = biasDenseVecs[0];
-        const uint32_t B_start_col = B_tile.start_col;
-        const uint32_t B_end_end = B_tile.end_col;
+        //const uint32_t B_start_col = B_tile.start_col;
+        //const uint32_t B_end_end = B_tile.end_col;
         //printf("%d %d\n", B_start_col, B_end_end);
-        spmm(A0_spmat, B0_spmat, C_spmat, s_spa, b_bias, tid);
-    }
-    //auto& C_tile = output->tiles[Env::rank][0];
-    //auto& C_spmat = C_tile.spmat;
-    //const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_spmat);
-    //C_spmat->walk();
-    //Env::barrier();
-    //printf("INFOOOOO: %d %d %lu %lu\n", C_CSC->nrows, C_CSC->ncols, C_CSC->nnz, C_CSC->nnz_i);
-
-
-
-    
-
-    
-  //          #pragma omp barrier
-    //    if(!tid) {
-                
-    //for(auto& n: Env::offset_nnz)
-    //    printf("%lu ", n);
-    //printf("\n");
-            
-            
-//    nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
-    //offset_nnz[0] = 0;
-    //uint64_t sum = 0;
-    //uint64_t temp1 = Env::offset_nnz[0];
-    
-    
-    //std::vector<uint64_t> nnz_s(Env::nthreads);
-    
-    
-    
-    
- 
-    
-    /*
-       offset_nnz[0] = 0;
-    start_nnz[0] = 0;
-    end_nnz[0] = length_nnz[0];
-    uint64_t nnzmax = length_nnz[0];
-    for(uint32_t i = 1; i < Env::nthreads; i++) {
-        start_nnz[i] = end_nnz[i-1];
-        end_nnz[i] = start_nnz[i] + length_nnz[i];
-        offset_nnz[i] = start_nnz[i];
-        nnzmax += length_nnz[i];
-    }
-    
-*/
-    
-
-
-    
-  //  printf(">>>>%lu %d %d\n", nnz, nrows, ncols);
-//}
-//#pragma omp barrier
-
-
-    
-    
-    
-
-    
-    /*
-    #pragma omp parallel
-    {
-        int tid = omp_get_thread_num();
-        uint32_t share = ncols/Env::nthreads;
-        uint32_t start = share * tid;
-        uint32_t end = start + share;
-        start_col[tid] = start;
-        end_col[tid] = end;
-        printf("%d %d %d\n", tid, start, end);
-
+        spmm(A0_spmat, B0_spmat, C0_spmat, s_spa, b_bias, tid);
     }
     */
-    
-    
-    
-    //auto& C_tile = output->tiles[Env::rank][0];    
-    //auto& C_spmat = C_tile.spmat;
-    //auto& b_bias = biasDenseVecs[0];
-    //spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias);
-    //printf("%lu %d %d\n", nnz, nrows, ncols);
-    
     #pragma omp parallel
     {
         int tid = omp_get_thread_num();
+        
+        
+        Env::start_col[tid] = (ncols/Env::nthreads) * tid;
+        Env::end_col[tid]   = (ncols/Env::nthreads) * (tid+1);
+        
+        auto& A0_tile = inputFeatures->tiles[Env::rank][0];
+        auto& A0_spmat = A0_tile.spmat;
+        auto& B0_tile = layers[0]->tiles[0][tid];
+        auto& B0_spmat = B0_tile.spmat;
+        auto& s_spa = spaDenseVec[tid];
+        
+        std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A0_spmat, B0_spmat, s_spa, tid);
+        
+        #pragma omp barrier
+        if(!tid) {
+            /*
+            nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
+            uint64_t sum = 0;
+            for(int32_t i = Env::nthreads - 1; i > 0; i--) {
+                sum += Env::offset_nnz[i];
+                Env::offset_nnz[i] = nnz - sum;
+                Env::index_nnz[i] = Env::offset_nnz[i];
+            }
+            Env::offset_nnz[0] = 0;                               
+            Env::index_nnz[0] = 0;
+            */
+            nnz = Env::assign_nnz();
+            output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
+                nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
+        }
+        #pragma omp barrier
+        auto& C0_tile = output->tiles[Env::rank][0];    
+        auto& C0_spmat = C0_tile.spmat;
+        auto& b_bias = biasDenseVecs[0];
+        spmm(A0_spmat, B0_spmat, C0_spmat, s_spa, b_bias, tid);
+        
+        
+        struct Tile<Weight> A_tile;
+        struct Tile<Weight> B_tile;
+        struct Tile<Weight> C_tile;
         for (uint32_t l = 1; l < maxLayers; l++) {
             if(!tid) Logging::print(Logging::LOG_LEVEL::INFO, "Layer %d SpMM.\n", l); 
-            if(not(l%2)) {
+            //if(not(l%2)) {
                 Env::checksum[tid] = 0;
                 Env::checkcount[tid] = 0;
                 
-                auto& A_tile = inputFeatures->tiles[Env::rank][0];
-                auto& A_spmat = A_tile.spmat;
-                auto& B_tile = layers[l]->tiles[0][tid];
-                auto& B_spmat = B_tile.spmat;
-                auto& s_spa = spaDenseVec[tid];
+                if(not(l%2)) {
+                    A_tile = inputFeatures->tiles[Env::rank][0];
+                    C_tile = output->tiles[Env::rank][0];
+                }
+                else {
+                    A_tile = output->tiles[Env::rank][0];
+                    C_tile = inputFeatures->tiles[Env::rank][0];
+                }
                 
-                std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
-                auto& C_tile = output->tiles[Env::rank][0];    
+                //auto& A_tile = inputFeatures->tiles[Env::rank][0];
+                //auto& A_spmat = A_tile.spmat;
+                auto& A_spmat = A_tile.spmat;
                 auto& C_spmat = C_tile.spmat;
-                auto& b_bias = biasDenseVecs[l];                
+                B_tile = layers[l]->tiles[0][tid];
+                //auto& B_tile = layers[l]->tiles[0][tid];
+                auto& B_spmat = B_tile.spmat;
+                
+                auto& s_spa = spaDenseVec[tid];
+                auto& b_bias = biasDenseVecs[l];   
+               // #pragma omp barrier
+                std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
+                //auto& C_tile = output->tiles[Env::rank][0];    
+                //auto& C_spmat = C_tile.spmat;
+                
+                
+                
+                //std::shared_ptr<struct Compressed_Format<Weight>> C_spmat = C_tile.spmat;
+                //auto& C_spmat = C_tile1.spmat;
+                
+                
                 #pragma omp barrier
                 if(!tid) {
+                    /*
                     nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
-                    C_spmat->reallocate(nnz, nrows, ncols);
                     uint64_t sum = 0;
                     for(int32_t i = Env::nthreads - 1; i > 0; i--) {
                         sum += Env::offset_nnz[i];
@@ -344,15 +321,15 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
                     }
                     Env::offset_nnz[0] = 0;                               
                     Env::index_nnz[0] = 0;
+                    */
+                    nnz = Env::assign_nnz();
+                    C_spmat->reallocate(nnz, nrows, ncols);
                 }
                 #pragma omp barrier
-
                 spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, tid);
-                
-                //if(!tid) {
-                  //                      for(int t = 0; t < Env::nthreads; t++)
-                    //    printf("layer=%d tid=%d off=%lu in=%lu di=%d\n", l, t, Env::offset_nnz[t], Env::index_nnz[t], Env::displacement_nnz[t]);
-                //}
+
+               // #pragma omp barrier
+            /*  
             }
             else {
                 Env::checksum[tid] = 0;
@@ -366,6 +343,8 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
                 std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
                 auto& C_tile = inputFeatures->tiles[Env::rank][0];    
                 auto& C_spmat = C_tile.spmat;
+                //auto* C_tile = inputFeatures->tiles[Env::rank][0];    
+                //auto* C_spmat = C_tile.spmat;
                 auto& b_bias = biasDenseVecs[l];                   
                 
                 #pragma omp barrier
@@ -384,140 +363,10 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
                 #pragma omp barrier
                 
                 spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, tid);
-                //printf("tid=%d NNZ = %lu\n", tid, nnz);
-               // if(!tid) {
-               //                         for(int t = 0; t < Env::nthreads; t++)
-               //         printf("layer=%d tid=%d off=%lu in=%lu di=%d\n", l, t, Env::offset_nnz[t], Env::index_nnz[t], Env::displacement_nnz[t]);
-                //}
             }
+            */
         }
     }
-    
-    /*
-    for (uint32_t l = 0; l < maxLayers; l++) {
-        Logging::print(Logging::LOG_LEVEL::INFO, "Layer %d SpMM.\n", l); 
-        if(not(l%2)) {
-            auto& A_tile = inputFeatures->tiles[Env::rank][0];
-            auto& A_spmat = A_tile.spmat;
-            auto& B_tile = layers[l]->tiles[0][0];
-            auto& B_spmat = B_tile.spmat;
-            auto& s_spa = spaDenseVec[0];
-            std::tie(nnz, nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa);
-            auto& C_tile = output->tiles[Env::rank][0];    
-            auto& C_spmat = C_tile.spmat;
-            C_spmat->reallocate(nnz, nrows, ncols);
-            auto& b_bias = biasDenseVecs[l];                   
-            spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias);
-        }
-        else {
-            auto& A_tile = output->tiles[Env::rank][0];
-            auto& A_spmat = A_tile.spmat;
-            auto& B_tile = layers[l]->tiles[0][0];
-            auto& B_spmat = B_tile.spmat;
-            auto& s_spa = spaDenseVec[0];           
-            std::tie(nnz, nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa);
-            auto& C_tile = inputFeatures->tiles[Env::rank][0];    
-            auto& C_spmat = C_tile.spmat;
-            auto& b_bias = biasDenseVecs[l];   
-            C_spmat->reallocate(nnz, nrows, ncols);
-            spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias);   
-        }
-    }
-    */
-    
-    
-    
-    //output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 1, nrows, ncols, tiling_type, compression_type)); 
-    //if(!Env::rank) {
-    
-    //if(tiling_type == TILING_TYPE::_1D_ROW_) {
-       // for (uint32_t l = 0; l < maxLayers; l++) {
-         //   Logging::print(Logging::LOG_LEVEL::INFO, "Layer %d SpMM.\n", l); 
-                            //const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
-                            /*
-                            auto& A_tile = inputFeatures->tiles[Env::rank][0];
-                            auto& A_spmat = A_tile.spmat;
-                            auto& B_tile = layers[l]->tiles[0][0];
-                            auto& B_spmat = B_tile.spmat;
-                            auto& s_spa = spaDenseVec[0];
-                            std::tie(nnz, nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa);
-                            auto& C_tile = output->tiles[Env::rank][0];    
-                            auto& C_spmat = C_tile.spmat;
-                            C_spmat->reallocate(nnz, nrows, ncols);
-                            auto& b_bias = biasDenseVecs[l];     
-                            spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias);
-                            */
-                            //A_spmat->repopulate(C_spmat);
-                            /*
-                            
-                            
-                                          
-                            
-                            */
-                            //printf("ifif.Rank = %d, Layer = %d [nrows= %d ncols = %d nnz = %lu] C[nrows= %d ncols = %d nnz = %lu] A[nrows= %d ncols = %d nnz = %lu]\n", Env::rank, l, nrows, ncols, nnz, C_spmat->nrows, C_spmat->ncols, C_spmat->nnz, A_spmat->nrows, A_spmat->ncols, A_spmat->nnz);
-            
-            
-            
-            
-            //for (uint32_t i = 0; i < inputFeatures->nrowgrps; i++) {
-              //  for (uint32_t j = 0; j < inputFeatures->ncolgrps; j++) {
-                    //if(Env::rank == A_tile.rank) {
-                        /*
-                        if(not(l%2)) {
-                            auto& A_tile = inputFeatures->tiles[Env::rank][0];
-                            auto& A_spmat = A_tile.spmat;
-                            auto& B_tile = layers[l]->tiles[0][0];
-                            auto& B_spmat = B_tile.spmat;
-                            auto& s_spa = spaDenseVec[0];
-                            std::tie(nnz, nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa);
-                            
-                            if(l == 0) {
-                                output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
-                                auto& C_tile = output->tiles[Env::rank][0];    
-                                auto& C_spmat = C_tile.spmat;
-                                auto& b_bias = biasDenseVecs[l];                   
-                                spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias);                                
-                             //   printf("ifif.Rank = %d, Layer = %d nrows= %d ncols = %d nnz = %lu [%lu %lu %lu]\n", Env::rank, l, C_spmat->nrows, C_spmat->ncols, C_spmat->nnz, nnz, C_spmat->A_blk->nitems, C_spmat->A_blk->nbytes);
-                            }
-                            else {
-                                
-                                auto& C_tile = output->tiles[Env::rank][0];    
-                                auto& C_spmat = C_tile.spmat;
-                                C_spmat->reallocate(nnz, nrows, ncols);
-                                auto& b_bias = biasDenseVecs[l];                   
-                                spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias);
-                          ///      printf("ifel.Rank = %d, Layer = %d nrows= %d ncols = %d nnz = %lu [%lu %lu %lu]\n", Env::rank, l, C_spmat->nrows, C_spmat->ncols, C_spmat->nnz, nnz, C_spmat->A_blk->nitems, C_spmat->A_blk->nbytes);
-                            }
-                        }
-                        else {
-                            auto& A_tile = output->tiles[Env::rank][0];
-                            auto& A_spmat = A_tile.spmat;
-                            auto& B_tile = layers[l]->tiles[0][0];
-                            auto& B_spmat = B_tile.spmat;
-                            auto& s_spa = spaDenseVec[0];
-                            //for(auto& s: s_spa)
-                            //    s = 0;
-                            std::tie(nnz, nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa);
-                            //printf("New sizes: l=%d nrows=%d ncols=%d nnz=%lu %f\n", l, nrows, ncols, nnz, biasValue);
-                            
-                            //output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, tiling_type, compression_type)); 
-                            auto& C_tile = inputFeatures->tiles[Env::rank][0];    
-                            auto& C_spmat = C_tile.spmat;
-                            auto& b_bias = biasDenseVecs[l];   
-                            C_spmat->reallocate(nnz, nrows, ncols);
-                            spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias);                            
-                            //printf("Second iter %d %d %d %lu | %d %d %lu\n", l, nrows, ncols, nnz, C_spmat->nrows, C_spmat->ncols, C_spmat->nnz);
-                        //    printf("elseRank = %d, Layer = %d nrows= %d ncols = %d nnz = %lu [%lu %lu %lu]\n", Env::rank, l, C_spmat->nrows, C_spmat->ncols, C_spmat->nnz, nnz, C_spmat->A_blk->nitems, C_spmat->A_blk->nbytes);
-                            
-                            //exit(0);
-                        }
-                        */
-                        
-                    //}
-                //}
-            //}
-      //  }
-    //}
 }
 
 
