@@ -15,6 +15,7 @@
 #include <stdarg.h>
 #include <unistd.h>
 
+
 //#include "log.hpp"
 
 namespace Env {
@@ -40,6 +41,7 @@ namespace Env {
     int init();
     void barrier();
     int finalize();
+    uint64_t assign_nnz();
     double clock();
     void tic();
     double toc();
@@ -77,6 +79,20 @@ int Env::init() {
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
+}
+
+uint64_t Env::assign_nnz() {
+    uint64_t nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
+    
+    uint64_t sum = 0;
+    for(int32_t i = Env::nthreads - 1; i > 0; i--) {
+        sum += Env::offset_nnz[i];
+        Env::offset_nnz[i] = nnz - sum;
+        Env::index_nnz[i] = Env::offset_nnz[i];
+    }
+    Env::offset_nnz[0] = 0;                               
+    Env::index_nnz[0] = 0;
+    return(nnz);
 }
 
 double Env::clock() {
