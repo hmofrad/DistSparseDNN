@@ -16,6 +16,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
                                                          std::shared_ptr<struct Compressed_Format<Weight>> B,
                                                          std::vector<Weight> s,
                                                          int32_t tid) {
+    if(!tid) Env::tic();                                                                    
     uint64_t nnzmax = 0;
     uint32_t nrows = 0;
     uint32_t ncols = 0; 
@@ -68,6 +69,9 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
         std::exit(Env::finalize()); 
     }
+    
+    if(!tid) Env::spmm_sym_time += Env::toc();
+    
     return std::make_tuple(nnzmax, nrows, ncols);
 }
 
@@ -78,7 +82,9 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                  std::vector<Weight> s,
                  std::vector<Weight> b,
                  int32_t tid) {
-                     
+
+    if(!tid) Env::tic();
+    
     if((A->compression_type == COMPRESSED_FORMAT::_CSC_) and 
        (B->compression_type == COMPRESSED_FORMAT::_CSC_) and
        (C->compression_type == COMPRESSED_FORMAT::_CSC_)) {  
@@ -127,15 +133,15 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             C_CSC->populate_spa(s, b, j, tid);
         }
         #pragma omp barrier
-        
         C_CSC->adjust(tid);
-        //C_CSC->walk(tid);
+        C_CSC->walk(tid);
         //C_CSC->statistics(tid);
    }
    else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
         std::exit(Env::finalize()); 
    }
+   if(!tid) Env::spmm_time += Env::toc();
 }
 
 template<typename Weight>
