@@ -27,14 +27,18 @@ namespace Env {
     double end_time = 0;
     
     double io_time = 0;
-    double compression_time = 0;
+    double spmm_sym_time = 0;
+    double spmm_time = 0;
+    double memory_time = 0;
+    double exec_time = 0;
+    double end_to_end_time = 0;
     
     std::vector<uint64_t> offset_nnz; /* Thread Offset from the beginning of the compressed format data */
     std::vector<uint64_t> index_nnz;  /* Current index of thread pointing to where the new data will be inserted */
     std::vector<uint32_t> displacement_nnz; /* The part that a thread may skip cuasing some internal fragmentation */  
     std::vector<uint32_t> start_col;
     std::vector<uint32_t> end_col;
-    std::vector<double> checksum;
+    std::vector<double>   checksum;
     std::vector<uint64_t> checkcount;
     
     int init();
@@ -45,6 +49,9 @@ namespace Env {
     double clock();
     void tic();
     double toc();
+    
+    std::tuple<double, double, double, double, double> printCounters(const double time);
+    void stats(const std::vector<double> vec, double& sum, double& mean, double& std_dev, double& min, double& max);
 }
 
 int Env::init() {
@@ -99,6 +106,28 @@ void Env::assign_col(uint32_t ncols, int32_t tid) {
     Env::start_col[tid] = (ncols/Env::nthreads) * tid;
     Env::end_col[tid]   = (ncols/Env::nthreads) * (tid+1);
 }
+
+
+
+std::tuple<double, double, double, double, double> Env::printCounters(const double time) {
+    std::vector<double> times(Env::nranks);
+    MPI_Allgather(&time, 1, MPI_DOUBLE, times.data(), 1, MPI_DOUBLE, MPI_COMM_WORLD); 
+    double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+    stats(times, sum, mean, std_dev, min, max);    
+    return(std::make_tuple(sum, mean, std_dev, min, max));
+    //Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
+}
+
+void Env::stats(const std::vector<double> vec, double& sum, double& mean, double& std_dev, double& min, double& max) {
+    sum = std::accumulate(vec.begin(), vec.end(), 0.0);
+    mean = sum / vec.size();
+    double sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
+    std_dev = std::sqrt(sq_sum / vec.size() - mean * mean);
+    std::pair bounds = std::minmax_element(vec.begin(), vec.end());
+    min = *bounds.first;
+    max = *bounds.second;
+}
+
 
 double Env::clock() {
     return(MPI_Wtime());
