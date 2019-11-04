@@ -182,10 +182,11 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         //C_CSC->adjust();
         //Env::index_nnz[tid] = index_nnz;
         #pragma omp barrier
+        C_CSC->adjust(tid);
+        C_CSC->walk_t(tid);
         //C_CSC->refine_t(B_start_col, B_end_col, tid);
         //if(!tid) 
-        C_CSC->adjust(tid);
-       // C_CSC->walk_t(tid);
+
         
    }
    else {
