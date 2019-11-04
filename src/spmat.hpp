@@ -272,16 +272,23 @@ void CSC<Weight>::walk_t(int32_t tid) {
 
     //#pragma omp barrier
     //if(!tid)
+    Env::barrier();
     #pragma omp barrier  
     if(!tid) {
-        double   total_sum = std::accumulate(Env::checksum.begin(), Env::checksum.end(), 0);
-        uint64_t total_count = std::accumulate(Env::checkcount.begin(), Env::checkcount.end(), 0);
+        double   sum_threads = std::accumulate(Env::checksum.begin(), Env::checksum.end(), 0);
+        uint64_t count_threads = std::accumulate(Env::checkcount.begin(), Env::checkcount.end(), 0);
         
-        if(total_count != CSC::nnz) {
+        double sum_ranks = 0;
+        uint64_t count_ranks = 0;
+        
+        MPI_Allreduce(&sum_threads, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&count_threads, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+        
+        if(count_ranks != CSC::nnz) {
             Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!!\n");
         }
         
-        Logging::print(Logging::LOG_LEVEL::INFO, "Checksum= %f, Count=%d\n", total_sum, total_count);
+        Logging::print(Logging::LOG_LEVEL::INFO, "Checksum= %f, Count=%d\n", sum_ranks, count_ranks);
     }
     #pragma omp barrier    
 }
@@ -591,6 +598,7 @@ void CSC<Weight>::adjust(int32_t tid){
         }
      //   printf("nnz= %lu nnz_i = %lu\n", CSC::nnz, CSC::nnz_i);
     }
+    #pragma omp barrier
     
     //printf("tid=%d start_c=%d end_c=%d offset=%lu index=%lu d=%d\n", tid, Env::start_col[tid], Env::end_col[tid], Env::offset_nnz[tid], Env::index_nnz[tid], Env::displacement_nnz[tid]);
     
