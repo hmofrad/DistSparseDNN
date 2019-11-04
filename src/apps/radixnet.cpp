@@ -25,6 +25,7 @@
 #include "allocator.hpp"
 
 int main(int argc, char **argv) {
+
     Logging::enabled = true;
     int status = Env::init();
     if(status) {
@@ -41,6 +42,6 @@ int main(int argc, char **argv) {
     Logging::print(Logging::LOG_LEVEL::INFO, "MPI ranks = %d, Threads per rank = %d\n", Env::nranks, Env::nthreads);
     
     Net<WGT> N(atoi(argv[2]), atoi(argv[4]), ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]));//, INPUT_TYPE::_TEXT_) ;
-
+    
     return(Env::finalize());
 }
