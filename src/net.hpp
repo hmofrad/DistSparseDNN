@@ -37,8 +37,9 @@ class Net {
         uint32_t maxLayers;
         
         void inferenceReLU(COMPRESSED_FORMAT compression_type);
-        void printCounters(double time);
-        void stats(std::vector<double>& vec, double& sum, double& mean, double& std_dev, double& min, double& max);
+        void printTimes();
+        //void printCounters(double time, const std::string str);
+        //void stats(const std::vector<double> vec, double& sum, double& mean, double& std_dev, double& min, double& max);
 };
 
 template<typename Weight>
@@ -47,6 +48,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
                  const INPUT_TYPE input_type, //const TILING_TYPE tiling_type, 
                  const COMPRESSED_FORMAT compression_type) : NinputInstanses(NinputInstanses_), Nneurons(Nneurons_), maxLayers(maxLayers_) {
     
+    auto start = std::chrono::high_resolution_clock::now();
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing input feature file for %d neurons.\n", Nneurons);  
     std::vector<Weight> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
     std::vector<uint32_t> NneuronsVector = {1024, 4096, 16384, 65536};    
@@ -93,7 +95,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
     Logging::enabled = false; 
-    //maxLayers = 3;
+    maxLayers = 3;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -117,10 +119,14 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method.\n"); 
     Env::barrier();
-    auto start = std::chrono::high_resolution_clock::now();
+    auto start1 = std::chrono::high_resolution_clock::now();
     inferenceReLU(compression_type);
     auto finish = std::chrono::high_resolution_clock::now();
-    double challengeRunTime = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
+    //double challengeExecTime 
+    Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start1).count())/1e9;
+    //double challengeTotalRunTime 
+    Env::end_to_end_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
+    
     
     auto& C_tile = inputFeatures->tiles[Env::rank][0];    
     auto& C_spmat = C_tile.spmat;
@@ -132,21 +138,28 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
     }
     Env::barrier();
-    printCounters(challengeRunTime);
+    printTimes();
+    
+    
+    //printCounters(Env::io_time,          "I/O          ");
+    //printCounters(Env::spmm_sym_time,    "SpMM Symbolic");
+    //printCounters(Env::spmm_time,        "SpMM Real    ");
+    //printCounters(Env::memory_time,      "Mem realloc  ");
+    //printCounters(challengeExecTime,     "Execution    ");
+    //printCounters(challengeTotalRunTime, "Total Run    ");
 }
-
+/*
 template<typename Weight>
-void Net<Weight>::printCounters(double time) {
+void Net<Weight>::printCounters(const double time, const std::string str) {
     std::vector<double> times(Env::nranks);
     MPI_Allgather(&time, 1, MPI_DOUBLE, times.data(), 1, MPI_DOUBLE, MPI_COMM_WORLD); 
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
-    stats(times, sum, mean, std_dev, min, max);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Run time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", min, mean, std_dev, max);
-    Logging::print(Logging::LOG_LEVEL::INFO, "I/O time %f\n", Env::io_time);
+    stats(times, sum, mean, std_dev, min, max);    
+    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
 }
 
 template<typename Weight>
-void Net<Weight>::stats(std::vector<double>& vec, double& sum, double& mean, double& std_dev, double& min, double& max) {
+void Net<Weight>::stats(const std::vector<double> vec, double& sum, double& mean, double& std_dev, double& min, double& max) {
     sum = std::accumulate(vec.begin(), vec.end(), 0.0);
     mean = sum / vec.size();
     double sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
@@ -154,6 +167,38 @@ void Net<Weight>::stats(std::vector<double>& vec, double& sum, double& mean, dou
     std::pair bounds = std::minmax_element(vec.begin(), vec.end());
     min = *bounds.first;
     max = *bounds.second;
+}
+*/
+
+template<typename Weight>
+void Net<Weight>::printTimes() {
+    Env::barrier();
+    double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+    std::string str;
+    
+    str = "I/O          "; 
+    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::io_time);
+    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
+    
+    str = "SpMM Symbolic"; 
+    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::spmm_sym_time);
+    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
+    
+    str = "SpMM Real    "; 
+    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::spmm_time);
+    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
+    
+    str = "Mem realloc  "; 
+    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::memory_time);
+    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
+    
+    str = "Execution    "; 
+    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::exec_time);
+    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
+    
+    str = "Total Run    "; 
+    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::end_to_end_time);
+    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
 }
 
 template<typename Weight>
@@ -173,7 +218,7 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
         auto& B0_spmat = B0_tile.spmat;
         auto& s_spa = spaDenseVec[tid];
         
-        std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A0_spmat, B0_spmat, s_spa, tid);
+        std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) = spmm_sym(A0_spmat, B0_spmat, s_spa, tid);
         
         #pragma omp barrier
         if(!tid) {
@@ -207,9 +252,8 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
             auto& B_spmat = B_tile.spmat;
             
             auto& s_spa = spaDenseVec[tid];
-            auto& b_bias = biasDenseVecs[l];   
+            auto& b_bias = biasDenseVecs[l];  
             std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
-            
             #pragma omp barrier
             if(!tid) {
                 nnz = Env::assign_nnz();
