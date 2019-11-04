@@ -134,7 +134,7 @@ void CSC<Weight>::walk(int32_t tid) {
         if(count_ranks != CSC::nnz_i) {
             Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!!\n");
         }
-        Logging::print(Logging::LOG_LEVEL::INFO, "Checksum= %f, Count=%d\n", sum_ranks, count_ranks);
+        Logging::print(Logging::LOG_LEVEL::INFO, "Checksum= %f, Count=%d, nnz=%lu, nnz_i=%lu\n", sum_ranks, count_ranks, CSC::nnz, CSC::nnz_i);
     }
     #pragma omp barrier    
 }
@@ -142,6 +142,7 @@ void CSC<Weight>::walk(int32_t tid) {
 template<typename Weight>
 void CSC<Weight>::statistics(int32_t tid) {  
     if(!tid) {
+        
         //double nnz_ranks = 0;
         //uint64_t count_ranks = 0;
         //MPI_Allreduce(&sum_threads, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
@@ -183,6 +184,8 @@ inline void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weig
 
 template<typename Weight>
 void CSC<Weight>::reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
+    Env::tic();
+    
     if(CSC::ncols != ncols_) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot reallocate.\n");
         std::exit(Env::finalize());     
@@ -198,6 +201,8 @@ void CSC<Weight>::reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
     CSC::IA_blk->clear();
     CSC::JA_blk->clear();
     CSC::A_blk->clear();
+    
+    Env::memory_time += Env::toc();
 }
 
 template<typename Weight>
