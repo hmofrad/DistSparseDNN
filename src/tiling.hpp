@@ -140,7 +140,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
             ranks_ncols[r] = ncols;
         }
     }
-    
+    /*
     if(!Env::rank) {
         for(auto& i: ranks_nnz) {
             printf("%lu ", i);
@@ -155,7 +155,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         }
         printf("\n");
     }
-    
+    */
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
