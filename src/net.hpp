@@ -9,7 +9,6 @@
 
 #include "triple.hpp"
 #include "tiling.hpp"
-#include "dvec.hpp"
 #include "spops.hpp"
 
 template<typename Weight>
