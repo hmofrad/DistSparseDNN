@@ -95,7 +95,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
     Logging::enabled = false; 
-    maxLayers = 3;
+    //maxLayers = 3;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -173,32 +173,45 @@ void Net<Weight>::stats(const std::vector<double> vec, double& sum, double& mean
 template<typename Weight>
 void Net<Weight>::printTimes() {
     Env::barrier();
+    
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
-    std::string str;
+    const char* TIME_MSGS[] = {"I/O          ", "SpMM Symbolic", "SpMM Real    ", "Mem realloc  ", "Execution    ", "Total Run    "};
+    const double TIME_VALUES[] = {Env::io_time, Env::spmm_sym_time, Env::spmm_time, Env::memory_time, Env::exec_time, Env::end_to_end_time};
+    const int32_t n = 6;
     
-    str = "I/O          "; 
-    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::io_time);
-    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
+    for(int32_t i = 0; i < n; i++) {
+        std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(TIME_VALUES[i]);
+        Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): avg +/- std_dev: %.3f +/- %.3f | min: %.3f | max: %.3f\n", TIME_MSGS[i], mean, std_dev, min, max);
+    }
+    std::vector<double> sum_time; 
+    std::vector<double> mean_time;
+    std::vector<double> std_dev_time;
+    std::vector<double> min_time;
+    std::vector<double> max_time;
+    Logging::print(Logging::LOG_LEVEL::VOID, "time nnz nnz_i\n");
+    Logging::print(Logging::LOG_LEVEL::VOID, "l mean std_dev min max mean std_dev min max\n");// mean std_dev min max\n");
+    for (uint32_t l = 0; l < maxLayers; l++) {
+        std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::time_ranks[l]);
+        Logging::print(Logging::LOG_LEVEL::VOID, "%3d %.3f %.3f %.3f %.3f ", l, mean, std_dev, min, max);
+        uint64_t sum1 = 0.0, mean1 = 0.0, std_dev1 = 0.0, min1 = 0.0, max1 = 0.0;
+        std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_ranks[l]);
+        Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu\n", mean1, std_dev1, min1, max1);
+        //std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_i_ranks[l]);
+        //Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu\n", mean1, std_dev1, min1, max1);
+        Env::barrier();
+    }
+
     
-    str = "SpMM Symbolic"; 
-    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::spmm_sym_time);
-    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
+    /*
+    std::vector<uint64_t> sum_nnz; 
+    std::vector<uint64_t> mean_nnz;
+    std::vector<uint64_t> std_dev_nnz;
+    std::vector<uint64_t> min_nnz;
+    std::vector<uint64_t> max_nnz;
     
-    str = "SpMM Real    "; 
-    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::spmm_time);
-    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
+    */
     
-    str = "Mem realloc  "; 
-    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::memory_time);
-    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
     
-    str = "Execution    "; 
-    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::exec_time);
-    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
-    
-    str = "Total Run    "; 
-    std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(Env::end_to_end_time);
-    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
 }
 
 template<typename Weight>
@@ -209,7 +222,14 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
     
     #pragma omp parallel
     {
+        // Layer 0
         int tid = omp_get_thread_num();
+        
+        double start_time;
+        if(!tid) {
+            start_time = Env::tic();                                                                    
+        }
+        
         Env::assign_col(ncols, tid);
         
         auto& A0_tile = inputFeatures->tiles[Env::rank][0];
@@ -225,6 +245,7 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
             nnz = Env::assign_nnz();
             output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                                 nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
+            Env::iteration++;
         }
         #pragma omp barrier
         auto& C0_tile = output->tiles[Env::rank][0];    
@@ -232,11 +253,19 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
         auto& b_bias = biasDenseVecs[0];
         spmm(A0_spmat, B0_spmat, C0_spmat, s_spa, b_bias, tid);
         
+        if(!tid) {
+            Env::time_ranks.push_back(Env::toc(start_time));
+        }
+        
+        // Layer 1 to the last layer
         struct Tile<Weight> A_tile;
         struct Tile<Weight> B_tile;
         struct Tile<Weight> C_tile;
         for (uint32_t l = 1; l < maxLayers; l++) {
-            //if(!tid) Logging::print(Logging::LOG_LEVEL::INFO, "Layer %d SpMM.\n", l);            
+            if(!tid) {
+                start_time = Env::tic();                                                                    
+            }
+        
             if(not(l%2)) {
                 A_tile = inputFeatures->tiles[Env::rank][0];
                 C_tile = output->tiles[Env::rank][0];
@@ -258,9 +287,14 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
             if(!tid) {
                 nnz = Env::assign_nnz();
                 C_spmat->reallocate(nnz, nrows, ncols);
+                Env::iteration++;
             }
             #pragma omp barrier
             spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, tid);
+            
+            if(!tid) {
+                Env::time_ranks.push_back(Env::toc(start_time));
+            }
         }
     }
 }
