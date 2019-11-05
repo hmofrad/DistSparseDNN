@@ -7,6 +7,8 @@
 #ifndef LOG_HPP
 #define LOG_HPP
 
+#include <cstring>
+
 #include "env.hpp"
 
 namespace Logging {
