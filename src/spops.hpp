@@ -167,6 +167,7 @@ inline char validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>
     const uint32_t* A_JA   = A_CSC->JA_blk->ptr;
     const Weight*    A_A   = A_CSC->A_blk->ptr;
     
+    
     std::vector<uint32_t> allCategories(A_nrows);
     for(int32_t t = 0; t < Env::nthreads; t++) {
         uint32_t start_col = Env::start_col[t];
