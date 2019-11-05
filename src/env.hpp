@@ -15,16 +15,16 @@
 #include <stdarg.h>
 #include <unistd.h>
 
-
-//#include "log.hpp"
+#include "types.hpp"
 
 namespace Env {
     int nranks = 0;
     int rank = 0;
     int nthreads = 0;
     const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
-    double start_time = 0;
-    double end_time = 0;
+    //double start_time = 0;
+    //double end_time = 0;
+    int iteration = 0;
     
     double io_time = 0;
     double spmm_sym_time = 0;
@@ -32,6 +32,10 @@ namespace Env {
     double memory_time = 0;
     double exec_time = 0;
     double end_to_end_time = 0;
+    
+    std::vector<uint64_t> nnz_ranks;
+    std::vector<uint64_t> nnz_i_ranks;
+    std::vector<double>   time_ranks;
     
     std::vector<uint64_t> offset_nnz; /* Thread Offset from the beginning of the compressed format data */
     std::vector<uint64_t> index_nnz;  /* Current index of thread pointing to where the new data will be inserted */
@@ -47,11 +51,12 @@ namespace Env {
     void assign_col(uint32_t ncols, int32_t tid);
     uint64_t assign_nnz();
     double clock();
-    void tic();
-    double toc();
-    
-    std::tuple<double, double, double, double, double> printCounters(const double time);
-    void stats(const std::vector<double> vec, double& sum, double& mean, double& std_dev, double& min, double& max);
+    double tic();
+    double toc(double start_time);
+    template<typename Type>
+    std::tuple<Type, Type, Type, Type, Type> statistics(const Type time);
+    template<typename Type>
+    void stats(const std::vector<Type> vec, Type& sum, Type& mean, Type& std_dev, Type& min, Type& max);
 }
 
 int Env::init() {
@@ -108,41 +113,38 @@ void Env::assign_col(uint32_t ncols, int32_t tid) {
 }
 
 
-
-std::tuple<double, double, double, double, double> Env::printCounters(const double time) {
-    std::vector<double> times(Env::nranks);
-    MPI_Allgather(&time, 1, MPI_DOUBLE, times.data(), 1, MPI_DOUBLE, MPI_COMM_WORLD); 
-    double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+template<typename Type>
+std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type time) {
+    std::vector<Type> times(Env::nranks);
+    MPI_Datatype MPI_TYPE = MPI_Types::get_mpi_data_type<Type>();
+    MPI_Allgather(&time, 1, MPI_TYPE, times.data(), 1, MPI_TYPE, MPI_COMM_WORLD); 
+    Type sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
     stats(times, sum, mean, std_dev, min, max);    
     return(std::make_tuple(sum, mean, std_dev, min, max));
     //Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
 }
 
-void Env::stats(const std::vector<double> vec, double& sum, double& mean, double& std_dev, double& min, double& max) {
+template<typename Type>
+void Env::stats(const std::vector<Type> vec, Type& sum, Type& mean, Type& std_dev, Type& min, Type& max) {
     sum = std::accumulate(vec.begin(), vec.end(), 0.0);
     mean = sum / vec.size();
-    double sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
+    Type sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
     std_dev = std::sqrt(sq_sum / vec.size() - mean * mean);
     std::pair bounds = std::minmax_element(vec.begin(), vec.end());
     min = *bounds.first;
     max = *bounds.second;
 }
 
-
 double Env::clock() {
     return(MPI_Wtime());
 }
 
-void Env::tic() {
-    start_time = Env::clock();
+double Env::tic() {
+    return(Env::clock());
 }
 
-double Env::toc() {
-    end_time = Env::clock();
-    double elapsed_time = end_time - start_time;
-    start_time = 0;
-    end_time = 0;
-    return(elapsed_time);
+double Env::toc(double start_time) {
+    return(Env::clock() - start_time);
 }
 
 void Env::barrier() {
