@@ -131,10 +131,16 @@ void CSC<Weight>::walk(int32_t tid) {
         MPI_Allreduce(&sum_threads, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
         MPI_Allreduce(&count_threads, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
         
-        if(count_ranks != CSC::nnz_i) {
+        if(count_threads != CSC::nnz_i) {
             Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!!\n");
         }
-        Logging::print(Logging::LOG_LEVEL::INFO, "Checksum= %f, Count=%d, nnz=%lu, nnz_i=%lu\n", sum_ranks, count_ranks, CSC::nnz, CSC::nnz_i);
+        /*
+        double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+        std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(count_threads);
+        Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min: %f | avg +/- std_dev: %f +/- %f | max: %f\n", "count", min, mean, std_dev, max);
+        */
+        
+        Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
     }
     #pragma omp barrier    
 }
@@ -184,7 +190,7 @@ inline void CSC<Weight>::populate_spa(std::vector<Weight>& spa, std::vector<Weig
 
 template<typename Weight>
 void CSC<Weight>::reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
-    Env::tic();
+    double start_time = Env::tic();
     
     if(CSC::ncols != ncols_) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot reallocate.\n");
@@ -202,7 +208,7 @@ void CSC<Weight>::reallocate(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_) {
     CSC::JA_blk->clear();
     CSC::A_blk->clear();
     
-    Env::memory_time += Env::toc();
+    Env::memory_time += Env::toc(start_time);
 }
 
 template<typename Weight>
@@ -216,7 +222,13 @@ void CSC<Weight>::adjust(int32_t tid){
             CSC::nnz_i += (Env::index_nnz[i] - Env::offset_nnz[i]);
         }
     }
-    #pragma omp barrier   
+    #pragma omp barrier  
+
+    if(!tid) {
+        Env::nnz_ranks.push_back(CSC::nnz);
+        Env::nnz_i_ranks.push_back(CSC::nnz_i);
+    }
+    
 }
 
 #endif
