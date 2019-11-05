@@ -189,15 +189,15 @@ void Net<Weight>::printTimes() {
     std::vector<double> min_time;
     std::vector<double> max_time;
     Logging::print(Logging::LOG_LEVEL::VOID, "time nnz nnz_i\n");
-    Logging::print(Logging::LOG_LEVEL::VOID, "l mean std_dev min max mean std_dev min max\n");// mean std_dev min max\n");
+    Logging::print(Logging::LOG_LEVEL::VOID, "l mean std_dev min max mean std_dev min max mean std_dev min max\n");
     for (uint32_t l = 0; l < maxLayers; l++) {
         std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::time_ranks[l]);
         Logging::print(Logging::LOG_LEVEL::VOID, "%3d %.3f %.3f %.3f %.3f ", l, mean, std_dev, min, max);
         uint64_t sum1 = 0.0, mean1 = 0.0, std_dev1 = 0.0, min1 = 0.0, max1 = 0.0;
         std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_ranks[l]);
+        Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu ", mean1, std_dev1, min1, max1);
+        std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_i_ranks[l]);
         Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu\n", mean1, std_dev1, min1, max1);
-        //std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_i_ranks[l]);
-        //Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu\n", mean1, std_dev1, min1, max1);
         Env::barrier();
     }
 
