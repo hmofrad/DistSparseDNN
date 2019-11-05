@@ -10,7 +10,6 @@
 
 #include <mpi.h>
 #include <omp.h>
-#include <numa.h>
 #include <thread>
 #include <stdarg.h>
 #include <unistd.h>
