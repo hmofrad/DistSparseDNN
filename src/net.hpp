@@ -9,6 +9,7 @@
 
 #include "triple.hpp"
 #include "tiling.hpp"
+#include "dvec.hpp"
 #include "spops.hpp"
 
 template<typename Weight>
@@ -138,41 +139,24 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     }
     Env::barrier();
     printTimes();
-    
-    
-    //printCounters(Env::io_time,          "I/O          ");
-    //printCounters(Env::spmm_sym_time,    "SpMM Symbolic");
-    //printCounters(Env::spmm_time,        "SpMM Real    ");
-    //printCounters(Env::memory_time,      "Mem realloc  ");
-    //printCounters(challengeExecTime,     "Execution    ");
-    //printCounters(challengeTotalRunTime, "Total Run    ");
 }
-/*
-template<typename Weight>
-void Net<Weight>::printCounters(const double time, const std::string str) {
-    std::vector<double> times(Env::nranks);
-    MPI_Allgather(&time, 1, MPI_DOUBLE, times.data(), 1, MPI_DOUBLE, MPI_COMM_WORLD); 
-    double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
-    stats(times, sum, mean, std_dev, min, max);    
-    Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
-}
-
-template<typename Weight>
-void Net<Weight>::stats(const std::vector<double> vec, double& sum, double& mean, double& std_dev, double& min, double& max) {
-    sum = std::accumulate(vec.begin(), vec.end(), 0.0);
-    mean = sum / vec.size();
-    double sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
-    std_dev = std::sqrt(sq_sum / vec.size() - mean * mean);
-    std::pair bounds = std::minmax_element(vec.begin(), vec.end());
-    min = *bounds.first;
-    max = *bounds.second;
-}
-*/
 
 template<typename Weight>
 void Net<Weight>::printTimes() {
     Env::barrier();
     
+    Logging::print(Logging::LOG_LEVEL::VOID, "exec: mean, std_dev, min, max, spmm_sym_mean, spmm_mean, mem_mean\n");
+    double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::exec_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_sym_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::memory_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", mean);
+    
+    /*
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
     const char* TIME_MSGS[] = {"I/O          ", "SpMM Symbolic", "SpMM Real    ", "Mem realloc  ", "Execution    ", "Total Run    "};
     const double TIME_VALUES[] = {Env::io_time, Env::spmm_sym_time, Env::spmm_time, Env::memory_time, Env::exec_time, Env::end_to_end_time};
@@ -199,18 +183,7 @@ void Net<Weight>::printTimes() {
         Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu\n", mean1, std_dev1, min1, max1);
         Env::barrier();
     }
-
-    
-    /*
-    std::vector<uint64_t> sum_nnz; 
-    std::vector<uint64_t> mean_nnz;
-    std::vector<uint64_t> std_dev_nnz;
-    std::vector<uint64_t> min_nnz;
-    std::vector<uint64_t> max_nnz;
-    
     */
-    
-    
 }
 
 template<typename Weight>
