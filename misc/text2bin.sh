@@ -7,7 +7,13 @@ echo "Sparse Deep Neural Network Challange Dataset (http://graphchallenge.mit.ed
 echo "Script for converting dataset text files into binary files"
 echo "Approximate required space is 100 GB"
 
-DATA_DIR=../data1
+if [ "$#" -ne 1 ] || ! [ -d "$1" ]; then
+	echo "Usage: $0 DIRECTORY"
+	exit 1
+fi
+
+
+DATA_DIR=$1
 TXT_DIR=text
 BIN_DIR=bin
 
