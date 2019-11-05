@@ -33,7 +33,7 @@ namespace IO {
 
 template<typename Weight>
 std::tuple<uint64_t, uint32_t, uint32_t> IO::text_file_stat(const std::string inputFile) {
-    Env::tic();
+    double start_time = Env::tic();
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start collecting info from the input file %s\n", inputFile.c_str());
     uint64_t nnz = 0;
     uint32_t nrows = 0;
@@ -61,14 +61,14 @@ std::tuple<uint64_t, uint32_t, uint32_t> IO::text_file_stat(const std::string in
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done  collecting info from the input file %s\n", inputFile.c_str());
     Env::barrier();
     
-    Env::io_time += Env::toc();
+    Env::io_time += Env::toc(start_time);
     
     return std::make_tuple(nnz, nrows + 1, ncols + 1);
 }
 
 template<typename Weight>
 void IO::text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank) {
-    Env::tic();
+    double start_time = Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start reading the input file %s\n", inputFile.c_str());
     
@@ -154,11 +154,11 @@ void IO::text_file_read(const std::string inputFile, std::vector<std::vector<str
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done reading the input file %s\n", inputFile.c_str());
     Env::barrier();
     
-    Env::io_time += Env::toc();
+    Env::io_time += Env::toc(start_time);
 }
 
 void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
-    Env::tic();
+    double start_time = Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start reading the category file %s\n", inputFile.c_str());
     
@@ -207,13 +207,13 @@ void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done  reading the category file %s %d\n", inputFile.c_str());
     Env::barrier();
     
-    Env::io_time += Env::toc();
+    Env::io_time += Env::toc(start_time);
 } 
  
  
 template<typename Weight>
 std::tuple<uint64_t, uint32_t, uint32_t> IO::binary_file_stat(const std::string inputFile) {
-    Env::tic();
+    double start_time = Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start collecting info from the input file %s\n", inputFile.c_str());
     uint64_t nnz = 0;
@@ -248,14 +248,15 @@ std::tuple<uint64_t, uint32_t, uint32_t> IO::binary_file_stat(const std::string 
     fin.close();
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done  collecting info from the input file %s\n", inputFile.c_str());
     
-    Env::io_time += Env::toc();
+    Env::io_time += Env::toc(start_time);
+    
     Env::barrier();
     return std::make_tuple(nnz, nrows + 1, ncols + 1);
 } 
  
 template<typename Weight>
 void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank) {
-    Env::tic();
+    double start_time = Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the input file %s\n", inputFile.c_str());
     
@@ -331,13 +332,13 @@ void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<s
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done reading the input file %s\n", inputFile.c_str());
     Env::barrier();
     
-    Env::io_time += Env::toc();
+    Env::io_time += Env::toc(start_time);
 }
  
  
 
 void IO::binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
-    Env::tic();
+    double start_time = Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the category file %s\n", inputFile.c_str());
     
@@ -386,6 +387,6 @@ void IO::binary_file_categories(const std::string inputFile, std::vector<uint32_
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done  reading the category file %s %d\n", inputFile.c_str());
     Env::barrier();
     
-    Env::io_time += Env::toc();
+    Env::io_time += Env::toc(start_time);
 }  
 #endif
