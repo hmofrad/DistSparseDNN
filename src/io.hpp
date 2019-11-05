@@ -368,7 +368,7 @@ void IO::binary_file_categories(const std::string inputFile, std::vector<uint32_
         fin.read(reinterpret_cast<char*>(&category), sizeof(uint32_t));
         offset += sizeof(uint32_t);
         if((!Env::rank and (category <  end)) or
-            (Env::rank and (category > start)
+            (Env::rank and (category >= start)
                        and (category < end))) {
             categories[category % tile_height] = 1;
             nCategories_local++;
