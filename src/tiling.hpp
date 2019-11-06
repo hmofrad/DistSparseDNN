@@ -311,10 +311,12 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     
     nrows = nrows_;
     while(nrows % threads_nrowgrps)
+    //while(nrows % Env::nthreads)
         nrows++;
     
     ncols = ncols_;
     while(ncols % threads_ncolgrps)
+    //while(ncols % Env::nthreads)
         ncols++;
     
     tile_height = nrows / threads_nrowgrps;
@@ -424,14 +426,60 @@ void Tiling<Weight>::populate_tiling() {
         std::exit(Env::finalize()); 
     }
     
-    while(nrows % nrowgrps)
+    nthreads = Env::nthreads;
+    if ((tiling_type == TILING_TYPE::_1D_ROW_)) {
+        rowgrp_nthreads = 1;
+        colgrp_nthreads = nthreads;
+    }
+    else if (tiling_type == TILING_TYPE::_1D_COL_) {
+        rowgrp_nthreads =  nthreads;
+        colgrp_nthreads = 1;
+    }
+    else if (tiling_type == TILING_TYPE::_2D_) {
+        rowgrp_nthreads = rowgrp_nranks;
+        colgrp_nthreads = nrowgrps / rowgrp_nthreads;
+    }
+
+    if(rowgrp_nthreads * colgrp_nthreads != nthreads) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    threads_nrowgrps = nrowgrps;
+    threads_ncolgrps = ncolgrps;
+    
+    thread_ntiles = ntiles/nthreads;
+    
+    thread_nrowgrps = threads_nrowgrps / colgrp_nthreads;
+    thread_ncolgrps = threads_ncolgrps / rowgrp_nthreads;
+    if(thread_nrowgrps * thread_ncolgrps != thread_ntiles) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    
+    while(nrows % threads_nrowgrps)
         nrows++;
+    
+    
+    while(ncols % threads_ncolgrps)
+        ncols++;
+    
+    
+    
+    
+    //while(nrows % nrowgrps)
+    //    nrows++;
     
     //while(ncols % ncolgrps)
     //    ncols++;
     
-    while(ncols % Env::nthreads)
-        ncols++;
+    //while(ncols % Env::nthreads)
+    //    ncols++;
+
+    //while(ncols % threads_ncolgrps)
+    //    ncols++;
+    
     
     tile_height = nrows / nrowgrps;
     tile_width  = ncols / ncolgrps;
