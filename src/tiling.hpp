@@ -140,22 +140,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
             ranks_ncols[r] = ncols;
         }
     }
-    /*
-    if(!Env::rank) {
-        for(auto& i: ranks_nnz) {
-            printf("%lu ", i);
-        }
-        printf("\n");
-        for(auto& i: ranks_nrows) {
-            printf("%d ", i);
-        }
-        printf("\n");
-        for(auto& i: ranks_ncols) {
-            printf("%d ", i);
-        }
-        printf("\n");
-    }
-    */
+
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
@@ -310,13 +295,13 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     }
     
     nrows = nrows_;
-    while(nrows % threads_nrowgrps)
-    //while(nrows % Env::nthreads)
+    //while(nrows % threads_nrowgrps)
+    while(nrows % Env::nthreads)
         nrows++;
     
     ncols = ncols_;
-    while(ncols % threads_ncolgrps)
-    //while(ncols % Env::nthreads)
+    //while(ncols % threads_ncolgrps)
+    while(ncols % Env::nthreads)
         ncols++;
     
     tile_height = nrows / threads_nrowgrps;
@@ -457,14 +442,14 @@ void Tiling<Weight>::populate_tiling() {
         std::exit(Env::finalize()); 
     }
     
-    
+    /*
     while(nrows % threads_nrowgrps)
         nrows++;
     
     
     while(ncols % threads_ncolgrps)
         ncols++;
-    
+    */
     
     
     
@@ -474,11 +459,11 @@ void Tiling<Weight>::populate_tiling() {
     //while(ncols % ncolgrps)
     //    ncols++;
     
-    //while(ncols % Env::nthreads)
-    //    ncols++;
+    while(ncols % Env::nthreads)
+        ncols++;
 
-    //while(ncols % threads_ncolgrps)
-    //    ncols++;
+    while(ncols % Env::nthreads)
+        ncols++;
     
     
     tile_height = nrows / nrowgrps;
