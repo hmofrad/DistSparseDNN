@@ -96,7 +96,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    Logging::enabled = false; 
+    //Logging::enabled = false; 
     //maxLayers = 1;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
@@ -112,6 +112,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, Env::nthreads, Env::nthreads, 
                               nnz, nrows, ncols, layerFile, input_type, TILING_TYPE::_1D_COL_, compression_type)); 
         biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
+        Logging::enabled = false; 
     }
 
     spaDenseVec.resize(Env::nthreads);
