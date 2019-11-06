@@ -9,7 +9,6 @@
 
 #include "triple.hpp"
 #include "tiling.hpp"
-#include "dvec.hpp"
 #include "spops.hpp"
 
 template<typename Weight>
@@ -69,8 +68,11 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(feature_file)
                                                                      : IO::binary_file_stat<Weight>(feature_file);
                                                                      
-    nrows = ((NinputInstanses + 1) > nrows) ? (NinputInstanses + 1) : nrows; 
-    ncols = ((Nneurons+1) > ncols) ? (Nneurons+1) : ncols;                                                                      
+    nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
+    ncols = ((Nneurons + 2) > ncols) ? (Nneurons+2) : ncols;
+    //printf(">>>>>>>>>>>> %d %d\n", ncols, Nneurons+1);
+    //while(ncols % Env::nthreads) nrows++;
+    //while(ncols % Env::nthreads) ncols++;
     
     inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                                nnz, nrows, ncols, feature_file, input_type, TILING_TYPE::_1D_ROW_, compression_type));
@@ -94,8 +96,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    Logging::enabled = false; 
-    //maxLayers = 3;
+    //Logging::enabled = false; 
+    //maxLayers = 1;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
