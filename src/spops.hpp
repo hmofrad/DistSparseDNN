@@ -52,7 +52,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         uint32_t start_col = Env::start_col[tid];
         uint32_t end_col = Env::end_col[tid];
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
-        
+
         for(uint32_t j = 0; j < B_ncols; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
@@ -119,7 +119,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         const uint32_t C_nrows = C_CSC->nrows;
         const uint32_t C_ncols = C_CSC->ncols;
         const uint32_t* C_IA   = C_CSC->IA_blk->ptr;
-        uint32_t* C_JA   = C_CSC->JA_blk->ptr;
+        uint32_t*       C_JA   = C_CSC->JA_blk->ptr;
         const Weight*    C_A   = C_CSC->A_blk->ptr;
         
         uint32_t start_col = Env::start_col[tid];
@@ -132,9 +132,12 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         }
         
         for(uint32_t j = 0; j < B_ncols; j++) {
+            
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 uint32_t m = (l == start_col) ? displacement_nnz : 0;
+                //if(m)
+                  //  printf(">>>>> %d %d\n", m, l);
                 for(uint32_t n = A_JA[l] + m; n < A_JA[l+1]; n++) {
                     s[A_IA[n]] += (B_A[k] * A_A[n]);
                 }
