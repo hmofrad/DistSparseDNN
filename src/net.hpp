@@ -96,7 +96,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    //Logging::enabled = false; 
+    Logging::enabled = false; 
     //maxLayers = 1;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
