@@ -188,7 +188,7 @@ void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>
         iss.str(line);
         iss >> category;
         if((!Env::rank and (category <  end)) or
-            (Env::rank and (category > start)
+            (Env::rank and (category >= start)
                        and (category < end))) {
             categories[category % tile_height] = 1;
             nCategories_local++;
