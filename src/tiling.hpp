@@ -278,8 +278,8 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     }
     
     // Threads
-    threads_nrowgrps = nrowgrps;
-    threads_ncolgrps = ncolgrps;
+    //threads_nrowgrps = nrowgrps;
+    //threads_ncolgrps = ncolgrps;
     if((thread_ntiles * nthreads != threads_ntiles) or (threads_nrowgrps * threads_ncolgrps != threads_ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
