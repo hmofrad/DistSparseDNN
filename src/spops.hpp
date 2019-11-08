@@ -54,10 +54,17 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
 
         for(uint32_t j = 0; j < B_ncols; j++) {
+            //if(!tid)
+                //printf("\n%d: ", j);
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
-                uint32_t m = (l == start_col) ? displacement_nnz : 0;
-                for(uint32_t n = A_JA[l] + m; n < A_JA[l+1]; n++) {
+                l +=  1 + l/((1028 - Env::nthreads) / Env::nthreads);
+                //uint32_t m = (l == start_col) ? displacement_nnz : 0;
+                //m = 0;; //42619280
+                //if(!tid)
+                    //printf("  k=%d Bk=%d l=%d AJl=%d\n", k, B_IA[k], l, A_JA[l]);
+                //    printf("%d ", l);
+                for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                     s[A_IA[n]] = 1;
                 }
             }
@@ -132,12 +139,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         }
         
         for(uint32_t j = 0; j < B_ncols; j++) {
-            
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 uint32_t m = (l == start_col) ? displacement_nnz : 0;
-                //if(m)
-                  //  printf(">>>>> %d %d\n", m, l);
+                m  = 0;
                 for(uint32_t n = A_JA[l] + m; n < A_JA[l+1]; n++) {
                     s[A_IA[n]] += (B_A[k] * A_A[n]);
                 }
@@ -146,7 +151,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         }
         #pragma omp barrier
         C_CSC->adjust(tid);
-        //C_CSC->walk(tid);
+        C_CSC->walk(tid);
         //C_CSC->statistics(tid);
     }
     else {
@@ -178,6 +183,7 @@ inline char validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>
         uint32_t displacement_nnz = Env::displacement_nnz[t];
         for(uint32_t j = start_col; j < end_col; j++) {
             uint32_t k = (j == start_col) ? displacement_nnz : 0;
+            k = 0;
             for(uint32_t i = A_JA[j] + k ; i < A_JA[j+1]; i++) {
                 allCategories[A_IA[i]] = 1;
             }
