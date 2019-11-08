@@ -286,7 +286,7 @@ void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<s
     uint64_t end_offset = (Env::rank != Env::nranks - 1) ? ((Env::rank + 1) * share) : filesize;
     share = (Env::rank == Env::nranks - 1) ? end_offset - start_offset : share;
     uint64_t share_tripels = share/sizeof(struct Triple<Weight>);
-    
+
     if(one_rank) {
         share = filesize;
         start_offset = 0;
@@ -331,7 +331,7 @@ void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<s
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done reading the input file %s\n", inputFile.c_str());
     Env::barrier();
-    
+
     Env::io_time += Env::toc(start_time);
 }
  
