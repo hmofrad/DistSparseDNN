@@ -67,16 +67,13 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     
     std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(feature_file)
                                                                      : IO::binary_file_stat<Weight>(feature_file);
-                                                                     
+        
     nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
     ncols = ((Nneurons + 2) > ncols) ? (Nneurons+2) : ncols;
-    //printf(">>>>>>>>>>>> %d %d\n", ncols, Nneurons+1);
-    //while(ncols % Env::nthreads) nrows++;
-    //while(ncols % Env::nthreads) ncols++;
     
     inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                                nnz, nrows, ncols, feature_file, input_type, TILING_TYPE::_1D_ROW_, compression_type));
-    
+    //std::exit(0);
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", Nneurons, maxLayers); 
     std::vector<uint32_t> maxLayersVector = {120, 480, 1920};
     uint32_t idxL = std::distance(maxLayersVector.begin(), std::find(maxLayersVector.begin(), maxLayersVector.end(), maxLayers));
@@ -97,7 +94,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
     //Logging::enabled = false; 
-    //maxLayers = 1;
+    maxLayers = 1;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -114,7 +111,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
         Logging::enabled = false; 
     }
-
+    
     spaDenseVec.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++)
         spaDenseVec[i].resize(inputFeatures->tile_height);    
@@ -222,11 +219,18 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
                                                                 nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
             Env::iteration++;
         }
+        
+        printf("nnz=%lu\n", nnz);
+        std::exit(0);
+        
         #pragma omp barrier
         auto& C0_tile = output->tiles[Env::rank][0];    
         auto& C0_spmat = C0_tile.spmat;
         auto& b_bias = biasDenseVecs[0];
         spmm(A0_spmat, B0_spmat, C0_spmat, s_spa, b_bias, tid);
+        
+        std::exit(0);
+        
         
         if(!tid) {
             Env::time_ranks.push_back(Env::toc(start_time));
