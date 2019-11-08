@@ -107,8 +107,8 @@ uint64_t Env::assign_nnz() {
 }
 
 void Env::assign_col(uint32_t ncols, int32_t tid) {
-    Env::start_col[tid] = (ncols/Env::nthreads) * tid;
-    Env::end_col[tid]   = (ncols/Env::nthreads) * (tid+1);
+    Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  ) + 1;
+    Env::end_col[tid]   =  (ncols/Env::nthreads) * (tid+1);
 }
 
 
