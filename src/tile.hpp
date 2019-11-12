@@ -10,14 +10,18 @@
 #include "triple.hpp"
 #include "spmat.hpp"
 
+enum REFINE_TYPE {_REFINE_NONE_, _REFINE_ROWS_, _REFINE_COLS_, _REFINE_BOTH_};
+const char* REFINE_TYPES[] = {"_REFINE_NONE_", "_REFINE_ROWS_", "_REFINE_COLS_", "_REFINE_BOTH_"};
+
 template<typename Weight>
 struct Tile{
     public:
         Tile() {};
         ~Tile() {};
         
-        void sort(const COMPRESSED_FORMAT compression_type, const RowSort<Weight> f_row, const ColSort<Weight> f_col);
-        void compress(const COMPRESSED_FORMAT compression_type, uint64_t nnz, uint32_t tile_height, uint32_t tile_width);
+        void sort(const RowSort<Weight> f_row, const ColSort<Weight> f_col, const COMPRESSED_FORMAT compression_type);
+        void compress(const uint64_t nnz, const uint32_t nrows, const uint32_t ncols, const uint32_t tile_height, const uint32_t tile_width,
+                      const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type, const bool one_rank);
         
         std::vector<struct Triple<Weight>> triples;
         std::shared_ptr<struct Compressed_Format<Weight>> spmat = nullptr;
@@ -30,7 +34,7 @@ struct Tile{
 };
 
 template<typename Weight>
-void Tile<Weight>::sort(const COMPRESSED_FORMAT compression_type, const RowSort<Weight> f_row, const ColSort<Weight> f_col) {
+void Tile<Weight>::sort(const RowSort<Weight> f_row, const ColSort<Weight> f_col, const COMPRESSED_FORMAT compression_type) {
     if((compression_type == COMPRESSED_FORMAT::_CSR_)  or
        (compression_type == COMPRESSED_FORMAT::_DCSR_) or
        (compression_type == COMPRESSED_FORMAT::_TCSR_)) {
@@ -49,8 +53,10 @@ void Tile<Weight>::sort(const COMPRESSED_FORMAT compression_type, const RowSort<
 
 
 template<typename Weight>
-void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type, uint64_t nnz, uint32_t tile_height, uint32_t tile_width) {  
-    if(not triples.empty()) {
+void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint32_t ncols, const uint32_t tile_height, const uint32_t tile_width,
+                            const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type, const bool one_rank) {  
+//printf("cooooooooooooo %d\n", cocompress);
+    if(not triples.empty() and (nnz == triples.size())){
         /*
         if(compression_type == COMPRESSED_FORMAT::_CSR_) {
             spmat = std::make_shared<CSR<Weight>>(triples.size(), tile_height, tile_width);
@@ -68,9 +74,29 @@ void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type, uint64_t n
         */
         //else 
         if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-            spmat = std::make_shared<CSC<Weight>>(triples.size(), tile_height, tile_width);
+            spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width);
+            //if(not cocompress) {
+             printf("populate nnz=%lu nrows=%d ncols=%d height=%d width=%d\n", nnz, nrows, ncols, tile_height, tile_width);
+             
             spmat->populate(triples, tile_height, tile_width);
-            //spmat->walk();
+            
+            if(refine_type == REFINE_TYPE::_REFINE_ROWS_) {
+                spmat->refine_rows(nrows);
+            }
+            else if(refine_type == REFINE_TYPE::_REFINE_COLS_) {
+                spmat->refine_cols();
+            }
+            /*
+            if(ncols != tile_height) {
+                spmat->refine_cols();
+            }
+            else {
+                spmat->refine_rows(nrows);
+                //spmat->walk();
+                std::exit(0);
+            }
+            */
+            spmat->walk(one_rank);
             triples.clear();
             triples.shrink_to_fit();
         } 
