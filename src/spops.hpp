@@ -49,15 +49,17 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         nrows = A_nrows;
         ncols = B_ncols;
         
-        
+        //B_CSC->walk(tid);
         //A_CSC->walk(tid);
+        //if(!tid) B_CSC->walk();
+          // #pragma omp barrier 
         //std::exit(0);
         
         uint32_t start_col = Env::start_col[tid];
         uint32_t end_col = Env::end_col[tid];
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
         //uint32_t j
-        for(uint32_t j = 0; j < B_ncols; j++) {
+        for(uint32_t j = start_col; j < end_col; j++) {
             //if(tid == 0)
             //printf("%d/%d: %d %d %d\n", j, B_ncols, B_JA[j], B_JA[j+1], B_JA[j+1] - B_JA[j]);
             //if(!tid)
@@ -151,7 +153,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             std::exit(Env::finalize()); 
         }
         
-        for(uint32_t j = 0; j < B_ncols; j++) {
+        for(uint32_t j = start_col; j < end_col; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 //uint32_t m = (l == start_col) ? displacement_nnz : 0;
@@ -169,6 +171,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         #pragma omp barrier
         C_CSC->adjust(tid);
         C_CSC->walk(tid);
+        //C_CSC->walk();
         //C_CSC->statistics(tid);
     }
     else {
