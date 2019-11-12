@@ -37,6 +37,8 @@ class Net {
         
         void inferenceReLU(COMPRESSED_FORMAT compression_type);
         void printTimes();
+        void printTimesExcel();
+        
         //void printCounters(double time, const std::string str);
         //void stats(const std::vector<double> vec, double& sum, double& mean, double& std_dev, double& min, double& max);
 };
@@ -67,18 +69,15 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     
     std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(feature_file)
                                                                      : IO::binary_file_stat<Weight>(feature_file);
-        
-    nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
-    
-    ncols = ((Nneurons + 2) > ncols) ? (Nneurons+2) : ncols;
-    ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;
-    ncols += Env::nthreads; // Cocompressing 
-    
-    
-    inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
-                                                               nnz, nrows, ncols, feature_file, input_type, 
-                                                               TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_BOTH_));
 
+    nrows = ((NinputInstanses + 1) > nrows) ? (NinputInstanses + 1) : nrows; 
+    ncols = ((Nneurons + 1) > ncols) ? (Nneurons+1) : ncols;
+    ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;    
+    ncols += Env::nthreads; // Refine 
+    
+    inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, 
+                                                               feature_file, input_type, TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_COLS_));
+     
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", Nneurons, maxLayers); 
     std::vector<uint32_t> maxLayersVector = {120, 480, 1920};
     uint32_t idxL = std::distance(maxLayersVector.begin(), std::find(maxLayersVector.begin(), maxLayersVector.end(), maxLayers));
@@ -114,11 +113,9 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         //layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, Env::nthreads, Env::nthreads, 
                               //nnz, nrows, ncols, layerFile, input_type, TILING_TYPE::_1D_COL_, compression_type)); 
               
-        layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, nnz, nrows, ncols, layerFile, input_type,
-                                               TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_BOTH_));                              
-                              
-                                                                       
-        std::exit(0);                      
+        layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, nnz, nrows, ncols, 
+                                                layerFile, input_type, TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_BOTH_));                              
+                  
         biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
         Logging::enabled = false; 
     }
@@ -148,26 +145,15 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
     }
-    Env::barrier();
-    printTimes();
+
+    //printTimes();
+    printTimesExcel();
+    
 }
 
 template<typename Weight>
 void Net<Weight>::printTimes() {
     Env::barrier();
-    
-    Logging::print(Logging::LOG_LEVEL::VOID, "exec: mean, std_dev, min, max, spmm_sym_mean, spmm_mean, mem_mean\n");
-    double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::exec_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_sym_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::memory_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", mean);
-    
-    /*
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
     const char* TIME_MSGS[] = {"I/O          ", "SpMM Symbolic", "SpMM Real    ", "Mem realloc  ", "Execution    ", "Total Run    "};
     const double TIME_VALUES[] = {Env::io_time, Env::spmm_sym_time, Env::spmm_time, Env::memory_time, Env::exec_time, Env::end_to_end_time};
@@ -194,7 +180,21 @@ void Net<Weight>::printTimes() {
         Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu\n", mean1, std_dev1, min1, max1);
         Env::barrier();
     }
-    */
+}
+
+template<typename Weight>
+void Net<Weight>::printTimesExcel() {
+    Env::barrier();
+    Logging::print(Logging::LOG_LEVEL::VOID, "exec: mean, std_dev, min, max, spmm_sym_mean, spmm_mean, mem_mean\n");
+    double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::exec_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_sym_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::memory_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", mean);
 }
 
 template<typename Weight>
@@ -215,23 +215,28 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
         
         Env::assign_col(ncols, tid);
         
+        //printf("%d %d %d\n", tid, Env::start_col[tid], Env::end_col[tid]);
+        //std::exit(0);   
         auto& A0_tile = inputFeatures->tiles[Env::rank][0];
         auto& A0_spmat = A0_tile.spmat;
-        auto& B0_tile = layers[0]->tiles[0][tid];
+        //auto& B0_tile = layers[0]->tiles[0][tid];
+        auto& B0_tile = layers[0]->tiles[0][0];
         auto& B0_spmat = B0_tile.spmat;
         auto& s_spa = spaDenseVec[tid];
+        uint32_t n1 = 0, n2 = 0;
+        std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) = spmm_sym(A0_spmat, B0_spmat, s_spa, tid);                                              
         
-        std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) = spmm_sym(A0_spmat, B0_spmat, s_spa, tid);
         
         #pragma omp barrier
         if(!tid) {
             nnz = Env::assign_nnz();
-            //output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
-            //                                                    nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
+            output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, 
+                                                                TILING_TYPE::_1D_ROW_, compression_type)); 
             Env::iteration++;
         }
+        //printf("nnz=%lu %d %d\n", nnz, n1, n2);
+        //std::exit(0);    
         
-        //printf("nnz=%lu\n", nnz);
         
         
         #pragma omp barrier
