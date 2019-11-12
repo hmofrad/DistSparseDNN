@@ -69,11 +69,16 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
                                                                      : IO::binary_file_stat<Weight>(feature_file);
         
     nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
+    
     ncols = ((Nneurons + 2) > ncols) ? (Nneurons+2) : ncols;
+    ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;
+    ncols += Env::nthreads; // Cocompressing 
+    
     
     inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
-                                                               nnz, nrows, ncols, feature_file, input_type, TILING_TYPE::_1D_ROW_, compression_type));
-    //std::exit(0);
+                                                               nnz, nrows, ncols, feature_file, input_type, 
+                                                               TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_BOTH_));
+
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", Nneurons, maxLayers); 
     std::vector<uint32_t> maxLayersVector = {120, 480, 1920};
     uint32_t idxL = std::distance(maxLayersVector.begin(), std::find(maxLayersVector.begin(), maxLayersVector.end(), maxLayers));
@@ -104,10 +109,16 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(layerFile)
                                                                      : IO::binary_file_stat<Weight>(layerFile);                                                                     
         nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
-        ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols;            
-
-        layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, Env::nthreads, Env::nthreads, 
-                              nnz, nrows, ncols, layerFile, input_type, TILING_TYPE::_1D_COL_, compression_type)); 
+        ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
+        
+        //layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, Env::nthreads, Env::nthreads, 
+                              //nnz, nrows, ncols, layerFile, input_type, TILING_TYPE::_1D_COL_, compression_type)); 
+              
+        layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, nnz, nrows, ncols, layerFile, input_type,
+                                               TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_BOTH_));                              
+                              
+                                                                       
+        std::exit(0);                      
         biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
         Logging::enabled = false; 
     }
@@ -215,13 +226,13 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
         #pragma omp barrier
         if(!tid) {
             nnz = Env::assign_nnz();
-            output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
-                                                                nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
+            //output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
+            //                                                    nnz, nrows, ncols, TILING_TYPE::_1D_ROW_, compression_type)); 
             Env::iteration++;
         }
         
-        printf("nnz=%lu\n", nnz);
-        std::exit(0);
+        //printf("nnz=%lu\n", nnz);
+        
         
         #pragma omp barrier
         auto& C0_tile = output->tiles[Env::rank][0];    
