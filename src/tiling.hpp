@@ -88,7 +88,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
           nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
             
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;
-  printf(">>>>> One[%d]\n", one_rank);
+    printf(">>>>> One[%d]\n", one_rank);
     //populate_tiling();
     
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
@@ -424,7 +424,8 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type) 
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                       nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
-    printf(">>>>> Two\n");
+    one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;
+    printf(">>>>> Three[%d]\n", one_rank);
     std::vector<uint64_t> ranks_nnz(nranks); 
     std::vector<uint32_t> ranks_nrows(nranks);    
     std::vector<uint32_t> ranks_ncols(nranks);    
@@ -930,7 +931,7 @@ void Tiling<Weight>::compress_tile(COMPRESSED_FORMAT compression_type, const REF
         }
     }    
 
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Done compressing tiles %s.\n", REFINE_TYPES[refine_type]);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Done compressing tiles with %s.\n", REFINE_TYPES[refine_type]);
     Env::barrier();      
 }
 
