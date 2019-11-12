@@ -49,16 +49,22 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         nrows = A_nrows;
         ncols = B_ncols;
         
+        
+        //A_CSC->walk(tid);
+        //std::exit(0);
+        
         uint32_t start_col = Env::start_col[tid];
         uint32_t end_col = Env::end_col[tid];
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
-
+        //uint32_t j
         for(uint32_t j = 0; j < B_ncols; j++) {
+            //if(tid == 0)
+            //printf("%d/%d: %d %d %d\n", j, B_ncols, B_JA[j], B_JA[j+1], B_JA[j+1] - B_JA[j]);
             //if(!tid)
                 //printf("\n%d: ", j);
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
-                l +=  1 + l/((1028 - Env::nthreads) / Env::nthreads);
+                //l +=  1 + l/((1028 - Env::nthreads) / Env::nthreads);
                 //uint32_t m = (l == start_col) ? displacement_nnz : 0;
                 //m = 0;; //42619280
                 //if(!tid)
@@ -84,7 +90,14 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
     if(!tid) {
         Env::spmm_sym_time += Env::toc(start_time);
     }
+    if(!tid) {
+        printf("%d %d %d\n", 0, Env::start_col[0], Env::end_col[0]);
+        printf("%d %d %d\n", 1, Env::start_col[1], Env::end_col[1]);
+        printf("%d %d %d\n", 2, Env::start_col[2], Env::end_col[2]);
+    }
     
+    //#pragma omp barrier
+    //std::exit(0);
     return std::make_tuple(nnzmax, nrows, ncols);
 }
 
@@ -141,13 +154,17 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         for(uint32_t j = 0; j < B_ncols; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
-                uint32_t m = (l == start_col) ? displacement_nnz : 0;
-                m  = 0;
-                for(uint32_t n = A_JA[l] + m; n < A_JA[l+1]; n++) {
+                //uint32_t m = (l == start_col) ? displacement_nnz : 0;
+                //m  = 0;
+                for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                     s[A_IA[n]] += (B_A[k] * A_A[n]);
                 }
             }
-            C_CSC->populate_spa(s, b, j, tid);
+            //j += (tid + 1);
+            //if(tid)     
+                //C_CSC->populate_spa(s, b, j-1, tid);
+            //else
+                C_CSC->populate_spa(s, b, j, tid);
         }
         #pragma omp barrier
         C_CSC->adjust(tid);
