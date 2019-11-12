@@ -25,20 +25,22 @@ struct Compressed_Format {
         //virtual void populate(const std::vector<struct Triple<Weight>>& triples, uint32_t nrows, uint32_t tile_height, uint32_t tile_width) {};
         //virtual void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t nrows, const uint32_t ncols,
           //                    const uint32_t tile_height, const uint32_t tile_width) {};
+        virtual void refine_both(const uint32_t nrows) {};
         virtual void refine_cols() {};
         virtual void refine_rows(const uint32_t nrows) {};
         virtual void populate_spa(std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid) {};
         virtual void adjust(const int32_t tid) {};
         virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {};
         virtual void walk(const int32_t tid) {};
-        virtual void walk(const bool one_rank) {};
-        //virtual void statistics(const int32_t tid) {};
+        virtual void walk() {};
         
         COMPRESSED_FORMAT compression_type;
         
         uint64_t nnz;
         uint32_t nrows;
         uint32_t ncols;
+        
+        bool one_rank;
         
         std::shared_ptr<struct Data_Block<uint32_t>> IA_blk;
         std::shared_ptr<struct Data_Block<uint32_t>> JA_blk;
@@ -48,34 +50,34 @@ struct Compressed_Format {
 template<typename Weight>
 struct CSC: public Compressed_Format<Weight> {
     public:
-        CSC(uint64_t nnz_, uint32_t nrows_, uint32_t ncols_);
+        CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const bool one_rank_);
         ~CSC(){};
         
         void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t tile_height, const uint32_t tile_width);
         //void populate(std::vector<struct Triple<Weight>>& triples, uint32_t nrows, uint32_t tile_height, uint32_t tile_width) {};
         //void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t nrows, const uint32_t ncols, 
         //              const uint32_t tile_height, const uint32_t tile_width) {};
+        void refine_both(const uint32_t nrows);
         void refine_cols();
         void refine_rows(const uint32_t nrows);
         void populate_spa(std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid);
         void walk(const int32_t tid);
-        void walk(const bool one_rank);
+        void walk();
         void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_);
         void adjust(const int32_t tid);
-        //void statistics(const int32_t tid);
         
         uint64_t nnz_i = 0;
-        //uint32_t ncols_dummy = 0;
 };
 
 
 template<typename Weight>
-CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {
+CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const bool one_rank_) {
     Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_CSC_;
     CSC::nnz = nnz_;
     CSC::nrows = nrows_; 
     //CSC::ncols_dummy = Env::nthreads;
     CSC::ncols = ncols_;// + Env::nthreads;
+    CSC::one_rank = one_rank_;
     
     CSC::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::nnz));
     CSC::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::ncols + 1));
@@ -111,11 +113,20 @@ void CSC<Weight>::populate(const std::vector<struct Triple<Weight>> triples, con
 }
 
 template<typename Weight>
+void CSC<Weight>::refine_both(const uint32_t nrows) {    
+    // Refine columns
+    refine_cols();
+
+    // Refine Rows
+    refine_rows(nrows);
+}
+
+template<typename Weight>
 void CSC<Weight>::refine_cols() { 
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
-    
+
     uint32_t c1 = 0;
     uint32_t c2 = 0;
     for(int32_t t = Env::nthreads; t > 0; t--) {
@@ -136,12 +147,9 @@ void CSC<Weight>::refine_rows(const uint32_t nrows) {
     
     for(uint32_t j = 0; j < CSC::ncols; j++) {
         for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
-            //printf("%d --> ", IA[i]);
             IA[i] += (IA[i] / ((nrows - Env::nthreads) / Env::nthreads)) + 1;
-            //printf("%d\n", IA[i]);
         }
     }
-    //std::exit(0);
 }
 
 /*
@@ -160,7 +168,7 @@ void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t n
 template<typename Weight>
 inline void CSC<Weight>::populate_spa(std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid) {
     uint64_t&  k = Env::index_nnz[tid];
-    uint32_t   c = col + Env::start_col[tid] + 1;// + tid;
+    uint32_t   c = col;// + Env::start_col[tid] + 1;// + tid;
     //uint32_t   c = col + Env::start_col[tid];
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
@@ -189,9 +197,11 @@ inline void CSC<Weight>::populate_spa(std::vector<Weight>& spa, const std::vecto
         }
     }
     
-    if(tid) {
-        if((c < Env::start_col[tid] + 10 ) or (c > Env::end_col[tid] - 10))
-         printf("%d %d %d %lu %d\n", col, c, JA[c], k, Env::start_col[tid]);
+    
+    //printf("col=%d c=%d JA[c]=%d k=%lu\n", col, c, JA[c], k);
+    //if(tid) {
+      //  if((c < Env::start_col[tid] + 10 ) or (c > Env::end_col[tid] - 10))
+        // printf("%d %d %d %lu %d\n", col, c, JA[c], k, Env::start_col[tid]);
         //if(c == 520) {
         //if(c == 10) {
           //  for(uint32_t ii = Env::start_col[tid]; ii < Env::start_col[tid]+10; ii++) 
@@ -199,7 +209,7 @@ inline void CSC<Weight>::populate_spa(std::vector<Weight>& spa, const std::vecto
             
             //std::exit(0);
         //}
-    }
+    //}
 }
 
 
@@ -257,8 +267,8 @@ void CSC<Weight>::walk(const int32_t tid) {
        // uint32_t k = (j == start_col) ? displacement_nnz : 0;
        //uint32_t k = 0;
        // if(tid and ((j < start_col + 10) or (j > end_col - 10)))
-           if(tid)
-               std::cout << "j=" << j-(tid+1) << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
+        //if(!tid)
+           // std::cout << "j=" << j-(tid+1) << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
 
         
         for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
@@ -269,38 +279,37 @@ void CSC<Weight>::walk(const int32_t tid) {
             //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
         }
     }   
-   
+   printf("tid=%d start=%d %d %d\n", tid, start_col, end_col, CSC::ncols);
     //}
-
+//printf("%d --> %lu %d\n", tid, Env::checkcount[tid], CSC::one_rank);
     Env::barrier();
     #pragma omp barrier  
     if(!tid) {
         double   sum_threads = std::accumulate(Env::checksum.begin(), Env::checksum.end(), 0);
         uint64_t count_threads = std::accumulate(Env::checkcount.begin(), Env::checkcount.end(), 0);
-        
-        double sum_ranks = 0;
-        uint64_t count_ranks = 0;
-        
-        MPI_Allreduce(&sum_threads, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        MPI_Allreduce(&count_threads, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
-        
-        if(count_threads != CSC::nnz_i) {
-            Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!!\n");
+        if(CSC::one_rank) {
+            Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_threads, count_threads);
         }
-        /*
-        double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
-        std::tie(sum, mean, std_dev, min, max) =  Env::printCounters(count_threads);
-        Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min: %f | avg +/- std_dev: %f +/- %f | max: %f\n", "count", min, mean, std_dev, max);
-        */
-        
-        Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
+        else {
+            double sum_ranks = 0;
+            uint64_t count_ranks = 0;
+            
+            MPI_Allreduce(&sum_threads, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(&count_threads, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+            
+            if(count_threads != CSC::nnz_i) {
+                Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!!\n");
+            }
+            
+            Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
+        }
     }
     #pragma omp barrier    
 }
 
 
 template<typename Weight>
-void CSC<Weight>::walk(const bool one_rank) {  
+void CSC<Weight>::walk() {  
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
@@ -319,40 +328,26 @@ void CSC<Weight>::walk(const bool one_rank) {
     }
     
     Env::barrier();
-    if(one_rank) {
+    if(CSC::one_rank) {
         Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, checksum, checkcount);
     }
     else {
-        uint64_t nnz_ = CSC::nnz;
+        uint64_t nnz_ = CSC::nnz_i;
         uint64_t nnz_ranks = 0;
         double sum_ranks = 0;
         uint64_t count_ranks = 0;
         MPI_Allreduce(&nnz_, &nnz_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
         MPI_Allreduce(&checksum, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
         MPI_Allreduce(&checkcount, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
-        
+        printf("%lu %lu\n", count_ranks, nnz_ranks);
         if(count_ranks != nnz_ranks) {
             Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!!\n");
         }
-
+        
         Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
     }    
 }
 
-
-
-/*
-template<typename Weight>
-void CSC<Weight>::statistics(const int32_t tid) {  
-    if(!tid) {
-        
-        //double nnz_ranks = 0;
-        //uint64_t count_ranks = 0;
-        //MPI_Allreduce(&sum_threads, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-        Logging::print(Logging::LOG_LEVEL::INFO, "%lu %lu %f\n", CSC::nnz, CSC::nnz_i, (double) CSC::nnz_i/CSC::nnz);
-    }
-}
-*/
 
 template<typename Weight>
 void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {
