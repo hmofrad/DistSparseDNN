@@ -74,11 +74,12 @@ void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint
         */
         //else 
         if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-            spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width);
+            spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width, one_rank);
             //if(not cocompress) {
-             printf("populate nnz=%lu nrows=%d ncols=%d height=%d width=%d\n", nnz, nrows, ncols, tile_height, tile_width);
+            //printf("populate nnz=%lu nrows=%d ncols=%d height=%d width=%d %lu\n", nnz, nrows, ncols, tile_height, tile_width, triples.size());
              
             spmat->populate(triples, tile_height, tile_width);
+            //if(refine) spmat->refine(nrows);
             
             if(refine_type == REFINE_TYPE::_REFINE_ROWS_) {
                 spmat->refine_rows(nrows);
@@ -86,6 +87,11 @@ void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint
             else if(refine_type == REFINE_TYPE::_REFINE_COLS_) {
                 spmat->refine_cols();
             }
+            else if(refine_type == REFINE_TYPE::_REFINE_BOTH_) {
+                spmat->refine_both(nrows);
+            }
+            
+            
             /*
             if(ncols != tile_height) {
                 spmat->refine_cols();
@@ -96,7 +102,7 @@ void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint
                 std::exit(0);
             }
             */
-            spmat->walk(one_rank);
+            spmat->walk();
             triples.clear();
             triples.shrink_to_fit();
         } 
@@ -118,7 +124,7 @@ void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint
         else
         */            
         if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-            spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width);
+            spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width, one_rank);
             //spmat->populate(tile_height, tile_width);
         } 
         
