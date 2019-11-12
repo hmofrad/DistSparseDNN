@@ -92,6 +92,13 @@ int Env::init() {
     return(status);
 }
 
+void Env::assign_col(uint32_t ncols, int32_t tid) {
+    Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  ) + 1;
+    Env::end_col[tid]   =  (ncols/Env::nthreads) * (tid+1);
+    //printf("%d: %d: %d %d\n", tid, ncols, Env::start_col[tid], Env::end_col[tid]);
+    //std::exit(0);
+}
+
 uint64_t Env::assign_nnz() {
     uint64_t nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
     
@@ -105,14 +112,6 @@ uint64_t Env::assign_nnz() {
     Env::index_nnz[0] = 0;
     return(nnz);
 }
-
-void Env::assign_col(uint32_t ncols, int32_t tid) {
-    Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  ) + 1;
-    Env::end_col[tid]   =  (ncols/Env::nthreads) * (tid+1);
-    //printf("%d: %d: %d %d\n", tid, ncols, Env::start_col[tid], Env::end_col[tid]);
-    //std::exit(0);
-}
-
 
 template<typename Type>
 std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type time) {
