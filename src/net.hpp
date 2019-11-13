@@ -98,7 +98,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
     //Logging::enabled = false; 
-    maxLayers = 1;
+    //maxLayers = 3;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -145,7 +145,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
     }
-
+    Env::barrier();
     //printTimes();
     printTimesExcel();
     
@@ -245,7 +245,7 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
         auto& b_bias = biasDenseVecs[0];
         spmm(A0_spmat, B0_spmat, C0_spmat, s_spa, b_bias, tid);
         
-        std::exit(0);
+        //std::exit(0);
         
         
         if(!tid) {
@@ -272,7 +272,7 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
 
             auto& A_spmat = A_tile.spmat;
             auto& C_spmat = C_tile.spmat;
-            B_tile = layers[l]->tiles[0][tid];
+            B_tile = layers[l]->tiles[0][0];
             auto& B_spmat = B_tile.spmat;
             
             auto& s_spa = spaDenseVec[tid];
