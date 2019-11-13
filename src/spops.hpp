@@ -60,7 +60,8 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
         //uint32_t j
         for(uint32_t j = start_col; j < end_col; j++) {
-            //if(tid == 0)
+          //  if(tid == 1 and Env::rank)
+            //    printf("%d-%d: %d\n", j, j+1, B_ncols);
             //printf("%d/%d: %d %d %d\n", j, B_ncols, B_JA[j], B_JA[j+1], B_JA[j+1] - B_JA[j]);
             //if(!tid)
                 //printf("\n%d: ", j);
@@ -92,11 +93,11 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
     if(!tid) {
         Env::spmm_sym_time += Env::toc(start_time);
     }
-    if(!tid) {
-        printf("%d %d %d\n", 0, Env::start_col[0], Env::end_col[0]);
-        printf("%d %d %d\n", 1, Env::start_col[1], Env::end_col[1]);
-        printf("%d %d %d\n", 2, Env::start_col[2], Env::end_col[2]);
-    }
+  //  if(!tid) {
+    //    printf("%d %d %d\n", 0, Env::start_col[0], Env::end_col[0]);
+      //  printf("%d %d %d\n", 1, Env::start_col[1], Env::end_col[1]);
+        //printf("%d %d %d\n", 2, Env::start_col[2], Env::end_col[2]);
+    //}
     
     //#pragma omp barrier
     //std::exit(0);
@@ -170,8 +171,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         }
         #pragma omp barrier
         C_CSC->adjust(tid);
-        C_CSC->walk(tid);
-        //C_CSC->walk();
+        //#pragma omp barrier
+        //C_CSC->walk(tid);
+        //if(!tid) C_CSC->walk();
+        //#pragma omp barrier
         //C_CSC->statistics(tid);
     }
     else {
@@ -195,16 +198,15 @@ inline char validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>
     const uint32_t* A_JA   = A_CSC->JA_blk->ptr;
     const Weight*    A_A   = A_CSC->A_blk->ptr;
     
-    
     std::vector<uint32_t> allCategories(A_nrows);
     for(int32_t t = 0; t < Env::nthreads; t++) {
         uint32_t start_col = Env::start_col[t];
-        uint32_t end_col = Env::end_col[t];
-        uint32_t displacement_nnz = Env::displacement_nnz[t];
+        uint32_t end_col   = Env::end_col[t];
+        //uint32_t displacement_nnz = Env::displacement_nnz[t];
         for(uint32_t j = start_col; j < end_col; j++) {
-            uint32_t k = (j == start_col) ? displacement_nnz : 0;
-            k = 0;
-            for(uint32_t i = A_JA[j] + k ; i < A_JA[j+1]; i++) {
+            //uint32_t k = (j == start_col) ? displacement_nnz : 0;
+            //k = 0;
+            for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
                 allCategories[A_IA[i]] = 1;
             }
         }
