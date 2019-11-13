@@ -102,7 +102,7 @@ void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint
                 std::exit(0);
             }
             */
-            spmat->walk();
+            //spmat->walk();
             triples.clear();
             triples.shrink_to_fit();
         } 
