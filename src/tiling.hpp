@@ -88,7 +88,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
           nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
             
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;
-    printf(">>>>> One[%d]\n", one_rank);
+   // printf(">>>>> One[%d]\n", one_rank);
     //populate_tiling();
     
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
@@ -269,7 +269,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
               nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
 
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;              
-    printf(">>>>> Two[%d]\n", one_rank);
+   // printf(">>>>> Two[%d]\n", one_rank);
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
@@ -425,7 +425,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                       nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;
-    printf(">>>>> Three[%d]\n", one_rank);
+  ///  printf(">>>>> Three[%d]\n", one_rank);
     std::vector<uint64_t> ranks_nnz(nranks); 
     std::vector<uint32_t> ranks_nrows(nranks);    
     std::vector<uint32_t> ranks_ncols(nranks);    
