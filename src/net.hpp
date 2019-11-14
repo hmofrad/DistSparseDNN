@@ -38,9 +38,6 @@ class Net {
         void inferenceReLU(COMPRESSED_FORMAT compression_type);
         void printTimes();
         void printTimesExcel();
-        
-        //void printCounters(double time, const std::string str);
-        //void stats(const std::vector<double> vec, double& sum, double& mean, double& std_dev, double& min, double& max);
 };
 
 template<typename Weight>
@@ -97,7 +94,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    //Logging::enabled = false; 
+
     //maxLayers = 3;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
@@ -110,9 +107,6 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
         ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
         
-        //layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, Env::nthreads, Env::nthreads, 
-                              //nnz, nrows, ncols, layerFile, input_type, TILING_TYPE::_1D_COL_, compression_type)); 
-              
         layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, nnz, nrows, ncols, 
                                                 layerFile, input_type, TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_BOTH_));                              
                   
@@ -130,11 +124,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     auto start1 = std::chrono::high_resolution_clock::now();
     inferenceReLU(compression_type);
     auto finish = std::chrono::high_resolution_clock::now();
-    //double challengeExecTime 
     Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start1).count())/1e9;
-    //double challengeTotalRunTime 
     Env::end_to_end_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
-    
     
     auto& C_tile = inputFeatures->tiles[Env::rank][0];    
     auto& C_spmat = C_tile.spmat;
@@ -146,7 +137,6 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
     }
     Env::barrier();
-    //printTimes();
     printTimesExcel();
     
 }
@@ -212,20 +202,15 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
         if(!tid) {
             start_time = Env::tic();                                                                    
         }
-        
         Env::assign_col(ncols, tid);
         
-        //printf("%d %d %d\n", tid, Env::start_col[tid], Env::end_col[tid]);
-        //std::exit(0);   
         auto& A0_tile = inputFeatures->tiles[Env::rank][0];
         auto& A0_spmat = A0_tile.spmat;
-        //auto& B0_tile = layers[0]->tiles[0][tid];
         auto& B0_tile = layers[0]->tiles[0][0];
         auto& B0_spmat = B0_tile.spmat;
         auto& s_spa = spaDenseVec[tid];
         uint32_t n1 = 0, n2 = 0;
         std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) = spmm_sym(A0_spmat, B0_spmat, s_spa, tid);                                              
-        
         
         #pragma omp barrier
         if(!tid) {
@@ -234,19 +219,12 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
                                                                 TILING_TYPE::_1D_ROW_, compression_type)); 
             Env::iteration++;
         }
-        //printf("nnz=%lu %d %d\n", nnz, n1, n2);
-        //std::exit(0);    
-        
-        
         
         #pragma omp barrier
         auto& C0_tile = output->tiles[Env::rank][0];    
         auto& C0_spmat = C0_tile.spmat;
         auto& b_bias = biasDenseVecs[0];
         spmm(A0_spmat, B0_spmat, C0_spmat, s_spa, b_bias, tid);
-        
-        //std::exit(0);
-        
         
         if(!tid) {
             Env::time_ranks.push_back(Env::toc(start_time));
