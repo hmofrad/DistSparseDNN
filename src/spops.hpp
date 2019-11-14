@@ -122,14 +122,16 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         uint32_t*       C_JA   = C_CSC->JA_blk->ptr;
         const Weight*    C_A   = C_CSC->A_blk->ptr;
         
-        uint32_t start_col = Env::start_col[tid];
-        uint32_t end_col = Env::end_col[tid];
-        uint32_t displacement_nnz = Env::displacement_nnz[tid];
-        
         if(A_ncols != B_nrows) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols);
             std::exit(Env::finalize()); 
         }
+        
+        uint32_t start_col = Env::start_col[tid];
+        uint32_t end_col = Env::end_col[tid];
+        uint32_t displacement_nnz = Env::displacement_nnz[tid];
+        
+        C_JA[start_col] = Env::offset_nnz[tid];
         
         for(uint32_t j = start_col; j < end_col; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
@@ -143,9 +145,8 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         
         #pragma omp barrier
         C_CSC->adjust(tid);
-        if(!tid) C_CSC->walk();
-        #pragma omp barrier
-        std::exit(0);
+        //C_CSC->walk(tid);
+        
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
