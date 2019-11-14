@@ -24,6 +24,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
     uint64_t nnzmax = 0;
     uint32_t nrows = 0;
     uint32_t ncols = 0; 
+    
     if((A->compression_type == COMPRESSED_FORMAT::_CSC_) and 
        (B->compression_type == COMPRESSED_FORMAT::_CSC_)) {
         const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
@@ -48,31 +49,14 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         }
         nrows = A_nrows;
         ncols = B_ncols;
-        
-        //B_CSC->walk(tid);
-        //A_CSC->walk(tid);
-        //if(!tid) B_CSC->walk();
-          // #pragma omp barrier 
-        //std::exit(0);
-        
+
         uint32_t start_col = Env::start_col[tid];
         uint32_t end_col = Env::end_col[tid];
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
-        //uint32_t j
+
         for(uint32_t j = start_col; j < end_col; j++) {
-          //  if(tid == 1 and Env::rank)
-            //    printf("%d-%d: %d\n", j, j+1, B_ncols);
-            //printf("%d/%d: %d %d %d\n", j, B_ncols, B_JA[j], B_JA[j+1], B_JA[j+1] - B_JA[j]);
-            //if(!tid)
-                //printf("\n%d: ", j);
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
-                //l +=  1 + l/((1028 - Env::nthreads) / Env::nthreads);
-                //uint32_t m = (l == start_col) ? displacement_nnz : 0;
-                //m = 0;; //42619280
-                //if(!tid)
-                    //printf("  k=%d Bk=%d l=%d AJl=%d\n", k, B_IA[k], l, A_JA[l]);
-                //    printf("%d ", l);
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                     s[A_IA[n]] = 1;
                 }
@@ -93,14 +77,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
     if(!tid) {
         Env::spmm_sym_time += Env::toc(start_time);
     }
-  //  if(!tid) {
-    //    printf("%d %d %d\n", 0, Env::start_col[0], Env::end_col[0]);
-      //  printf("%d %d %d\n", 1, Env::start_col[1], Env::end_col[1]);
-        //printf("%d %d %d\n", 2, Env::start_col[2], Env::end_col[2]);
-    //}
-    
-    //#pragma omp barrier
-    //std::exit(0);
+
     return std::make_tuple(nnzmax, nrows, ncols);
 }
 
@@ -111,7 +88,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                  std::vector<Weight> s,
                  std::vector<Weight> b,
                  int32_t tid) {
-
+                     
     double start_time = 0;
     if(!tid) {
         start_time = Env::tic();                                                                    
@@ -157,25 +134,18 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         for(uint32_t j = start_col; j < end_col; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
-                //uint32_t m = (l == start_col) ? displacement_nnz : 0;
-                //m  = 0;
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                     s[A_IA[n]] += (B_A[k] * A_A[n]);
                 }
             }
-            //j += (tid + 1);
-            //if(tid)     
-                //C_CSC->populate_spa(s, b, j-1, tid);
-            //else
-                C_CSC->populate_spa(s, b, j, tid);
+            C_CSC->populate_spa(s, b, j, tid);
         }
+        
         #pragma omp barrier
         C_CSC->adjust(tid);
-        //#pragma omp barrier
-        //C_CSC->walk(tid);
-        //if(!tid) C_CSC->walk();
-        //#pragma omp barrier
-        //C_CSC->statistics(tid);
+        if(!tid) C_CSC->walk();
+        #pragma omp barrier
+        std::exit(0);
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
@@ -190,6 +160,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
 template<typename Weight>
 inline char validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>> A,
                                       std::vector<uint32_t> trueCategories) {
+                                          
     const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
     const uint64_t A_nnz   = A_CSC->nnz;
     const uint32_t A_nrows = A_CSC->nrows;
@@ -202,10 +173,7 @@ inline char validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>
     for(int32_t t = 0; t < Env::nthreads; t++) {
         uint32_t start_col = Env::start_col[t];
         uint32_t end_col   = Env::end_col[t];
-        //uint32_t displacement_nnz = Env::displacement_nnz[t];
         for(uint32_t j = start_col; j < end_col; j++) {
-            //uint32_t k = (j == start_col) ? displacement_nnz : 0;
-            //k = 0;
             for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
                 allCategories[A_IA[i]] = 1;
             }
