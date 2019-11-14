@@ -21,8 +21,7 @@ namespace Env {
     int rank = 0;
     int nthreads = 0;
     const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
-    //double start_time = 0;
-    //double end_time = 0;
+    
     int iteration = 0;
     
     double io_time = 0;
@@ -95,9 +94,6 @@ int Env::init() {
 void Env::assign_col(uint32_t ncols, int32_t tid) {
     Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  )+1;
     Env::end_col[tid]   =  (ncols/Env::nthreads) * (tid+1);
-    
-    //printf("%d: %d: %d %d\n", tid, ncols, Env::start_col[tid], Env::end_col[tid]);
-    //std::exit(0);
 }
 
 uint64_t Env::assign_nnz() {
@@ -122,7 +118,6 @@ std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type time) {
     Type sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
     stats(times, sum, mean, std_dev, min, max);    
     return(std::make_tuple(sum, mean, std_dev, min, max));
-    //Logging::print(Logging::LOG_LEVEL::INFO, "%s time (sec): min | avg +/- std_dev | max: %f | %f +/- %f | %f\n", str.c_str(), min, mean, std_dev, max);
 }
 
 template<typename Type>
