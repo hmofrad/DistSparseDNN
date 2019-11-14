@@ -304,8 +304,8 @@ void CSC<Weight>::adjust(const int32_t tid){
     uint32_t displacement = (tid == 0) ? 0 : Env::offset_nnz[tid] - Env::index_nnz[tid-1];
     Env::displacement_nnz[tid] = displacement;
     
-    uint32_t* JA = CSC::JA_blk->ptr;
-    JA[Env::start_col[tid]] = Env::offset_nnz[tid];
+    //uint32_t* JA = CSC::JA_blk->ptr;
+    //JA[Env::start_col[tid]] = Env::offset_nnz[tid];
     #pragma omp barrier
     if(!tid) {
         CSC::nnz_i = 0;
