@@ -67,8 +67,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(feature_file)
                                                                      : IO::binary_file_stat<Weight>(feature_file);
 
-    nrows = ((NinputInstanses + 1) > nrows) ? (NinputInstanses + 1) : nrows; 
-    ncols = ((Nneurons + 1) > ncols) ? (Nneurons+1) : ncols;
+    nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
+    ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
     ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;    
     ncols += Env::nthreads; // Refine 
     
