@@ -18,7 +18,6 @@
 #include "allocator.hpp"
 #include "spmat.hpp"
 
-
 enum TILING_TYPE {_1D_COL_, _1D_ROW_,_2D_};
 const char* TILING_TYPES[] = {"_1D_COL_", "_1D_ROW_", "_2D_"};
 
@@ -60,16 +59,12 @@ class Tiling {
         uint32_t tile_height, tile_width;
         
         std::vector<std::vector<struct Tile<Weight>>> tiles;
-        //std::vector<std::vector<struct Tile<Weight>>> tiles_t;
-        
         bool one_rank = false;
-        //bool cocompress = false;
 
     private:
         void integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b);
         void populate_tiling();
         void print_tiling(const std::string field);
-        //void print_tiling_t(const std::string field);
         bool assert_tiling();
         void insert_triple(const struct Triple<Weight> triple);
         void tile_exchange();
@@ -88,9 +83,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
           nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
             
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;
-   // printf(">>>>> One[%d]\n", one_rank);
-    //populate_tiling();
-    
+   
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
@@ -158,35 +151,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         std::exit(Env::finalize()); 
     }
     
-    /*
-    while(nrows % threads_nrowgrps)
-        nrows++;
-    
-    
-    while(ncols % threads_ncolgrps)
-        ncols++;
-    */
-    
-    //nrowgrps = 3;
-    
     nrows += (nrows % nrowgrps) ? (nrowgrps - (nrows % nrowgrps)) : 0;
-    
-    
-    //while(nrows % nrowgrps)
-    //    nrows++;
-    
-    //while(ncols % ncolgrps)
-    //    ncols++;
-    
-    //while(ncols % Env::nthreads)
-    //    ncols++;
-
-    //while(ncols % Env::nthreads)
-    //    ncols++;
-    
-    //if(not one_rank)
-    //    ncols += Env::nthreads;
-    
     
     tile_height = nrows / nrowgrps;
     tile_width  = ncols / ncolgrps;
@@ -218,7 +183,6 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
             std::exit(Env::finalize()); 
         }
     }
-   
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: Process-based%s\n", TILING_TYPES[tiling_type]);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrowgrps      x ncolgrps      = [%d x %d]\n", nrowgrps, ncolgrps);
@@ -228,10 +192,6 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                           = [%d]\n", nnz);
     print_tiling("rank");
-    
-    
-    
-    
  
     if(INPUT_TYPE::_TEXT_ == input_type) {
         IO::text_file_read<Weight>(input_file, tiles, tile_height, tile_width, one_rank);
@@ -252,9 +212,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         }
         print_tiling("nedges");
     }
-    
-    //if(ncols != tile_width) cocompress = true;
-    
+
     compress_tile(compression_type, refine_type);
 }
 
@@ -269,7 +227,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
               nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
 
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;              
-   // printf(">>>>> Two[%d]\n", one_rank);
+    
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
@@ -305,10 +263,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
     }
-    
-    // Threads
-    //threads_nrowgrps = nrowgrps;
-    //threads_ncolgrps = ncolgrps;
+
     if((thread_ntiles * nthreads != threads_ntiles) or (threads_nrowgrps * threads_ncolgrps != threads_ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
@@ -339,14 +294,10 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     }
     
     nrows = nrows_;
-    //while(nrows % threads_nrowgrps)
-    while(nrows % Env::nthreads)
-        nrows++;
+    nrows += (nrows % Env::nthreads) ? (Env::nthreads - (nrows % Env::nthreads)) : 0;
     
     ncols = ncols_;
-    //while(ncols % threads_ncolgrps)
-    while(ncols % Env::nthreads)
-        ncols++;
+    ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;
     
     tile_height = nrows / threads_nrowgrps;
     tile_width  = ncols / threads_ncolgrps;
@@ -386,7 +337,6 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         IO::binary_file_read<Weight>(input_file, tiles, tile_height, tile_width, one_rank);
     }
    
-    
     if(not one_rank) {
         tile_exchange();
         tile_load();
@@ -400,21 +350,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         }
         print_tiling("nedges");
     }
-    /*
-    if (tiling_type == TILING_TYPE::_1D_COL_) {
-        uint32_t share = ncols/Env::nthreads;
-        for (uint32_t i = 0; i < nrowgrps; i++) {
-            for (uint32_t j = 0; j < ncolgrps; j++) {
-                tiles[i][j].start_col = share * j;
-                tiles[i][j].end_col = share * (j+1);
-            }
-        }
-    }
-    */
-    //if(ncols != tile_width) cocompress = true;
-    
     compress_tile(compression_type, refine_type);
-    
 }
 
 
@@ -424,8 +360,9 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type) 
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                       nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
+
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;
-  ///  printf(">>>>> Three[%d]\n", one_rank);
+    
     std::vector<uint64_t> ranks_nnz(nranks); 
     std::vector<uint32_t> ranks_nrows(nranks);    
     std::vector<uint32_t> ranks_ncols(nranks);    
@@ -514,153 +451,10 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
             }
         }
     }
-    //if(ncols != tile_width) cocompress = true;
+    
     tile_load();
     compress_tile(compression_type, refine_type);  
-
 }
-
-
-
-/*
-template<typename Weight>
-void Tiling<Weight>::populate_tiling() {
-    if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-        std::exit(Env::finalize()); 
-    }
-    
-    if ((tiling_type == TILING_TYPE::_1D_ROW_)) {
-        rowgrp_nranks = 1;
-        colgrp_nranks = nranks;
-        if(rowgrp_nranks * colgrp_nranks != nranks) {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-            std::exit(Env::finalize()); 
-        }
-    }
-    else if(tiling_type == TILING_TYPE::_1D_COL_) {
-        rowgrp_nranks = nranks;
-        colgrp_nranks = 1;
-        if(rowgrp_nranks * colgrp_nranks != nranks) {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-            std::exit(Env::finalize()); 
-        }
-    }
-    else if (tiling_type == TILING_TYPE::_2D_) {
-        integer_factorize(nranks, rowgrp_nranks, colgrp_nranks);
-        if(rowgrp_nranks * colgrp_nranks != nranks) {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-            std::exit(Env::finalize()); 
-        }
-    }
-    
-    rank_nrowgrps = nrowgrps / colgrp_nranks;
-    rank_ncolgrps = ncolgrps / rowgrp_nranks;        
-    if(rank_nrowgrps * rank_ncolgrps != rank_ntiles) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-        std::exit(Env::finalize()); 
-    }
-    
-    nthreads = Env::nthreads;
-    if ((tiling_type == TILING_TYPE::_1D_ROW_)) {
-        rowgrp_nthreads = 1;
-        colgrp_nthreads = nthreads;
-    }
-    else if (tiling_type == TILING_TYPE::_1D_COL_) {
-        rowgrp_nthreads =  nthreads;
-        colgrp_nthreads = 1;
-    }
-    else if (tiling_type == TILING_TYPE::_2D_) {
-        rowgrp_nthreads = rowgrp_nranks;
-        colgrp_nthreads = nrowgrps / rowgrp_nthreads;
-    }
-
-    if(rowgrp_nthreads * colgrp_nthreads != nthreads) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-        std::exit(Env::finalize()); 
-    }
-    
-    threads_nrowgrps = nrowgrps;
-    threads_ncolgrps = ncolgrps;
-    
-    thread_ntiles = ntiles/nthreads;
-    
-    thread_nrowgrps = threads_nrowgrps / colgrp_nthreads;
-    thread_ncolgrps = threads_ncolgrps / rowgrp_nthreads;
-    if(thread_nrowgrps * thread_ncolgrps != thread_ntiles) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-        std::exit(Env::finalize()); 
-    }
-    
-    
-    //while(nrows % threads_nrowgrps)
-    //    nrows++;
-    
-    
-    //while(ncols % threads_ncolgrps)
-    //    ncols++;
-    
-    
-    
-    
-    while(nrows % nrowgrps)
-        nrows++;
-    
-    //while(ncols % ncolgrps)
-    //    ncols++;
-    
-    //while(ncols % Env::nthreads)
-    //    ncols++;
-
-    while(ncols % Env::nthreads)
-        ncols++;
-    
-    if(not one_rank)
-        ncols += Env::nthreads;
-    
-    
-    tile_height = nrows / nrowgrps;
-    tile_width  = ncols / ncolgrps;
-    
-    tiles.resize(nrowgrps);
-    for (uint32_t i = 0; i < nrowgrps; i++) {
-        tiles[i].resize(ncolgrps);
-    }
-    
-    int32_t gcd_r = std::gcd(rowgrp_nranks, colgrp_nranks);
-    for (uint32_t i = 0; i < nrowgrps; i++) {
-        for (uint32_t j = 0; j < ncolgrps; j++) {
-            auto& tile = tiles[i][j];
-            tile.rank = (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
-        }
-    }
-    
-    if(one_rank) {
-        for (uint32_t i = 0; i < nrowgrps; i++) {
-            for (uint32_t j = 0; j < ncolgrps; j++) {
-                tiles[i][j].rank = Env::rank;
-            }
-        }
-    }
-    
-    if((not one_rank) and (ntiles == nranks *nranks)) {
-        if(not assert_tiling()) {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed1\n");
-            std::exit(Env::finalize()); 
-        }
-    }
-    
-    
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: Process-based%s\n", TILING_TYPES[tiling_type]);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrowgrps      x ncolgrps      = [%d x %d]\n", nrowgrps, ncolgrps);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rowgrp_nranks x colgrp_nranks = [%d x %d]\n", rowgrp_nranks, colgrp_nranks);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows         x ncols         = [%d x %d]\n", nrows, ncols);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                           = [%d]\n", nnz);
-    print_tiling("rank");
-}
-*/
 
 template<typename Weight>
 void Tiling<Weight>::integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b) {
@@ -714,7 +508,7 @@ void Tiling<Weight>::print_tiling(const std::string field) {
             break;
         }
     }
-    //Logging::print(Logging::LOG_LEVEL::VOID, "\n");
+    Logging::print(Logging::LOG_LEVEL::VOID, "\n");
 }
 
 
@@ -934,5 +728,4 @@ void Tiling<Weight>::compress_tile(COMPRESSED_FORMAT compression_type, const REF
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Done compressing tiles with %s.\n", REFINE_TYPES[refine_type]);
     Env::barrier();      
 }
-
 #endif
