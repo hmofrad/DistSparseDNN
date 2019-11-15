@@ -1,5 +1,5 @@
 /*
- * spops.cpp: Sparse Matrix operations implementation
+ * spops.hpp: Sparse Matrix operations implementation
  * Sparse Matrix - Sparse Matrix (SpMM)
  * (c) Mohammad Hasanzadeh Mofrad, 2019
  * (e) m.hasanzadeh.mofrad@gmail.com
@@ -10,11 +10,13 @@
 
 #include "env.hpp"
 #include "spmat.hpp"
+#include "bitmap.hpp"
 
 template<typename Weight>
 inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct Compressed_Format<Weight>> A,
                                                          std::shared_ptr<struct Compressed_Format<Weight>> B,
-                                                         std::vector<Weight> s,
+                                                         //std::vector<Weight> s,
+                                                         struct Bitmap spa_bitmap,
                                                          int32_t tid) {
     double start_time = 0;
     if(!tid) {
@@ -53,21 +55,55 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         uint32_t start_col = Env::start_col[tid];
         uint32_t end_col = Env::end_col[tid];
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
-
+        std::vector<int> is;
         for(uint32_t j = start_col; j < end_col; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
-                    s[A_IA[n]] = 1;
+                    //s[A_IA[n]] = 1;
+                    spa_bitmap.set_bit(A_IA[n]);
+                    //spa_bitmap |= (1 << A_IA[n]);
                 }
             }
+            nnzmax += spa_bitmap.count_and_clear();
+            /*
+            //printf("%d\n", spa_bitmap);
+            while (spa_bitmap) { 
+                nnzmax += spa_bitmap & 1; 
+                spa_bitmap >>= 1; 
+            } 
+            //printf("%d\n", spa_bitmap);
+            */
+            /*
             for(uint32_t i = 0; i < A_nrows; i++) {
                 if(s[i]){
                     nnzmax++;
                     s[i] = 0;
+                    is.push_back(i);
                 }
             }
+            */
+            
+            
+    //if(!tid) {
+        //printf("%lu\n", nnzmax);
+     //   uint64_t c = spa.count_and_clear();
+       // printf("%lu %lu\n", nnzmax, c);
+        //for(auto& iii: is) 
+          //  printf(">>>> %d %d\n", iii, spa.get_bit(iii));;
+        //for(uint32_t kk = 0; kk < nrows; kk++) {
+            //printf("%d %d\n", kk, spa.get_bit(kk));
+          //  if(spa.get_bit(kk)) printf(">>>> %d %d\n", kk, spa.get_bit(kk));;
+        //}
+        //if(nnzmax)
+        //exit(0);
+   // }
+            
+            
         }
+        
+        
+        
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
@@ -78,6 +114,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         Env::spmm_sym_time += Env::toc(start_time);
     }
 
+    
     return std::make_tuple(nnzmax, nrows, ncols);
 }
 
@@ -85,6 +122,7 @@ template<typename Weight>
 inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                  std::shared_ptr<struct Compressed_Format<Weight>> B,
                  std::shared_ptr<struct Compressed_Format<Weight>> C,
+                 struct Bitmap spa_bitmap,
                  std::vector<Weight> s,
                  std::vector<Weight> b,
                  int32_t tid) {
@@ -138,9 +176,11 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                     s[A_IA[n]] += (B_A[k] * A_A[n]);
+                    spa_bitmap.set_bit(A_IA[n]);
                 }
             }
-            C_CSC->populate_spa(s, b, j, tid);
+            C_CSC->populate_spa(spa_bitmap, s, b, j, tid);
+            //std::fill(v.begin(), v.end(), 0);
         }
         
         #pragma omp barrier
