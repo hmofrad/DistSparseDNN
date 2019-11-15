@@ -10,6 +10,7 @@
 #include "triple.hpp"
 #include "tiling.hpp"
 #include "spops.hpp"
+#include "bitmap.hpp"
 
 template<typename Weight>
 class Net {
@@ -27,6 +28,7 @@ class Net {
         std::vector<std::unique_ptr<struct Tiling<Weight>>> layers;
         std::vector<std::vector<Weight>> biasDenseVecs;
         std::vector<std::vector<Weight>> spaDenseVec;
+        std::vector<struct Bitmap> spaBitmap;
         
         std::unique_ptr<struct Tiling<Weight>> output = nullptr;
 
@@ -95,7 +97,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
 
-    //maxLayers = 3;
+    //maxLayers = 1;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -117,6 +119,10 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     spaDenseVec.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++)
         spaDenseVec[i].resize(inputFeatures->tile_height);    
+    
+    spaBitmap.resize(Env::nthreads);
+    for(int32_t i = 0; i < Env::nthreads; i++)
+        spaBitmap[i] = Bitmap(inputFeatures->tile_height);
     
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method.\n"); 
@@ -209,24 +215,27 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
         auto& B0_tile = layers[0]->tiles[0][0];
         auto& B0_spmat = B0_tile.spmat;
         auto& s_spa = spaDenseVec[tid];
+        auto& s_spa_bitmap = spaBitmap[tid];
         uint32_t n1 = 0, n2 = 0;
-        std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) = spmm_sym(A0_spmat, B0_spmat, s_spa, tid);                                              
+        std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) = spmm_sym(A0_spmat, B0_spmat, s_spa_bitmap, tid);                                              
         
         #pragma omp barrier
         if(!tid) {
             nnz = Env::assign_nnz();
             output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, 
                                                                 TILING_TYPE::_1D_ROW_, compression_type)); 
-            Env::iteration++;
         }
+        
+
         
         #pragma omp barrier
         auto& C0_tile = output->tiles[Env::rank][0];    
         auto& C0_spmat = C0_tile.spmat;
         auto& b_bias = biasDenseVecs[0];
-        spmm(A0_spmat, B0_spmat, C0_spmat, s_spa, b_bias, tid);
+        spmm(A0_spmat, B0_spmat, C0_spmat, s_spa_bitmap, s_spa, b_bias, tid);
         
         if(!tid) {
+            Env::iteration++;
             Env::time_ranks.push_back(Env::toc(start_time));
         }
         
@@ -253,19 +262,18 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
             B_tile = layers[l]->tiles[0][0];
             auto& B_spmat = B_tile.spmat;
             
-            auto& s_spa = spaDenseVec[tid];
             auto& b_bias = biasDenseVecs[l];  
-            std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
+            std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa_bitmap, tid);
             #pragma omp barrier
             if(!tid) {
                 nnz = Env::assign_nnz();
                 C_spmat->reallocate(nnz, nrows, ncols);
-                Env::iteration++;
             }
             #pragma omp barrier
-            spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, tid);
+            spmm(A_spmat, B_spmat, C_spmat, s_spa_bitmap, s_spa, b_bias, tid);
             
             if(!tid) {
+                Env::iteration++;
                 Env::time_ranks.push_back(Env::toc(start_time));
             }
         }
