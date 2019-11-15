@@ -79,7 +79,7 @@ uint64_t Bitmap::count_and_clear() {
             count++;
         }
     }
-    
+
     
     //unsigned int byte  =  index / BYTE_N_BITS;
     //unsigned int bit   =  index % BYTE_N_BITS;
