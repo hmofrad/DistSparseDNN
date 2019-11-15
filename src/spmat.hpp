@@ -12,6 +12,7 @@
 #include "allocator.hpp"
 #include "triple.hpp"
 #include "env.hpp"
+#include "bitmap.hpp"
 
 enum COMPRESSED_FORMAT {_CSR_, _DCSR_, _TCSR_, _CSC_, _DCSC_, _TCSC_};
 const char* COMPRESSED_FORMATS[] = {"_CSR_", "_DCSR_", "_TCSR_", "_CSC_", "_DCSC_", "_TCSC_"};
@@ -25,7 +26,7 @@ struct Compressed_Format {
         virtual void refine_both(const uint32_t nrows) {};
         virtual void refine_cols() {};
         virtual void refine_rows(const uint32_t nrows) {};
-        virtual void populate_spa(std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid) {};
+        virtual void populate_spa(struct Bitmap spa_bitmap, std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid) {};
         virtual void adjust(const int32_t tid) {};
         virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {};
         virtual void walk() {};
@@ -54,7 +55,7 @@ struct CSC: public Compressed_Format<Weight> {
         void refine_both(const uint32_t nrows);
         void refine_cols();
         void refine_rows(const uint32_t nrows);
-        void populate_spa(std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid);
+        void populate_spa(struct Bitmap spa_bitmap, std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid);
         void walk();
         void walk(const int32_t tid);
         void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_);
@@ -145,7 +146,7 @@ void CSC<Weight>::refine_rows(const uint32_t nrows) {
 }
 
 template<typename Weight>
-inline void CSC<Weight>::populate_spa(std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid) {
+inline void CSC<Weight>::populate_spa(struct Bitmap spa_bitmap, std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid) {
     uint64_t&  k = Env::index_nnz[tid];
     uint32_t   c = col + 1;
     uint32_t* IA = CSC::IA_blk->ptr;
@@ -155,6 +156,28 @@ inline void CSC<Weight>::populate_spa(std::vector<Weight>& spa, const std::vecto
     Weight YMIN = 0;
     Weight YMAX = 32;
     
+    JA[c] = k;
+    for(uint32_t i = 0; i < CSC::nrows; i++) {
+        if(spa_bitmap.get_bit(i)) {
+            spa_bitmap.clear_bit(i);
+            spa[i] += bias[c];
+            if(spa[i] < YMIN) {
+                spa[i] = YMIN;
+            }
+            else if(spa[i] > YMAX) {
+                spa[i] = YMAX;
+            }
+            if(spa[i]) {
+                JA[c]++;
+                IA[k] = i;
+                A[k] = spa[i];
+                k++;
+                spa[i] = 0;
+            }
+        }
+    }
+    
+    /*
     JA[c] = k;
     for(uint32_t i = 0; i < CSC::nrows; i++) {
         if(spa[i]) {
@@ -174,6 +197,7 @@ inline void CSC<Weight>::populate_spa(std::vector<Weight>& spa, const std::vecto
             }
         }
     }
+    */
 }
 
 template<typename Weight>
