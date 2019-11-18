@@ -42,6 +42,8 @@ namespace Env {
     std::vector<uint32_t> end_col;
     std::vector<double>   checksum;
     std::vector<uint64_t> checkcount;
+    std::vector<std::vector<bool>> rows;
+    std::vector<std::vector<bool>> cols;
     
     int init();
     void barrier();
@@ -86,6 +88,8 @@ int Env::init() {
     end_col.resize(Env::nthreads);
     checksum.resize(Env::nthreads);
     checkcount.resize(Env::nthreads);
+    rows.resize(Env::nthreads);
+    cols.resize(Env::nthreads);
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
