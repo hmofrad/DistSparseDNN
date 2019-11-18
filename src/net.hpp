@@ -118,7 +118,13 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     
     spaDenseVec.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++)
-        spaDenseVec[i].resize(inputFeatures->tile_height);    
+        spaDenseVec[i].resize(inputFeatures->tile_height);   
+
+    for(int32_t i = 0; i < Env::nthreads; i++) {
+        Env::rows[i].resize(inputFeatures->tile_height);
+        Env::cols[i].resize(inputFeatures->tile_height);
+    }
+    
     
     //spaBitmap.resize(Env::nthreads);
     //for(int32_t i = 0; i < Env::nthreads; i++)
@@ -143,7 +149,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
     }
     Env::barrier();
-    printTimesExcel();
+    //printTimesExcel();
+    printTimes();
     
 }
 
@@ -164,7 +171,7 @@ void Net<Weight>::printTimes() {
     std::vector<double> std_dev_time;
     std::vector<double> min_time;
     std::vector<double> max_time;
-    Logging::print(Logging::LOG_LEVEL::VOID, "time nnz nnz_i\n");
+    Logging::print(Logging::LOG_LEVEL::VOID, "time | nnz | nnz_i\n");
     Logging::print(Logging::LOG_LEVEL::VOID, "l mean std_dev min max mean std_dev min max mean std_dev min max\n");
     for (uint32_t l = 0; l < maxLayers; l++) {
         std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::time_ranks[l]);
