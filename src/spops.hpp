@@ -163,7 +163,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         
         #pragma omp barrier
         C_CSC->adjust(tid);
-        C_CSC->walk(tid);
+        //C_CSC->walk(tid);
         
     }
     else {
