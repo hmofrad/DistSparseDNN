@@ -204,27 +204,35 @@ inline void CSC<Weight>::populate_spa(std::vector<Weight>& spa, const std::vecto
 
 template<typename Weight>
 void CSC<Weight>::walk(const int32_t tid) {  
+    //std::vector<bool> rows(CSC::nrows);
+    //std::vector<bool> cols(CSC::ncols);
+
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
     
     uint32_t start_col = Env::start_col[tid];// + tid + 1;
     uint32_t end_col = Env::end_col[tid];
-
+    
     Env::checksum[tid] = 0;
     Env::checkcount[tid] = 0;    
     #pragma omp barrier
     for(uint32_t j = start_col; j < end_col; j++) {  
         // std::cout << "j=" << j << "," << j-(tid+1) << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
+        //if(JA[j+1] - JA[j])
+        //    Env::cols[tid][j] = true;
         for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
             (void) IA[i];
             (void) A[i];
             Env::checksum[tid] += A[i];
             Env::checkcount[tid]++;
             //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
+            //Env::rows[tid][IA[i]] = true;
+            
+            //cols[j] = 1;
         }
     }   
-
+    
     Env::barrier();
     #pragma omp barrier  
     if(!tid) {
@@ -246,8 +254,46 @@ void CSC<Weight>::walk(const int32_t tid) {
             
             Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
         }
+        /*
+        uint32_t nrows_ = 0;
+        std::vector<bool> rows_(CSC::nrows);
+        for(uint32_t i = 0; i < CSC::nrows; i++) {
+            for(int32_t j = 0; j < Env::nthreads; j++) {
+                if(Env::rows[j][i]) {
+                    rows_[i] = true;
+                }
+            }
+            if(rows_[i]) {
+                nrows_++;
+                rows_[i] = false;
+            }
+        }
+        
+        uint32_t ncols_ = 0;
+        std::vector<bool> cols_(CSC::ncols);
+        for(uint32_t i = 0; i < CSC::ncols; i++) {
+            for(int32_t j = 0; j < Env::nthreads; j++) {
+                if(Env::cols[j][i]) {
+                    cols_[i] = true;
+                }
+            }
+            if(cols_[i]) {
+                ncols_++;
+                cols_[i] = false;
+            }
+        }
+        
+        
+        printf("%d: [%d %d] [%d %d]\n", Env::rank, CSC::nrows, nrows_, CSC::ncols, ncols_);
+        */
+        
     }
-    #pragma omp barrier    
+    #pragma omp barrier  
+
+    //if(!tid) {
+        
+    //}
+    
 }
 
 template<typename Weight>
