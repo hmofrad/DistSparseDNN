@@ -254,6 +254,9 @@ void CSC<Weight>::walk(const int32_t tid) {
             
             Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
         }
+
+        
+        
         /*
         uint32_t nrows_ = 0;
         std::vector<bool> rows_(CSC::nrows);
@@ -390,6 +393,23 @@ void CSC<Weight>::adjust(const int32_t tid){
     if(!tid) {
         Env::nnz_ranks.push_back(CSC::nnz);
         Env::nnz_i_ranks.push_back(CSC::nnz_i);
+        
+        uint64_t sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+        
+        Env::stats(Env::count_nnz, sum, mean, std_dev, min, max);
+        Env::nnz_mean_thread_ranks.push_back(mean);
+        Env::nnz_std_dev_thread_ranks.push_back(std_dev);
+        Env::nnz_min_thread_ranks.push_back(min);
+        Env::nnz_max_thread_ranks.push_back(max);
+        
+        for(int i = 0; i < Env::nthreads; i++) {
+            Env::count_nnz_i[i] = Env::index_nnz[i] - Env::offset_nnz[i];
+        }
+        Env::stats(Env::count_nnz_i, sum, mean, std_dev, min, max);
+        Env::nnz_i_mean_thread_ranks.push_back(mean);
+        Env::nnz_i_std_dev_thread_ranks.push_back(std_dev);
+        Env::nnz_i_min_thread_ranks.push_back(min);
+        Env::nnz_i_max_thread_ranks.push_back(max);
     }
 }
 
