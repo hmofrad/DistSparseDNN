@@ -180,7 +180,16 @@ void Net<Weight>::printTimes() {
         std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_ranks[l]);
         Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu ", mean1, std_dev1, min1, max1);
         std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_i_ranks[l]);
-        Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu\n", mean1, std_dev1, min1, max1);
+        Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu ", mean1, std_dev1, min1, max1);
+        std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_mean_thread_ranks[l]);
+        Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu ", mean1, std_dev1, min1, max1);
+        std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_std_dev_thread_ranks[l]);
+        Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu ", mean1, std_dev1, min1, max1);
+        std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_i_mean_thread_ranks[l]);
+        Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu ", mean1, std_dev1, min1, max1);        
+        std::tie(sum1, mean1, std_dev1, min1, max1) =  Env::statistics<uint64_t>(Env::nnz_i_std_dev_thread_ranks[l]);
+        Logging::print(Logging::LOG_LEVEL::VOID, "%12lu %12lu %12lu %12lu\n", mean1, std_dev1, min1, max1);        
+        
         Env::barrier();
     }
 }
@@ -226,14 +235,13 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
 
         //std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) = spmm_sym(A0_spmat, B0_spmat, s_spa_bitmap, tid);                                              
         std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) = spmm_sym(A0_spmat, B0_spmat, s_spa, tid);                                              
-        
+        Env::count_nnz[tid] = Env::offset_nnz[tid];
         #pragma omp barrier
         if(!tid) {
             nnz = Env::assign_nnz();
             output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, 
                                                                 TILING_TYPE::_1D_ROW_, compression_type)); 
         }
-        
 
         
         #pragma omp barrier
@@ -274,6 +282,7 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
             auto& b_bias = biasDenseVecs[l];  
             //std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa_bitmap, tid);
             std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
+            Env::count_nnz[tid] = Env::offset_nnz[tid];
             #pragma omp barrier
             if(!tid) {
                 nnz = Env::assign_nnz();
