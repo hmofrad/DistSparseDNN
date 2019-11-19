@@ -35,9 +35,20 @@ namespace Env {
     std::vector<uint64_t> nnz_i_ranks;
     std::vector<double>   time_ranks;
     
+    std::vector<uint64_t> nnz_mean_thread_ranks;
+    std::vector<uint64_t> nnz_std_dev_thread_ranks;
+    std::vector<uint64_t> nnz_min_thread_ranks;
+    std::vector<uint64_t> nnz_max_thread_ranks;
+    std::vector<uint64_t> nnz_i_mean_thread_ranks;
+    std::vector<uint64_t> nnz_i_std_dev_thread_ranks;
+    std::vector<uint64_t> nnz_i_min_thread_ranks;
+    std::vector<uint64_t> nnz_i_max_thread_ranks;
+    
     std::vector<uint64_t> offset_nnz; /* Thread Offset from the beginning of the compressed format data */
     std::vector<uint64_t> index_nnz;  /* Current index of thread pointing to where the new data will be inserted */
     std::vector<uint32_t> displacement_nnz; /* The part that a thread may skip cuasing some internal fragmentation */  
+    std::vector<uint64_t> count_nnz;
+    std::vector<uint64_t> count_nnz_i;
     std::vector<uint32_t> start_col;
     std::vector<uint32_t> end_col;
     std::vector<double>   checksum;
@@ -90,6 +101,8 @@ int Env::init() {
     checkcount.resize(Env::nthreads);
     rows.resize(Env::nthreads);
     cols.resize(Env::nthreads);
+    count_nnz.resize(Env::nthreads);
+    count_nnz_i.resize(Env::nthreads);
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
@@ -115,12 +128,12 @@ uint64_t Env::assign_nnz() {
 }
 
 template<typename Type>
-std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type time) {
-    std::vector<Type> times(Env::nranks);
+std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type value) {
+    std::vector<Type> values(Env::nranks);
     MPI_Datatype MPI_TYPE = MPI_Types::get_mpi_data_type<Type>();
-    MPI_Allgather(&time, 1, MPI_TYPE, times.data(), 1, MPI_TYPE, MPI_COMM_WORLD); 
+    MPI_Allgather(&value, 1, MPI_TYPE, values.data(), 1, MPI_TYPE, MPI_COMM_WORLD); 
     Type sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
-    stats(times, sum, mean, std_dev, min, max);    
+    stats(values, sum, mean, std_dev, min, max);    
     return(std::make_tuple(sum, mean, std_dev, min, max));
 }
 
