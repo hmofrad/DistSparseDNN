@@ -97,7 +97,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
 
-    //maxLayers = 1;
+    maxLayers = 1;
     layers.resize(maxLayers);
     biasDenseVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -149,8 +149,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
     }
     Env::barrier();
-    //printTimesExcel();
-    printTimes();
+    printTimesExcel();
+    //printTimes();
     
 }
 
