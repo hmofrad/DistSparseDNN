@@ -243,7 +243,6 @@ void Net<Weight>::inferenceReLU(COMPRESSED_FORMAT compression_type) {
                                                                 TILING_TYPE::_1D_ROW_, compression_type)); 
         }
 
-        
         #pragma omp barrier
         auto& C0_tile = output->tiles[Env::rank][0];    
         auto& C0_spmat = C0_tile.spmat;
