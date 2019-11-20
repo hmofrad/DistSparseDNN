@@ -66,22 +66,13 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
             }
             //nnzmax += spa_bitmap.count_and_clear();
             
-            
             for(uint32_t i = 0; i < A_nrows; i++) {
                 if(s[i]){
                     nnzmax++;
                     s[i] = 0;
                 }
             }
-            
-            
-            
- 
-            
         }
-        
-        
-        
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
