@@ -174,23 +174,23 @@ bool Env::numa_configure() {
     Env::rank_core_id = sched_getcpu();
     Env::rank_socket_id = Env::rank_core_id / Env::ncores_per_socket;
     
-    threads_core_id.resize(Env::nthreads);
+    Env::threads_core_id.resize(Env::nthreads);
     #pragma omp parallel
     {
         int tid = omp_get_thread_num();
-        threads_core_id[tid] = sched_getcpu();
-        if(threads_core_id[tid] == -1) {
-            threads_core_id[tid] = 0;
+        Env::threads_core_id[tid] = sched_getcpu();
+        if(Env::threads_core_id[tid] == -1) {
+            Env::threads_core_id[tid] = 0;
         }
     }
-    std::sort(threads_core_id.begin(), threads_core_id.end());
-    threads_core_id.erase(std::unique(threads_core_id.begin(), threads_core_id.end()), threads_core_id.end());
+    std::sort(Env::threads_core_id.begin(), Env::threads_core_id.end());
+    Env::threads_core_id.erase(std::unique(Env::threads_core_id.begin(), Env::threads_core_id.end()), Env::threads_core_id.end());
     num_unique_cores = Env::threads_core_id.size();
     
-    threads_socket_id.resize(Env::nthreads);
+    Env::threads_socket_id.resize(Env::nthreads);
     for(int i = 0; i < Env::nthreads; i++) {
-        int cid = i % num_unique_cores;
-        threads_socket_id[i] = cid / Env::ncores_per_socket;
+        int cid = Env::threads_core_id[i % Env::num_unique_cores];
+        Env::threads_socket_id[i] = cid / Env::ncores_per_socket;
     }
     
     if(Env::nthreads != num_unique_cores) {
