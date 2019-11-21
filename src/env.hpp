@@ -7,20 +7,35 @@
 #ifndef ENV_HPP
 #define ENV_HPP
 
+#include <stdarg.h>
+#include <unistd.h>
 
 #include <mpi.h>
 #include <omp.h>
 #include <thread>
-#include <stdarg.h>
-#include <unistd.h>
+#include <sys/sysinfo.h>
+#include <numa.h>
+//#include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
+
 
 #include "types.hpp"
+
 
 namespace Env {
     int nranks = 0;
     int rank = 0;
     int nthreads = 0;
+    int ncores = 0;
+    int nsockets = 0;
+    int ncores_per_socket = 0;
+    int rank_core_id = 0;
+    int rank_socket_id = 0;
+    std::vector<int> threads_core_id;
+    std::vector<int> threads_socket_id;
+    int num_unique_cores = 0;
+    //std::vector<int> Env::core_ids_unique;
     const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
+    bool NUMA = true;
     
     int iteration = 0;
     
@@ -68,6 +83,9 @@ namespace Env {
     std::tuple<Type, Type, Type, Type, Type> statistics(const Type time);
     template<typename Type>
     void stats(const std::vector<Type> vec, Type& sum, Type& mean, Type& std_dev, Type& min, Type& max);
+    int get_nsockets();
+    bool numa_configure();
+    bool set_thread_affinity(const int32_t tid);
 }
 
 int Env::init() {
@@ -90,7 +108,9 @@ int Env::init() {
         status = 1;
     }
     
-    Env::nthreads = omp_get_max_threads(); 
+    if(not numa_configure()) {
+        NUMA = false;
+    }
 
     offset_nnz.resize(Env::nthreads);
     index_nnz.resize(Env::nthreads);
@@ -103,10 +123,86 @@ int Env::init() {
     cols.resize(Env::nthreads);
     count_nnz.resize(Env::nthreads);
     count_nnz_i.resize(Env::nthreads);
-    
+
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
 }
+
+int Env::get_nsockets() {
+    const char* command = "lscpu | grep 'Socket(s)' | sed 's/[^0-9]*//g'";
+    
+    FILE* fid = popen(command, "r");
+    if(not fid) {
+        //printf("ERROR[rank=%d] Cannot get the number of sockets.\n", Env::rank);
+        return(-1);
+    }
+    
+    char c = 0;
+    int  n = fread(&c, sizeof(c), 1, fid);
+    if(n != 1) {
+        //printf("ERROR[rank=%d] Cannot read the number of sockets.\n", Env::rank);
+        return(-1);
+    }
+    pclose(fid);
+    
+    int nsockets = (int)(c - '0');
+    return(nsockets);
+}
+
+bool Env::set_thread_affinity(const int32_t tid) {
+    int cid = Env::threads_core_id[tid % Env::num_unique_cores];
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cid, &cpuset);
+    pthread_t current_thread = pthread_self();    
+    int ret = pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
+    return(ret == 0);
+}
+
+bool Env::numa_configure() {
+    bool status = true;
+    Env::nthreads = omp_get_max_threads(); 
+    
+    Env::ncores = get_nprocs_conf();
+    Env::nsockets = Env::get_nsockets();
+    if(Env::nsockets < 1) {
+        Env::nsockets = 1;
+        status = false;
+    }
+    Env::ncores_per_socket = Env::ncores / Env::nsockets;
+    
+    Env::rank_core_id = sched_getcpu();
+    Env::rank_socket_id = Env::rank_core_id / Env::ncores_per_socket;
+    
+    threads_core_id.resize(Env::nthreads);
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        threads_core_id[tid] = sched_getcpu();
+        if(threads_core_id[tid] == -1) {
+            threads_core_id[tid] = 0;
+        }
+    }
+    std::sort(threads_core_id.begin(), threads_core_id.end());
+    threads_core_id.erase(std::unique(threads_core_id.begin(), threads_core_id.end()), threads_core_id.end());
+    num_unique_cores = Env::threads_core_id.size();
+    
+    threads_socket_id.resize(Env::nthreads);
+    for(int i = 0; i < Env::nthreads; i++) {
+        int cid = i % num_unique_cores;
+        threads_socket_id[i] = cid / Env::ncores_per_socket;
+    }
+    
+    if(Env::nthreads != num_unique_cores) {
+        //printf("WARN[rank=%d] CPU oversubscription %d/%d.\n", Env::rank, num_unique_cores, Env::nthreads);
+        status = false;
+    }
+    
+    return(status);
+}
+
+
+
 
 void Env::assign_col(uint32_t ncols, int32_t tid) {
     Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  )+1;
