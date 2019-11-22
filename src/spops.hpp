@@ -55,7 +55,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         uint32_t start_col = Env::start_col[tid];
         uint32_t end_col = Env::end_col[tid];
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
-        std::vector<int> is;
+        //std::vector<int> is;
         for(uint32_t j = start_col; j < end_col; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
@@ -151,10 +151,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             C_CSC->populate_spa(s, b, j, tid);
             //C_CSC->populate_spa(spa_bitmap, s, b, j, tid);
         }
-        
-        #pragma omp barrier
+        pthread_barrier_wait(&Env::thread_barrier);
+        //#pragma omp barrier
         C_CSC->adjust(tid);
-        //C_CSC->walk(tid);
+        C_CSC->walk(tid);
         
     }
     else {
