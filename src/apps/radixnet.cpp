@@ -41,11 +41,11 @@ int main(int argc, char **argv) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Radix-Net sparse DNN for MNIST dataset Implementation\n");
     Logging::print(Logging::LOG_LEVEL::INFO, "MPI ranks = %d, Threads per rank = %d\n", Env::nranks, Env::nthreads);
     Logging::print(Logging::LOG_LEVEL::INFO, "Sockets   = %d, Processors = %d\n", Env::nsockets, Env::ncores);
-    if(Env::NUMA) {
-        Logging::print(Logging::LOG_LEVEL::INFO, "NUMA is enabled.\n", Env::NUMA);
+    if(Env::NUMA_ALLOC) {
+        Logging::print(Logging::LOG_LEVEL::INFO, "NUMA is enabled.\n", Env::NUMA_ALLOC);
     }
     else {
-        Logging::print(Logging::LOG_LEVEL::WARN, "NUMA is disabled.\n", Env::NUMA);
+        Logging::print(Logging::LOG_LEVEL::WARN, "NUMA is disabled.\n", Env::NUMA_ALLOC);
     }
     
     Net<WGT> N(atoi(argv[2]), atoi(argv[4]), ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]));//, INPUT_TYPE::_TEXT_) ;
