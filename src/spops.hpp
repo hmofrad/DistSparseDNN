@@ -154,7 +154,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         pthread_barrier_wait(&Env::thread_barrier);
         //#pragma omp barrier
         C_CSC->adjust(tid);
-        C_CSC->walk(tid);
+        //C_CSC->walk(tid);
         
     }
     else {
