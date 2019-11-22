@@ -15,7 +15,8 @@
 template<typename Weight>
 inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct Compressed_Format<Weight>> A,
                                                          std::shared_ptr<struct Compressed_Format<Weight>> B,
-                                                         std::vector<Weight> s,
+                                                         //std::vector<Weight> s,
+                                                         std::shared_ptr<struct Data_Block<Weight>> s,
                                                          //struct Bitmap spa_bitmap,
                                                          int32_t tid) {
     double start_time = 0;
@@ -44,6 +45,8 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         const uint32_t* B_IA   = B_CSC->IA_blk->ptr;
         const uint32_t* B_JA   = B_CSC->JA_blk->ptr;
         const Weight*    B_A   = B_CSC->A_blk->ptr;
+        
+        Weight*          s_A   = s->ptr;
 
         if(A_ncols != B_nrows) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols);
@@ -60,16 +63,16 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
-                    s[A_IA[n]] = 1;
+                    s_A[A_IA[n]] = 1;
                     //spa_bitmap.set_bit(A_IA[n]);
                 }
             }
             //nnzmax += spa_bitmap.count_and_clear();
             
             for(uint32_t i = 0; i < A_nrows; i++) {
-                if(s[i]){
+                if(s_A[i]){
                     nnzmax++;
-                    s[i] = 0;
+                    s_A[i] = 0;
                 }
             }
         }
@@ -92,8 +95,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                  std::shared_ptr<struct Compressed_Format<Weight>> B,
                  std::shared_ptr<struct Compressed_Format<Weight>> C,
                  //struct Bitmap spa_bitmap,
-                 std::vector<Weight> s,
-                 std::vector<Weight> b,
+                 std::shared_ptr<struct Data_Block<Weight>> s,
+                 const std::shared_ptr<struct Data_Block<Weight>> b,
+                 //std::vector<Weight> s,
+                 //std::vector<Weight> b,
                  int32_t tid) {
                      
     double start_time = 0;
@@ -129,6 +134,9 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         uint32_t*       C_JA   = C_CSC->JA_blk->ptr;
         const Weight*    C_A   = C_CSC->A_blk->ptr;
         
+        Weight*          s_A   = s->ptr;
+        const Weight*    b_A   = b->ptr;
+        
         if(A_ncols != B_nrows) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols);
             std::exit(Env::finalize()); 
@@ -144,11 +152,11 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
-                    s[A_IA[n]] += (B_A[k] * A_A[n]);
+                    s_A[A_IA[n]] += (B_A[k] * A_A[n]);
                     //spa_bitmap.set_bit(A_IA[n]);
                 }
             }
-            C_CSC->populate_spa(s, b, j, tid);
+            C_CSC->populate_spa(s_A, b_A, j, tid);
             //C_CSC->populate_spa(spa_bitmap, s, b, j, tid);
         }
         pthread_barrier_wait(&Env::thread_barrier);
