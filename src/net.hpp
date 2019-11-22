@@ -301,9 +301,10 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
         if(!tid) {
             nnz = Env::assign_nnz();
             //if(Env::iteration < 2)
-            C_spmat->reallocate(nnz, nrows, ncols);
+            //C_spmat->reallocate(nnz, nrows, ncols, tid);
             //printf(">>>>%d %lu\n", tid, nnz);
         }
+        C_spmat->reallocate(nnz, nrows, ncols, tid);
         //#pragma omp barrier
         pthread_barrier_wait(&Env::thread_barrier);
         //spmm(A_spmat, B_spmat, C_spmat, s_spa_bitmap, s_spa, b_bias, tid);
