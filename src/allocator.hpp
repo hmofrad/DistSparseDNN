@@ -19,7 +19,7 @@ template<typename Data_Type>
 struct Data_Block {
     public:
         Data_Block();
-        Data_Block(const uint64_t nitems_);
+        Data_Block(const uint64_t nitems_, const int32_t socket_id_ = 1);
         ~Data_Block();
         void allocate();
         void deallocate();
@@ -28,11 +28,12 @@ struct Data_Block {
         
         uint64_t nitems;
         uint64_t nbytes;
+        int32_t socket_id;
         Data_Type* ptr;
 };
 
 template<typename Data_Type>
-Data_Block<Data_Type>::Data_Block(const uint64_t nitems_) : nitems(nitems_), nbytes(nitems_ * sizeof(Data_Type)), ptr(nullptr) {
+Data_Block<Data_Type>::Data_Block(const uint64_t nitems_, const int32_t socket_id_) : nitems(nitems_), nbytes(nitems_ * sizeof(Data_Type)), socket_id(socket_id_), ptr(nullptr) {
     allocate();
 }
 
@@ -48,9 +49,17 @@ template<typename Data_Type>
 void Data_Block<Data_Type>::allocate() {
     if(nbytes) {
         nbytes += (nbytes % Env::PAGE_SIZE) ? (Env::PAGE_SIZE - (nbytes % Env::PAGE_SIZE)) : 0;
-        if((ptr = (Data_Type*) mmap(nullptr, nbytes, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)) == (void*) -1) {  
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot map memory\n");
-            std::exit(Env::finalize()); 
+        if(Env::NUMA_ALLOC) {
+            if((ptr = (Data_Type*) numa_alloc_onnode(nbytes, socket_id)) == nullptr) {
+                Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot numa_alloc memory\n");
+                std::exit(Env::finalize()); 
+            }
+        }
+        else {
+            if((ptr = (Data_Type*) mmap(nullptr, nbytes, PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)) == (void*) -1) {  
+                Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot mmap memory\n");
+                std::exit(Env::finalize()); 
+            }
         }
         memset(ptr, 0,  nbytes); 
     }
@@ -59,9 +68,14 @@ void Data_Block<Data_Type>::allocate() {
 template<typename Data_Type>
 void Data_Block<Data_Type>::deallocate() {
     if(ptr and nbytes) {
-        if((munmap(ptr, nbytes)) == -1) {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot unmap memory\n");
-            std::exit(Env::finalize()); 
+        if(Env::NUMA_ALLOC) {
+            numa_free(ptr, nbytes);
+        }
+        else {
+            if((munmap(ptr, nbytes)) == -1) {
+                Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot unmap memory\n");
+                std::exit(Env::finalize()); 
+            }
         }
         ptr = nullptr;
     }
@@ -75,9 +89,17 @@ void Data_Block<Data_Type>::reallocate(const uint64_t nitems_) {
         new_nbytes += (new_nbytes % Env::PAGE_SIZE) ? (Env::PAGE_SIZE - (new_nbytes % Env::PAGE_SIZE)) : 0;
 
         if(old_nbytes != new_nbytes) {
-            if((ptr = (Data_Type*) mremap(ptr, old_nbytes, new_nbytes, MREMAP_MAYMOVE)) == (void*) -1) { 
-                Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot unmap memory\n");
-                std::exit(Env::finalize()); 
+            if(Env::NUMA_ALLOC) {
+                if((ptr = (Data_Type*) numa_realloc(ptr, old_nbytes, new_nbytes)) == (void*) 0) { 
+                    Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot numa realloc memory\n");
+                    std::exit(Env::finalize()); 
+                }
+            }
+            else {
+                if((ptr = (Data_Type*) mremap(ptr, old_nbytes, new_nbytes, MREMAP_MAYMOVE)) == (void*) -1) { 
+                    Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot mremap memory\n");
+                    std::exit(Env::finalize()); 
+                }
             }
             if(new_nbytes > old_nbytes) {
                 memset(ptr + nitems, 0, new_nbytes - old_nbytes); // If grow, zeros the added memory
