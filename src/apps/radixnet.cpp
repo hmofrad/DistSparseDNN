@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
         Logging::print(Logging::LOG_LEVEL::WARN, "NUMA is disabled.\n", Env::NUMA);
     }
     
-    //Net<WGT> N(atoi(argv[2]), atoi(argv[4]), ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]));//, INPUT_TYPE::_TEXT_) ;
+    Net<WGT> N(atoi(argv[2]), atoi(argv[4]), ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]));//, INPUT_TYPE::_TEXT_) ;
     
     return(Env::finalize());
 }
