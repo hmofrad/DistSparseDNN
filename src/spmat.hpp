@@ -30,7 +30,7 @@ struct Compressed_Format {
         virtual void populate_spa(Weight** spa, const Weight* bias, const uint32_t col, const int32_t tid) {};
         //virtual void populate_spa(std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid) {};
         virtual void adjust(const int32_t tid) {};
-        virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {};
+        virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t tid) {};
         virtual void walk() {};
         virtual void walk(const int32_t tid) {};
         
@@ -62,7 +62,7 @@ struct CSC: public Compressed_Format<Weight> {
         //void populate_spa(struct Bitmap spa_bitmap, std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid);
         void walk();
         void walk(const int32_t tid);
-        void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_);
+        void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t tid);
         void adjust(const int32_t tid);
         
         uint64_t nnz_i = 0;
@@ -156,6 +156,7 @@ template<typename Weight>
 //void CSC<Weight>::populate_spa(std::shared_ptr<struct Data_Block<Weight>> spa, const std::shared_ptr<struct Data_Block<Weight>> bias, const uint32_t col, const int32_t tid) {
 void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t col, const int32_t tid) {
     uint64_t&  k = Env::index_nnz[tid];
+
     uint32_t   c = col + 1;
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
@@ -366,7 +367,7 @@ void CSC<Weight>::walk() {
 }
 
 template<typename Weight>
-void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {
+void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t tid) {
     double start_time = Env::tic();
     
     if(CSC::ncols != ncols_) {
@@ -374,18 +375,39 @@ void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
         std::exit(Env::finalize());     
     }
     
-    CSC::nnz_i = 0;
-    CSC::nnz = nnz_;
-    CSC::nrows = nrows_; 
-    CSC::ncols = ncols_;
+    if(!tid) {
+        CSC::nnz_i = 0;
+        CSC::nnz = nnz_;
+        CSC::nrows = nrows_; 
+        CSC::ncols = ncols_;
+        
+        CSC::IA_blk->reallocate(CSC::nnz);
+        CSC::A_blk->reallocate(CSC::nnz);
+            
+        //CSC::JA_blk->clear();
+        //CSC::IA_blk->clear();
+        //CSC::A_blk->clear();
+
+        Env::memory_time += Env::toc(start_time);
+    }
+    pthread_barrier_wait(&Env::thread_barrier);
     
-    CSC::JA_blk->clear();
-    CSC::IA_blk->reallocate(CSC::nnz);
-    CSC::IA_blk->clear();
-    CSC::A_blk->reallocate(CSC::nnz);
-    CSC::A_blk->clear();
+    uint32_t share_col = (CSC::ncols) / 3;
+    uint32_t start_c = share_col * tid;
+    uint32_t end_c = (tid == (Env::nthreads - 1)) ? CSC::ncols : share_col * (tid + 1); 
+    //end_col =  ? CSC::ncols : end_col;
+    //uint32_t start_c = Env::start_col[tid] - 1;
+    //uint32_t end_c = (tid == (Env::nthreads - 1)) ? Env::end_col[tid] + 1 : Env::end_col[tid];
+    //CSC::JA_blk->clear(start_c, end_c);
     
-    Env::memory_time += Env::toc(start_time);
+    uint64_t share_nnz = CSC::nnz/Env::nthreads;
+    uint64_t start_n = share_nnz * tid;
+    uint64_t end_n = (tid == (Env::nthreads - 1)) ? CSC::nnz : share_nnz * (tid + 1);
+    
+    CSC::IA_blk->clear(start_n, end_n);
+    CSC::A_blk->clear(start_n, end_n);
+    
+    pthread_barrier_wait(&Env::thread_barrier);
 }
 
 template<typename Weight>
