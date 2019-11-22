@@ -71,6 +71,8 @@ namespace Env {
     std::vector<std::vector<bool>> rows;
     std::vector<std::vector<bool>> cols;
     
+    pthread_barrier_t thread_barrier;
+    
     int init();
     void barrier();
     int finalize();
@@ -111,6 +113,8 @@ int Env::init() {
     if(not numa_configure()) {
         NUMA = false;
     }
+    
+    pthread_barrier_init(&thread_barrier, NULL, Env::nthreads);
 
     offset_nnz.resize(Env::nthreads);
     index_nnz.resize(Env::nthreads);
