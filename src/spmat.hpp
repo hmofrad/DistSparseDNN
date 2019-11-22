@@ -75,8 +75,8 @@ CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncol
     CSC::ncols = ncols_;
     CSC::one_rank = one_rank_;
     
-    CSC::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::nnz));
     CSC::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::ncols + 1));
+    CSC::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::nnz));
     CSC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSC::nnz));
 }
 
@@ -216,7 +216,8 @@ void CSC<Weight>::walk(const int32_t tid) {
     
     Env::checksum[tid] = 0;
     Env::checkcount[tid] = 0;    
-    #pragma omp barrier
+    pthread_barrier_wait(&Env::thread_barrier);
+    //#pragma omp barrier
     for(uint32_t j = start_col; j < end_col; j++) {  
         // std::cout << "j=" << j << "," << j-(tid+1) << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
         //if(JA[j+1] - JA[j])
@@ -234,7 +235,8 @@ void CSC<Weight>::walk(const int32_t tid) {
     }   
     
     Env::barrier();
-    #pragma omp barrier  
+    pthread_barrier_wait(&Env::thread_barrier);
+    //#pragma omp barrier  
     if(!tid) {
         double     sum_threads = std::accumulate(Env::checksum.begin(),   Env::checksum.end(),   0);
         uint64_t count_threads = std::accumulate(Env::checkcount.begin(), Env::checkcount.end(), 0);
@@ -291,7 +293,8 @@ void CSC<Weight>::walk(const int32_t tid) {
         */
         
     }
-    #pragma omp barrier  
+    pthread_barrier_wait(&Env::thread_barrier);
+    //#pragma omp barrier  
 
     //if(!tid) {
         
@@ -365,10 +368,10 @@ void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
     CSC::nrows = nrows_; 
     CSC::ncols = ncols_;
     
-    CSC::IA_blk->reallocate(CSC::nnz);
-    CSC::A_blk->reallocate(CSC::nnz);
-    CSC::IA_blk->clear();
     CSC::JA_blk->clear();
+    CSC::IA_blk->reallocate(CSC::nnz);
+    CSC::IA_blk->clear();
+    CSC::A_blk->reallocate(CSC::nnz);
     CSC::A_blk->clear();
     
     Env::memory_time += Env::toc(start_time);
@@ -381,14 +384,16 @@ void CSC<Weight>::adjust(const int32_t tid){
     
     //uint32_t* JA = CSC::JA_blk->ptr;
     //JA[Env::start_col[tid]] = Env::offset_nnz[tid];
-    #pragma omp barrier
+    pthread_barrier_wait(&Env::thread_barrier);
+    //#pragma omp barrier
     if(!tid) {
         CSC::nnz_i = 0;
         for(int32_t i = 0; i < Env::nthreads; i++) {    
             CSC::nnz_i += (Env::index_nnz[i] - Env::offset_nnz[i]);
         }
     }
-    #pragma omp barrier  
+    pthread_barrier_wait(&Env::thread_barrier);
+    //#pragma omp barrier  
 
     if(!tid) {
         Env::nnz_ranks.push_back(CSC::nnz);
