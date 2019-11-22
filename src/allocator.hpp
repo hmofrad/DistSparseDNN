@@ -86,6 +86,11 @@ void Data_Block<Data_Type>::reallocate(const uint64_t nitems_) {
             nbytes = new_nbytes;
         }
     }
+    else {
+        nitems = nitems_;
+        nbytes = nitems_ * sizeof(Data_Type);
+        allocate();
+    }
 }
 
 template<typename Data_Type>
