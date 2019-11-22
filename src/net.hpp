@@ -229,6 +229,7 @@ void Net<Weight>::execute() {
 
 template<typename Weight>
 void Net<Weight>::inferenceReLU_t(const int32_t tid) {
+    bool ret = Env::set_thread_affinity(tid);   
     double start_time;
     
     uint64_t nnz = 0;
