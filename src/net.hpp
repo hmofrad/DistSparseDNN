@@ -26,8 +26,13 @@ class Net {
         std::unique_ptr<struct Tiling<Weight>> inputFeatures = nullptr;
         std::vector<uint32_t> trueCategories;
         std::vector<std::unique_ptr<struct Tiling<Weight>>> layers;
-        std::vector<std::vector<Weight>> biasDenseVecs;
-        std::vector<std::vector<Weight>> spaDenseVec;
+        //std::vector<std::vector<Weight>> biasDenseVecs;
+        //std::vector<std::vector<Weight>> spaDenseVec;
+        
+        std::vector<std::shared_ptr<struct Data_Block<Weight>>> biasWeightVecs;
+        std::vector<std::shared_ptr<struct Data_Block<bool>>> spaBoolVec;
+        std::vector<std::shared_ptr<struct Data_Block<Weight>>> spaWeightVec;
+        
         //std::vector<struct Bitmap> spaBitmap;
         
         std::unique_ptr<struct Tiling<Weight>> output = nullptr;
@@ -101,7 +106,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
 
     //maxLayers = 1;
     layers.resize(maxLayers);
-    biasDenseVecs.resize(maxLayers);
+    //biasDenseVecs.resize(maxLayers);
+    biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
         std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "/n" + std::to_string(Nneurons) + "-l" + std::to_string(i+1);
         layerFile += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
@@ -114,20 +120,32 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, nnz, nrows, ncols, 
                                                 layerFile, input_type, TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_BOTH_));                              
                   
-        biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
+        //biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
+        biasWeightVecs[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, Env::rank_socket_id));
         Logging::enabled = false; 
     }
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
     
-    spaDenseVec.resize(Env::nthreads);
-    for(int32_t i = 0; i < Env::nthreads; i++)
-        spaDenseVec[i].resize(inputFeatures->tile_height);   
-
+    //spaDenseVec.resize(Env::nthreads);
+    //for(int32_t i = 0; i < Env::nthreads; i++)
+    //    spaDenseVec[i].resize(inputFeatures->tile_height);   
+    
+    
+    spaWeightVec.resize(Env::nthreads);
+    for(int32_t i = 0; i < Env::nthreads; i++) {
+        spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->tile_height, Env::threads_socket_id[i]));
+    }
+    
+    //
+    //spaBoolVec
+    
+    /*
     for(int32_t i = 0; i < Env::nthreads; i++) {
         Env::rows[i].resize(inputFeatures->tile_height);
         Env::cols[i].resize(inputFeatures->tile_height);
     }
+    */
     
     output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 0, inputFeatures->tile_height, layers[0]->ncols, 
                                                         TILING_TYPE::_1D_ROW_, compression_type)); 
@@ -241,7 +259,8 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
     struct Tile<Weight> A_tile;
     struct Tile<Weight> B_tile;
     struct Tile<Weight> C_tile;
-    auto& s_spa = spaDenseVec[tid];
+    //auto& s_spa = spaDenseVec[tid];
+    auto& s_spa = spaWeightVec[tid];
     for (uint32_t l = 0; l < maxLayers; l++) {
         if(!tid) {
             start_time = Env::tic();                                                                    
@@ -261,9 +280,11 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
         B_tile = layers[l]->tiles[0][0];
         auto& B_spmat = B_tile.spmat;
         
-        auto& b_bias = biasDenseVecs[l];  
+        //auto& b_bias = biasDenseVecs[l];  
+        auto& b_bias = biasWeightVecs[l];  
         //std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa_bitmap, tid);
         std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
+        
         Env::count_nnz[tid] = Env::offset_nnz[tid];
         //printf("CCCC %d %lu\n", tid, Env::count_nnz[tid]);
         //#pragma omp barrier
