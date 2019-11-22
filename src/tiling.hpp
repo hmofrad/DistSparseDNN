@@ -678,7 +678,7 @@ void Tiling<Weight>::tile_load() {
 template<typename Weight>
 void Tiling<Weight>::tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type) {
     const double imbalance_threshold = .2;
-    const double balanced_ratio = nedges/nedges_divisor;
+    const double balanced_ratio = (nedges) ? nedges/nedges_divisor : 0;
     double calculated_ratio = 0;
     const int32_t skip = 15;
     uint32_t count = 0;
@@ -686,7 +686,7 @@ void Tiling<Weight>::tile_load_print(const std::vector<uint64_t> nedges_vec, con
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Balanced number of edges per %s = %lu \n", nedges_type.c_str(), (uint64_t) balanced_ratio);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Imbalance ratio per %s [0-%d]: ", nedges_type.c_str(), nedges_divisor-1);
     for(uint32_t i = 0; i < nedges_divisor; i++) {
-        calculated_ratio = (double) (nedges_vec[i] / balanced_ratio);
+        calculated_ratio = (nedges_vec[i]) ? (double) (nedges_vec[i] / balanced_ratio) : 0;
         if(i < skip) {
             Logging::print(Logging::LOG_LEVEL::VOID, "%2.2f ", calculated_ratio);
         }
