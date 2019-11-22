@@ -122,10 +122,19 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
                   
         //biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
         biasWeightVecs[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, Env::rank_socket_id));
+        
         Logging::enabled = false; 
     }
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
+    
+    for(uint32_t i = 0; i < maxLayers; i++) {
+        Weight* b_A = biasWeightVecs[i]->ptr;
+        for(uint32_t i = 0; i < inputFeatures->ncols; i++) {
+            b_A[i] = biasValue;
+        }
+    }
+    
     
     //spaDenseVec.resize(Env::nthreads);
     //for(int32_t i = 0; i < Env::nthreads; i++)
