@@ -35,7 +35,7 @@ namespace Env {
     int num_unique_cores = 0;
     //std::vector<int> Env::core_ids_unique;
     const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
-    bool NUMA_ALLOC = true;
+    bool NUMA_ALLOC = false;
     
     int iteration = 0;
     
@@ -66,6 +66,8 @@ namespace Env {
     std::vector<uint64_t> count_nnz_i;
     std::vector<uint32_t> start_col;
     std::vector<uint32_t> end_col;
+    std::vector<uint64_t> start_nnz;
+    std::vector<uint64_t> end_nnz;
     std::vector<double>   checksum;
     std::vector<uint64_t> checkcount;
     std::vector<std::vector<bool>> rows;
@@ -110,8 +112,9 @@ int Env::init() {
         status = 1;
     }
     
-    if(not numa_configure()) {
-        NUMA_ALLOC = false;
+    bool isNuma = numa_configure();
+    if(not(Env::NUMA_ALLOC and isNuma)) {
+        Env::NUMA_ALLOC = false;
     }
     
     pthread_barrier_init(&thread_barrier, NULL, Env::nthreads);
@@ -121,6 +124,8 @@ int Env::init() {
     displacement_nnz.resize(Env::nthreads);
     start_col.resize(Env::nthreads);
     end_col.resize(Env::nthreads);
+    start_nnz.resize(Env::nthreads);
+    end_nnz.resize(Env::nthreads);
     checksum.resize(Env::nthreads);
     checkcount.resize(Env::nthreads);
     rows.resize(Env::nthreads);
@@ -215,7 +220,7 @@ void Env::assign_col(uint32_t ncols, int32_t tid) {
 
 uint64_t Env::assign_nnz() {
     uint64_t nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
-    
+
     uint64_t sum = 0;
     for(int32_t i = Env::nthreads - 1; i > 0; i--) {
         sum += Env::offset_nnz[i];
@@ -224,6 +229,7 @@ uint64_t Env::assign_nnz() {
     }
     Env::offset_nnz[0] = 0;                               
     Env::index_nnz[0] = 0;
+
     return(nnz);
 }
 
