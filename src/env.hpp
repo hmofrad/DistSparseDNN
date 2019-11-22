@@ -35,7 +35,7 @@ namespace Env {
     int num_unique_cores = 0;
     //std::vector<int> Env::core_ids_unique;
     const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
-    bool NUMA = true;
+    bool NUMA_ALLOC = true;
     
     int iteration = 0;
     
@@ -111,7 +111,7 @@ int Env::init() {
     }
     
     if(not numa_configure()) {
-        NUMA = false;
+        NUMA_ALLOC = false;
     }
     
     pthread_barrier_init(&thread_barrier, NULL, Env::nthreads);
