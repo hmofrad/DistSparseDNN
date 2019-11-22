@@ -156,8 +156,16 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                     //spa_bitmap.set_bit(A_IA[n]);
                 }
             }
-            C_CSC->populate_spa(s_A, b_A, j, tid);
+            C_CSC->populate_spa(&s_A, b_A, j, tid);
             //C_CSC->populate_spa(spa_bitmap, s, b, j, tid);
+          //  for(uint32_t i = 0; i < A_nrows; i++) {
+            //    if(s_A[i]){
+                    
+              //      s_A[i] = 0;
+                //}
+            //}
+            
+            
         }
         pthread_barrier_wait(&Env::thread_barrier);
         //#pragma omp barrier
