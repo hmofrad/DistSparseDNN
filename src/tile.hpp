@@ -72,14 +72,14 @@ void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint
             triples.shrink_to_fit();
         }
     }
-    else if(nnz) {
+    else {// if(nnz) {
         if(compression_type == COMPRESSED_FORMAT::_CSC_) {
             spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width, one_rank);
         }
     }
-    else {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Compression failed\n");
-        std::exit(Env::finalize()); 
-    }
+    //else {
+    //    Logging::print(Logging::LOG_LEVEL::ERROR, "Compression failed\n");
+    //    std::exit(Env::finalize()); 
+    //}
 }
 #endif
