@@ -27,7 +27,7 @@ struct Compressed_Format {
         virtual void refine_cols() {};
         virtual void refine_rows(const uint32_t nrows) {};
         //virtual void populate_spa(struct Bitmap spa_bitmap, std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid) {};
-        virtual void populate_spa(Weight* spa, const Weight* bias, const uint32_t col, const int32_t tid) {};
+        virtual void populate_spa(Weight** spa, const Weight* bias, const uint32_t col, const int32_t tid) {};
         //virtual void populate_spa(std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid) {};
         virtual void adjust(const int32_t tid) {};
         virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {};
@@ -58,7 +58,7 @@ struct CSC: public Compressed_Format<Weight> {
         void refine_cols();
         void refine_rows(const uint32_t nrows);
         //void populate_spa(std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid);
-        void populate_spa(Weight* spa, const Weight* bias, const uint32_t col, const int32_t tid);
+        void populate_spa(Weight** spa, const Weight* bias, const uint32_t col, const int32_t tid);
         //void populate_spa(struct Bitmap spa_bitmap, std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid);
         void walk();
         void walk(const int32_t tid);
@@ -154,12 +154,15 @@ template<typename Weight>
     
 //void CSC<Weight>::populate_spa(std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid) {
 //void CSC<Weight>::populate_spa(std::shared_ptr<struct Data_Block<Weight>> spa, const std::shared_ptr<struct Data_Block<Weight>> bias, const uint32_t col, const int32_t tid) {
-void CSC<Weight>::populate_spa(Weight* spa, const Weight* bias, const uint32_t col, const int32_t tid) {
+void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t col, const int32_t tid) {
     uint64_t&  k = Env::index_nnz[tid];
     uint32_t   c = col + 1;
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
+    
+    Weight* s = *spa;
+    const Weight* b = bias;
     
     //Weight*    s   = spa->ptr;
     //Weight*    b   = bias->ptr;
@@ -191,20 +194,20 @@ void CSC<Weight>::populate_spa(Weight* spa, const Weight* bias, const uint32_t c
     
     JA[c] = k;
     for(uint32_t i = 0; i < CSC::nrows; i++) {
-        if(spa[i]) {
-            spa[i] += bias[c];
-            if(spa[i] < YMIN) {
-                spa[i] = YMIN;
+        if(s[i]) {
+            s[i] += b[c];
+            if(s[i] < YMIN) {
+                s[i] = YMIN;
             }
-            else if(spa[i] > YMAX) {
-                spa[i] = YMAX;
+            else if(s[i] > YMAX) {
+                s[i] = YMAX;
             }
-            if(spa[i]) {
+            if(s[i]) {
                 JA[c]++;
                 IA[k] = i;
-                A[k] = spa[i];
+                A[k] = s[i];
                 k++;
-                spa[i] = 0;
+                s[i] = 0;
             }
         }
     }
