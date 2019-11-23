@@ -37,6 +37,8 @@ namespace Env {
     const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
     bool NUMA_ALLOC = false;
     
+    std::vector<uint32_t> tile_index;
+    
     int iteration = 0;
     
     double io_time = 0;
@@ -66,10 +68,14 @@ namespace Env {
     std::vector<uint64_t> count_nnz_i;
     std::vector<uint32_t> start_col;
     std::vector<uint32_t> end_col;
+    std::vector<uint32_t> start_row;
+    std::vector<uint32_t> end_row;
     std::vector<uint64_t> start_nnz;
     std::vector<uint64_t> end_nnz;
     std::vector<double>   checksum;
     std::vector<uint64_t> checkcount;
+    std::vector<uint64_t> checknnz;
+    std::vector<bool> checkconv;
     std::vector<std::vector<bool>> rows;
     std::vector<std::vector<bool>> cols;
     
@@ -78,8 +84,9 @@ namespace Env {
     int init();
     void barrier();
     int finalize();
-    void assign_col(uint32_t ncols, int32_t tid);
-    uint64_t assign_nnz();
+    //void assign_col(uint32_t ncols, int32_t tid);
+    //void assign_row(uint32_t nrows, int32_t tid);
+    //uint64_t assign_nnz();
     double clock();
     double tic();
     double toc(double start_time);
@@ -128,10 +135,13 @@ int Env::init() {
     end_nnz.resize(Env::nthreads);
     checksum.resize(Env::nthreads);
     checkcount.resize(Env::nthreads);
+    checknnz.resize(Env::nthreads);
+    checkconv.resize(Env::nthreads);
     rows.resize(Env::nthreads);
     cols.resize(Env::nthreads);
     count_nnz.resize(Env::nthreads);
     count_nnz_i.resize(Env::nthreads);
+    tile_index.resize(Env::nthreads);
 
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
@@ -209,13 +219,17 @@ bool Env::numa_configure() {
     
     return(status);
 }
-
+/*
+void Env::assign_row(uint32_t nrows, int32_t tid) {
+    Env::start_row[tid] = (nrows/Env::nthreads) *  tid;
+    Env::end_row[tid]   = (tid == (Env::nthreads - 1)) ? nrows : (nrows/Env::nthreads) * (tid + 1);
+}
 
 
 
 void Env::assign_col(uint32_t ncols, int32_t tid) {
-    Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  )+1;
-    Env::end_col[tid]   =  (ncols/Env::nthreads) * (tid+1);
+    Env::start_col[tid] = 0;
+    Env::end_col[tid]   =  ncols;
 }
 
 uint64_t Env::assign_nnz() {
@@ -232,7 +246,7 @@ uint64_t Env::assign_nnz() {
 
     return(nnz);
 }
-
+*/
 template<typename Type>
 std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type value) {
     std::vector<Type> values(Env::nranks);
