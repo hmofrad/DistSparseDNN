@@ -382,9 +382,10 @@ void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
         CSC::IA_blk->clear();
         CSC::A_blk->clear();
         
-    if(!tid) {
-        Env::memory_time += Env::toc(start_time);
-    }
+    //if(!tid) {
+      //  Env::memory_time += Env::toc(start_time);
+    //}
+    Env::memory_allocation_time[tid] += Env::toc(start_time);
     /*
     pthread_barrier_wait(&Env::thread_barrier);
     
