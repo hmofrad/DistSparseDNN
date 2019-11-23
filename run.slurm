@@ -7,7 +7,7 @@
 #SBATCH --ntasks-per-node=1
 ##SBATCH --ntasks-per-socket=7
 #SBATCH --cpus-per-task=28
-##SBATCH --mem=150000
+#SBATCH --mem=150000
 #SBATCH --time=02:00:00
 #SBATCH --cluster=mpi
 #SBATCH --partition=opa-high-mem
@@ -25,6 +25,10 @@ echo "************************************************"
 module purge
 module load gcc/8.2.0
 module load intel
+
+export I_MPI_FABRICS=shm:ofa
+export SLURM_CPU_BIND="none"
+export I_MPI_FALLBACK=0
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OMP_PLACES=cores
