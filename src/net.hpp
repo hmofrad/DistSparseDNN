@@ -244,13 +244,17 @@ void Net<Weight>::printTimesExcel() {
     Env::barrier();
     Logging::print(Logging::LOG_LEVEL::VOID, "exec: mean, std_dev, min, max, spmm_sym_mean, spmm_mean, mem_mean\n");
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::exec_time);
+    //std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::exec_time);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics_t<double>(Env::execution_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_sym_time);
+    //std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_sym_time);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics_t<double>(Env::spmm_symb_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_time);
+    //std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_time);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics_t<double>(Env::spmm_real_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::memory_time);
+    //std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::memory_time);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics_t<double>(Env::memory_allocation_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", mean);
 }
 
@@ -294,7 +298,7 @@ void Net<Weight>::validate_t(const int32_t tid) {
 template<typename Weight>
 void Net<Weight>::inferenceReLU_t(const int32_t tid) {
     bool ret = Env::set_thread_affinity(tid);   
-    std::chrono::system_clock::time_point start_time;
+    //std::chrono::system_clock::time_point start_time;
     double layer_time;
     
     uint64_t nnz = 0;
@@ -309,14 +313,15 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
     //auto& s_spa = spaDenseVec[tid];
     auto& s_spa = spaWeightVec[tid];
     
-    if(!tid) {
-        start_time = std::chrono::high_resolution_clock::now();                                                                  
-    }
+    //if(!tid) {
+    auto start_time = std::chrono::high_resolution_clock::now();                                                                  
+    //}
     
     for (uint32_t l = 0; l < maxLayers; l++) {
-        if(!tid) {
-            layer_time = Env::tic();                                                                    
-        }
+        
+        //if(!tid) {
+        //    layer_time = Env::tic();                                                                    
+        //}
     
         if(not(l%2)) {
             //printf("%d %d %d\n", Env::rank, tid, Env::tile_index[tid]);
@@ -370,15 +375,15 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
         
         spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, tid);
         
-        if(!tid) {
-            Env::iteration++;
-            Env::time_ranks.push_back(Env::toc(layer_time));
-        }
+        //if(!tid) {
+        //    Env::iteration++;
+        //    Env::time_ranks.push_back(Env::toc(layer_time));
+        //}
     }
-    if(!tid) {
+    //if(!tid) {
         auto finish_time = std::chrono::high_resolution_clock::now();
-        Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_time - start_time).count())/1e9;
-    }
+        Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_time - start_time).count())/1e9;
+    ///}
     
     C_tile = inputFeatures->tiles[Env::tile_index[tid]][0];    
     auto& C_spmat = C_tile.spmat;
