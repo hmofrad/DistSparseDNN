@@ -176,10 +176,12 @@ void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>
     fin.clear();
     fin.seekg(0, std::ios_base::beg);
     
-    uint32_t start = (!Env::rank) ? 0 : Env::rank * tile_height;
-    uint32_t end = (Env::rank + 1) * tile_height;
+    //uint32_t start = (!Env::rank) ? 0 : Env::rank * tile_height;
+    //uint32_t end = (Env::rank + 1) * tile_height;
     
-    uint32_t nCategories_local = 0;
+    //uint32_t nCategories_local = 0;
+    //uint32_t category = 0;
+    uint32_t nCategories = 0;
     uint32_t category = 0;
     std::istringstream iss;
     categories.resize(tile_height);
@@ -187,19 +189,20 @@ void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>
         iss.clear();
         iss.str(line);
         iss >> category;
-        if((!Env::rank and (category <  end)) or
-            (Env::rank and (category >= start)
-                       and (category < end))) {
-            categories[category % tile_height] = 1;
-            nCategories_local++;
-        }
+        //if((!Env::rank and (category <  end)) or
+          //  (Env::rank and (category >= start)
+            //           and (category < end))) {
+            //categories[category] = 1;
+            categories[category] = 1;
+            nCategories++;
+        //}
     }
     fin.close();
-
-    uint32_t nCategories_global = 0;
-    MPI_Allreduce(&nCategories_local, &nCategories_global, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Total number of categories %d\n", nCategories_global);
-    if(nlines != nCategories_global) {
+    
+    //uint32_t nCategories_global = 0;
+    //MPI_Allreduce(&nCategories_local, &nCategories_global, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Total number of categories %d\n", nCategories);
+    if(nlines != nCategories) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", inputFile.c_str());
         std::exit(Env::finalize());
     }
@@ -358,28 +361,33 @@ void IO::binary_file_categories(const std::string inputFile, std::vector<uint32_
         std::exit(Env::finalize());
     }
     
-    uint32_t start = (!Env::rank) ? 0 : Env::rank * tile_height;
-    uint32_t end = (Env::rank + 1) * tile_height;
+    //uint32_t start = (!Env::rank) ? 0 : Env::rank * tile_height;
+    //uint32_t end = (Env::rank + 1) * tile_height;
     
-    uint32_t nCategories_local = 0;
+    //uint32_t nCategories_local = 0;
+    uint32_t nCategories = 0;
     uint32_t category = 0;
+    //categories.resize(tile_height);
     categories.resize(tile_height);
     while(offset < filesize) {
         fin.read(reinterpret_cast<char*>(&category), sizeof(uint32_t));
         offset += sizeof(uint32_t);
-        if((!Env::rank and (category <  end)) or
-            (Env::rank and (category >= start)
-                       and (category < end))) {
-            categories[category % tile_height] = 1;
-            nCategories_local++;
-        }
+        //if((!Env::rank and (category <  end)) or
+          //  (Env::rank and (category >= start)
+            //           and (category < end))) {
+            //categories[category % tile_height] = 1;
+            categories[category] = 1;
+            nCategories++;
+        //}
     }
     fin.close();
 
-    uint32_t nCategories_global = 0;
-    MPI_Allreduce(&nCategories_local, &nCategories_global, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Total number of categories %d\n", nCategories_global);
-    if((filesize / sizeof(uint32_t)) != nCategories_global) {
+    //uint32_t nCategories_global = 0;
+    //MPI_Allreduce(&nCategories_local, &nCategories_global, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
+    //Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Total number of categories %d\n", nCategories_global);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Total number of categories %d\n", nCategories);
+    //if((filesize / sizeof(uint32_t)) != nCategories_global) {
+    if((filesize / sizeof(uint32_t)) != nCategories) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", inputFile.c_str());
         std::exit(Env::finalize());
     }
