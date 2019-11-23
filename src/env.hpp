@@ -79,6 +79,11 @@ namespace Env {
     std::vector<std::vector<bool>> rows;
     std::vector<std::vector<bool>> cols;
     
+    std::vector<double> spmm_symb_time;
+    std::vector<double> spmm_real_time;
+    std::vector<double> memory_allocation_time;
+    std::vector<double> execution_time;
+    
     pthread_barrier_t thread_barrier;
     
     int init();
@@ -91,7 +96,9 @@ namespace Env {
     double tic();
     double toc(double start_time);
     template<typename Type>
-    std::tuple<Type, Type, Type, Type, Type> statistics(const Type time);
+    std::tuple<Type, Type, Type, Type, Type> statistics(const Type value);
+    template<typename Type>
+    std::tuple<Type, Type, Type, Type, Type> statistics_t(const std::vector<Type> values_t);
     template<typename Type>
     void stats(const std::vector<Type> vec, Type& sum, Type& mean, Type& std_dev, Type& min, Type& max);
     int get_nsockets();
@@ -142,6 +149,12 @@ int Env::init() {
     count_nnz.resize(Env::nthreads);
     count_nnz_i.resize(Env::nthreads);
     tile_index.resize(Env::nthreads);
+    
+    
+    spmm_symb_time.resize(Env::nthreads);
+    spmm_real_time.resize(Env::nthreads);
+    memory_allocation_time.resize(Env::nthreads);
+    execution_time.resize(Env::nthreads);
 
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
@@ -252,6 +265,16 @@ std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type value) {
     std::vector<Type> values(Env::nranks);
     MPI_Datatype MPI_TYPE = MPI_Types::get_mpi_data_type<Type>();
     MPI_Allgather(&value, 1, MPI_TYPE, values.data(), 1, MPI_TYPE, MPI_COMM_WORLD); 
+    Type sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+    stats(values, sum, mean, std_dev, min, max);    
+    return(std::make_tuple(sum, mean, std_dev, min, max));
+}
+
+template<typename Type>
+std::tuple<Type, Type, Type, Type, Type> Env::statistics_t(const std::vector<Type> values_t) {
+    std::vector<Type> values(Env::nranks * Env::nthreads);
+    MPI_Datatype MPI_TYPE = MPI_Types::get_mpi_data_type<Type>();
+    MPI_Allgather(values_t.data(), Env::nthreads, MPI_TYPE, values.data(), Env::nthreads, MPI_TYPE, MPI_COMM_WORLD); 
     Type sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
     stats(values, sum, mean, std_dev, min, max);    
     return(std::make_tuple(sum, mean, std_dev, min, max));
