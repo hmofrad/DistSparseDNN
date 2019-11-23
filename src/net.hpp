@@ -47,6 +47,7 @@ class Net {
         void printTimesExcel();
         void execute();
         void inferenceReLU_t(const int32_t tid);
+        void validate_t(const int32_t tid);
 };
 
 template<typename Weight>
@@ -79,11 +80,13 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
     ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
     ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;    
-    ncols += Env::nthreads; // Refine 
+    //ncols += Env::nthreads; // Refine 
     
-    inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, 
-                                                               feature_file, input_type, TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_COLS_));
-     
+    //inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, 
+                                                               //feature_file, input_type, TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_COLS_));
+    inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks, Env::nthreads, Env::nthreads, nnz, nrows, ncols, 
+                                                feature_file, input_type, TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_NONE_));                                                                                             
+    
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", Nneurons, maxLayers); 
     std::vector<uint32_t> maxLayersVector = {120, 480, 1920};
     uint32_t idxL = std::distance(maxLayersVector.begin(), std::find(maxLayersVector.begin(), maxLayersVector.end(), maxLayers));
@@ -96,10 +99,12 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     categoryFile += (input_type == INPUT_TYPE::_TEXT_) ? "-categories.tsv" : "-categories.bin";
     
     if(INPUT_TYPE::_TEXT_ == input_type) {
-        IO::text_file_categories(categoryFile, trueCategories, inputFeatures->tile_height);
+        //IO::text_file_categories(categoryFile, trueCategories, inputFeatures->tile_height);
+        IO::text_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
     }
     else {
-        IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->tile_height);
+        //IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->tile_height);
+        IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
@@ -118,7 +123,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
         
         layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, nnz, nrows, ncols, 
-                                                layerFile, input_type, TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_BOTH_));                              
+                                                layerFile, input_type, TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_NONE_)); // REFINE_TYPE::_REFINE_BOTH_));                              
                   
         //biasDenseVecs[i] = std::vector<Weight>(inputFeatures->ncols, biasValue);
         biasWeightVecs[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, Env::rank_socket_id));
@@ -134,7 +139,6 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
             b_A[i] = biasValue;
         }
     }
-    
     
     //spaDenseVec.resize(Env::nthreads);
     //for(int32_t i = 0; i < Env::nthreads; i++)
@@ -155,9 +159,12 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         Env::cols[i].resize(inputFeatures->tile_height);
     }
     */
+
+    //output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 0, inputFeatures->tile_height, layers[0]->ncols, 
+    //                                                    TILING_TYPE::_1D_ROW_, compression_type)); 
+    output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks, Env::nthreads, Env::nthreads, 0, inputFeatures->nrows, inputFeatures->ncols, 
+                                                        TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_NONE_)); 
     
-    output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 0, inputFeatures->tile_height, layers[0]->ncols, 
-                                                        TILING_TYPE::_1D_ROW_, compression_type)); 
     
     //spaBitmap.resize(Env::nthreads);
     //for(int32_t i = 0; i < Env::nthreads; i++)
@@ -165,13 +172,15 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method.\n"); 
     Env::barrier();
-    auto start1 = std::chrono::high_resolution_clock::now();
+    //auto start = std::chrono::high_resolution_clock::now();
     //inferenceReLU(compression_type);
-    execute();
-    auto finish = std::chrono::high_resolution_clock::now();
-    Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start1).count())/1e9;
-    Env::end_to_end_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
     
+    execute();
+
+    //auto finish = std::chrono::high_resolution_clock::now();
+    //Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start1).count())/1e9;
+    
+    /*
     auto& C_tile = inputFeatures->tiles[Env::rank][0];    
     auto& C_spmat = C_tile.spmat;
     bool passed = validate_prediction(C_spmat, trueCategories);
@@ -181,6 +190,9 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
     }
+    */
+    auto finish = std::chrono::high_resolution_clock::now();
+    Env::end_to_end_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
     Env::barrier();
     printTimesExcel();
     //printTimes();
@@ -245,9 +257,14 @@ void Net<Weight>::printTimesExcel() {
 template<typename Weight>
 void Net<Weight>::execute() {
     std::vector<std::thread> threads;
+    
+    //auto start = std::chrono::high_resolution_clock::now();
     for(int i = 0; i < Env::nthreads; i++) {
         threads.push_back(std::thread(&Net<Weight>::inferenceReLU_t, this, i));
     }
+    //auto finish = std::chrono::high_resolution_clock::now();
+    //Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
+
     
     for(std::thread& th: threads) {
         th.join();
@@ -255,33 +272,64 @@ void Net<Weight>::execute() {
 }
 
 template<typename Weight>
+void Net<Weight>::validate_t(const int32_t tid) {
+        
+    printf(">>>> %d\n", tid);
+    /*
+    auto& C_tile = inputFeatures->tiles[Env::rank][0];    
+    auto& C_spmat = C_tile.spmat;
+    bool passed = validate_prediction(C_spmat, trueCategories);
+    if(passed) {
+        Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
+    }
+    else {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
+    }
+    */
+    
+    
+    
+}
+
+template<typename Weight>
 void Net<Weight>::inferenceReLU_t(const int32_t tid) {
     bool ret = Env::set_thread_affinity(tid);   
-    double start_time;
+    std::chrono::system_clock::time_point start_time;
+    double layer_time;
     
     uint64_t nnz = 0;
     uint32_t nrows = inputFeatures->tile_height;
     uint32_t ncols = layers[0]->ncols;
     
-    Env::assign_col(ncols, tid);
+    //Env::assign_col(ncols, tid);
     
     struct Tile<Weight> A_tile;
     struct Tile<Weight> B_tile;
     struct Tile<Weight> C_tile;
     //auto& s_spa = spaDenseVec[tid];
     auto& s_spa = spaWeightVec[tid];
+    
+    if(!tid) {
+        start_time = std::chrono::high_resolution_clock::now();                                                                  
+    }
+    
     for (uint32_t l = 0; l < maxLayers; l++) {
         if(!tid) {
-            start_time = Env::tic();                                                                    
+            layer_time = Env::tic();                                                                    
         }
     
         if(not(l%2)) {
-            A_tile = inputFeatures->tiles[Env::rank][0];
-            C_tile = output->tiles[Env::rank][0];
+            //printf("%d %d %d\n", Env::rank, tid, Env::tile_index[tid]);
+            //A_tile = inputFeatures->tiles[Env::rank][0];
+            //C_tile = output->tiles[Env::rank][0];
+            A_tile = inputFeatures->tiles[Env::tile_index[tid]][0];
+            C_tile = output->tiles[Env::tile_index[tid]][0];
         }
         else {
-            A_tile = output->tiles[Env::rank][0];
-            C_tile = inputFeatures->tiles[Env::rank][0];
+            //A_tile = output->tiles[Env::rank][0];
+            //C_tile = inputFeatures->tiles[Env::rank][0];
+            A_tile = output->tiles[Env::tile_index[tid]][0];
+            C_tile = inputFeatures->tiles[Env::tile_index[tid]][0];
         }
 
         auto& A_spmat = A_tile.spmat;
@@ -292,11 +340,19 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
         //auto& b_bias = biasDenseVecs[l];  
         auto& b_bias = biasWeightVecs[l];  
         //std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa_bitmap, tid);
-        std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
         
-        Env::count_nnz[tid] = Env::offset_nnz[tid];
+        //std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
+        //printf("1. rank=%d tid=%d idx=%d\n", Env::rank, tid, Env::tile_index[tid]);
+        std::tie(nnz, std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
+        //printf("2. %lu\n", nnz);
+        //printf("spmm nnz = %d %d %lu\n", Env::rank,tid,nnz);
+        //std::exit(0);
+        //pthread_barrier_wait(&Env::thread_barrier);
+        //std::exit(0);
+        //Env::count_nnz[tid] = Env::offset_nnz[tid];
         //printf("CCCC %d %lu\n", tid, Env::count_nnz[tid]);
         //#pragma omp barrier
+        /*
         pthread_barrier_wait(&Env::thread_barrier);
         if(!tid) {
             nnz = Env::assign_nnz();
@@ -304,17 +360,37 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
             //C_spmat->reallocate(nnz, nrows, ncols, tid);
             //printf(">>>>%d %lu\n", tid, nnz);
         }
+        */
+        //printf("111. REALLOC %d\n", tid);
         C_spmat->reallocate(nnz, nrows, ncols, tid);
+        //printf("222. REALLOC %d\n", tid);
         //#pragma omp barrier
-        pthread_barrier_wait(&Env::thread_barrier);
+        //pthread_barrier_wait(&Env::thread_barrier);
         //spmm(A_spmat, B_spmat, C_spmat, s_spa_bitmap, s_spa, b_bias, tid);
+        
         spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, tid);
         
         if(!tid) {
             Env::iteration++;
-            Env::time_ranks.push_back(Env::toc(start_time));
+            Env::time_ranks.push_back(Env::toc(layer_time));
         }
     }
+    if(!tid) {
+        auto finish_time = std::chrono::high_resolution_clock::now();
+        Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_time - start_time).count())/1e9;
+    }
+    
+    C_tile = inputFeatures->tiles[Env::tile_index[tid]][0];    
+    auto& C_spmat = C_tile.spmat;
+    bool passed = validate_prediction(C_spmat, trueCategories, tid);
+    //printf("%d %d %d\n", Env::rank, tid, passed);
+    if(passed) {
+        if(!tid) Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
+    }
+    else {
+        if(!tid) Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
+    }
+    
 }
 
 /*
