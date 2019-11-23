@@ -84,7 +84,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     
     //inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, nnz, nrows, ncols, 
                                                                //feature_file, input_type, TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_COLS_));
-    inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks, Env::nthreads, Env::nthreads, nnz, nrows, ncols, 
+    inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks, Env::nthreads, Env::nranks * Env::nthreads, nnz, nrows, ncols, 
                                                 feature_file, input_type, TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_NONE_));                                                                                             
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", Nneurons, maxLayers); 
@@ -162,7 +162,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
 
     //output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 0, inputFeatures->tile_height, layers[0]->ncols, 
     //                                                    TILING_TYPE::_1D_ROW_, compression_type)); 
-    output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks, Env::nthreads, Env::nthreads, 0, inputFeatures->nrows, inputFeatures->ncols, 
+    output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks, Env::nthreads, Env::nranks * Env::nthreads, 0, inputFeatures->nrows, inputFeatures->ncols, 
                                                         TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_NONE_)); 
     
     
