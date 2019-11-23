@@ -317,11 +317,29 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     
     int32_t gcd_r = std::gcd(rowgrp_nranks, colgrp_nranks);
     int32_t gcd_t = std::gcd(rowgrp_nthreads, colgrp_nthreads);
+    if(!Env::rank)
+    printf("%d %d %d %d %d\n", rowgrp_nthreads, thread_nrowgrps, colgrp_nthreads, thread_ncolgrps, gcd_t);
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
-            tile.thread = (((i % colgrp_nthreads) * rowgrp_nthreads + (j % rowgrp_nthreads)) + ((i / (thread_nrowgrps/(gcd_t))) * (thread_nrowgrps))) % nthreads;
-            tile.rank = (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
+            //tile.thread = (((i % colgrp_nthreads) * rowgrp_nthreads + (j % rowgrp_nthreads)) + ((i / (thread_nrowgrps/(gcd_t))) * (thread_nrowgrps))) % nthreads;
+            //tile.rank = (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
+            //int32_t thread_rank = (((i % colgrp_nthreads) * rowgrp_nthreads + (j % rowgrp_nthreads)) + ((i / (nrowgrps/gcd_t)) * (thread_nrowgrps))) % (Env::nranks*Env::nthreads);
+            //tile.rank   = thread_rank % Env::nranks;
+            //tile.thread = thread_rank / Env::nranks;
+            //printf("%d %d %d\n", i, j, thread_rank);
+            
+            /*
+            tile.rank = (((i % colgrp_nthreads) * rowgrp_nthreads + (j % rowgrp_nthreads)) 
+                      + ((i / (nrowgrps/gcd_t)) * (thread_nrowgrps))) % Env::nranks;
+                      
+            tile.thread = (i / colgrp_nranks) % Env::nthreads;
+            */
+            
+            int32_t thread_rank = (((i % colgrp_nthreads) * rowgrp_nthreads + (j % rowgrp_nthreads)) 
+                               + ((i / (nrowgrps/gcd_t)) * (thread_nrowgrps))) % (Env::nranks * Env::nthreads);
+            tile.rank = thread_rank % Env::nranks;
+            tile.thread = thread_rank / Env::nranks;    
         }
     }
     
@@ -366,11 +384,13 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
                 Env::tile_index[tile.thread] = i;
-             //   printf("%d: [%d %d] [%d %d] %d\n", Env::rank, i, j, tile.rank, tile.thread, Env::tile_index[tile.thread]);
+               // printf("%d: [%d %d] [%d %d] %d\n", Env::rank, i, j, tile.rank, tile.thread, Env::tile_index[tile.thread]);
             }
         }
     }
-   // std::exit(0);
+    
+   // Env::barrier();
+    //std::exit(0);
 }
 
 
@@ -500,8 +520,10 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
-            tile.thread = (((i % colgrp_nthreads) * rowgrp_nthreads + (j % rowgrp_nthreads)) + ((i / (thread_nrowgrps/(gcd_t))) * (thread_nrowgrps))) % nthreads;
-            tile.rank = (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
+            int32_t thread_rank = (((i % colgrp_nthreads) * rowgrp_nthreads + (j % rowgrp_nthreads)) 
+                               + ((i / (nrowgrps/gcd_t)) * (thread_nrowgrps))) % (Env::nranks * Env::nthreads);
+            tile.rank = thread_rank % Env::nranks;
+            tile.thread = thread_rank / Env::nranks;    
         }
     }
     
