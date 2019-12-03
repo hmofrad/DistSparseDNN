@@ -238,6 +238,15 @@ void Net<Weight>::printTimesExcel() {
     Env::barrier();
     Logging::print(Logging::LOG_LEVEL::VOID, "exec: mean, std_dev, min, max, spmm_sym_mean, spmm_mean, mem_mean\n");
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+    
+    if(parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) {
+        int index = std::distance(Env::execution_time.begin(), std::max_element(Env::execution_time.begin(), Env::execution_time.end()));
+        Env::exec_time = Env::execution_time[index];
+        Env::spmm_sym_time = Env::spmm_symb_time[index];
+        Env::spmm_time = Env::spmm_real_time[index];
+        Env::memory_time = Env::memory_allocation_time[index];
+    }
+
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::exec_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::spmm_sym_time);
