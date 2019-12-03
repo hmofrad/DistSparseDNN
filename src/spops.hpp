@@ -10,14 +10,11 @@
 
 #include "env.hpp"
 #include "spmat.hpp"
-//#include "bitmap.hpp"
 
 template<typename Weight>
 inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct Compressed_Format<Weight>> A,
                                                          std::shared_ptr<struct Compressed_Format<Weight>> B,
-                                                         //std::vector<Weight> s,
                                                          std::shared_ptr<struct Data_Block<Weight>> s,
-                                                         //struct Bitmap spa_bitmap,
                                                          const int32_t tid) {
     double start_time = Env::tic(); 
 
@@ -86,19 +83,12 @@ template<typename Weight>
 inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                  std::shared_ptr<struct Compressed_Format<Weight>> B,
                  std::shared_ptr<struct Compressed_Format<Weight>> C,
-                 //struct Bitmap spa_bitmap,
                  std::shared_ptr<struct Data_Block<Weight>> s,
                  const std::shared_ptr<struct Data_Block<Weight>> b,
-                 //uint64_t& index,
-                 //std::vector<Weight> s,
-                 //std::vector<Weight> b,
                  const int32_t tid) {
                      
     double start_time = Env::tic();
-    //if(!tid) {
-    //    start_time = Env::tic(); 
-    //}
-
+    
     if((A->compression_type == COMPRESSED_FORMAT::_CSC_) and 
        (B->compression_type == COMPRESSED_FORMAT::_CSC_) and
        (C->compression_type == COMPRESSED_FORMAT::_CSC_)) {  
@@ -140,40 +130,17 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
         
         uint64_t& index = Env::index_nnz[tid];
-        //printf("1.%d %lu %lu\n", tid, index, Env::index_nnz[tid]);
         
-        
-       // C_JA[start_col] = Env::offset_nnz[tid];
-       // printf("here?\n");
         for(uint32_t j = 0; j < B_ncols; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                     s_A[A_IA[n]] += (B_A[k] * A_A[n]);
-                    //spa_bitmap.set_bit(A_IA[n]);
                 }
             }
             C_CSC->populate_spa(&s_A, b_A, start_col+j, index, tid);
-            //C_CSC->populate_spa(spa_bitmap, s, b, j, tid);
-          //  for(uint32_t i = 0; i < A_nrows; i++) {
-            //    if(s_A[i]){
-                    
-              //      s_A[i] = 0;
-                //}
-            //}
-            
-            
         }
-        //printf("2.%d %lu %lu\n", tid, index, Env::index_nnz[tid]);
-        //pthread_barrier_wait(&Env::thread_barrier);
-        //std::exit(0);
-       // printf("exiting\n");
-        //pthread_barrier_wait(&Env::thread_barrier);
-       // std::exit(0);
-        //#pragma omp barrier
-        //C_CSC->adjust(tid);
-        //C_CSC->walk(tid);
-        
+        //if(!tid) A_CSC->walk();
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
@@ -194,7 +161,8 @@ inline void adjust(std::shared_ptr<struct Compressed_Format<Weight>> C,
     const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C);
     C_CSC->adjust(tid);
     
-    if(!tid) Env::spmm_time += Env::toc(start_time);
+    if(!tid) Env::memory_time += Env::toc(start_time);
+    Env::memory_allocation_time[tid] += Env::toc(start_time);
 }
 
 template<typename Weight>
@@ -209,7 +177,8 @@ inline void repopulate(std::shared_ptr<struct Compressed_Format<Weight>> A,
     A_CSC->repopulate(C_CSC, tid);
     //if(!tid) A_CSC->walk();
     
-    if(!tid) Env::spmm_time += Env::toc(start_time);
+    if(!tid) Env::memory_time += Env::toc(start_time);
+    Env::memory_allocation_time[tid] += Env::toc(start_time);
 }
 
 
@@ -248,7 +217,6 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
     int32_t all = 0;
     bool converged = false;
 
-    //pthread_barrier_wait(&Env::thread_barrier);
     if(!tid) {
         MPI_Allreduce(&us, &all, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
         converged = (all == (Env::nranks * Env::nthreads));
@@ -256,14 +224,7 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
     else {
         converged = (us == Env::nthreads);
     }
-    //printf("%d %d %d %d %lu\n", Env::rank, tid, me, (Env::tile_index[tid] * A_nrows), trueCategories.size());
-    
-    
-    //if(!tid) {
-      //  MPI_Allreduce(&us, &all, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-    //}
-    //printf("2. R=%d T=%d me=%d uss=%d alu=%d %d %p\n", Env::rank, tid, me, us, all, converged, &us);
-    //pthread_barrier_wait(&Env::thread_barrier);
+
     return(converged);
 }
 
@@ -299,43 +260,4 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
 
     return((all == Env::nranks));
 }
-
-/*
-template<typename Weight>
-inline char validate_prediction(std::shared_ptr<struct Compressed_Format<Weight>> A,
-                                      std::vector<uint32_t> trueCategories) {
-                                          
-    const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
-    const uint64_t A_nnz   = A_CSC->nnz;
-    const uint32_t A_nrows = A_CSC->nrows;
-    const uint32_t A_ncols = A_CSC->ncols;
-    const uint32_t* A_IA   = A_CSC->IA_blk->ptr;
-    const uint32_t* A_JA   = A_CSC->JA_blk->ptr;
-    const Weight*    A_A   = A_CSC->A_blk->ptr;
-    
-    std::vector<uint32_t> allCategories(A_nrows);
-    for(int32_t t = 0; t < Env::nthreads; t++) {
-        uint32_t start_col = Env::start_col[t];
-        uint32_t end_col   = Env::end_col[t];
-        for(uint32_t j = start_col; j < end_col; j++) {
-            for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
-                allCategories[A_IA[i]] = 1;
-            }
-        }
-    }
-    
-    char me = 1;
-    uint32_t j = 0;
-    for(uint32_t i = 0; i < A_nrows; i++) {
-        if(trueCategories[i] != allCategories[i]) {
-            me = 0;
-            break;
-        }
-    }
-    char all = 0;
-    MPI_Allreduce(&me, &all, 1, MPI_CHAR, MPI_SUM, MPI_COMM_WORLD);
-
-    return((all == Env::nranks));
-}
-*/
 #endif
