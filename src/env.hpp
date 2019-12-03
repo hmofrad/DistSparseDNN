@@ -76,8 +76,8 @@ namespace Env {
     std::vector<uint64_t> checkcount;
     std::vector<uint64_t> checknnz;
     std::vector<bool> checkconv;
-    std::vector<std::vector<bool>> rows;
-    std::vector<std::vector<bool>> cols;
+    //std::vector<std::vector<bool>> rows;
+    //std::vector<std::vector<bool>> cols;
     
     std::vector<double> spmm_symb_time;
     std::vector<double> spmm_real_time;
@@ -146,8 +146,8 @@ int Env::init() {
     checkcount.resize(Env::nthreads);
     checknnz.resize(Env::nthreads);
     checkconv.resize(Env::nthreads);
-    rows.resize(Env::nthreads);
-    cols.resize(Env::nthreads);
+    //rows.resize(Env::nthreads);
+    //cols.resize(Env::nthreads);
     count_nnz.resize(Env::nthreads);
     count_nnz_i.resize(Env::nthreads);
     tile_index.resize(Env::nthreads);
