@@ -18,12 +18,9 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
                                                          //std::vector<Weight> s,
                                                          std::shared_ptr<struct Data_Block<Weight>> s,
                                                          //struct Bitmap spa_bitmap,
-                                                         int32_t tid) {
+                                                         const int32_t tid) {
     double start_time = Env::tic(); 
-    //if(!tid) {
-    //    start_time = Env::tic();                                                                    
-    //}
-    
+
     uint64_t nnzmax = 0;
     uint32_t nrows = 0;
     uint32_t ncols = 0; 
@@ -47,7 +44,6 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         const Weight*    B_A   = B_CSC->A_blk->ptr;
         
         Weight*          s_A   = s->ptr;
-        //const uint32_t   s_nrows = 
 
         if(A_ncols != B_nrows) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols);
@@ -59,39 +55,28 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         uint32_t start_col = Env::start_col[tid];
         uint32_t end_col = Env::end_col[tid];
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
-        //printf("spmm %d/%d/[%d %d] %d %lu %lu %d %lu\n", Env::rank,tid,start_col, end_col, Env::tile_index[tid], B_nnz, B_CSC->JA_blk->nitems, A_nrows,  s->nitems);
-        //pthread_barrier_wait(&Env::thread_barrier);
-        //std::exit(0);
-        //std::vector<int> is;
+        
         for(uint32_t j = 0; j < B_ncols; j++) {
-           // printf("1. tid=%d j=%d B_JA=%d\n", tid, j, B_JA[j]);
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                     s_A[A_IA[n]] = 1;
-                    //spa_bitmap.set_bit(A_IA[n]);
                 }
             }
-            //nnzmax += spa_bitmap.count_and_clear();
-
             for(uint32_t i = 0; i < A_nrows; i++) {
                 if(s_A[i]){
                     nnzmax++;
                     s_A[i] = 0;
                 }
             }
-            //printf("2. %d??? %d %d\n", tid, j, B_JA[j]);
         }
-        //printf("DOOOOONE\n");
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
         std::exit(Env::finalize()); 
     }
     
-    //if(!tid) {
-    //    Env::spmm_sym_time += Env::toc(start_time);
-    //}
+    if(!tid) Env::spmm_sym_time  += Env::toc(start_time);
     Env::spmm_symb_time[tid] += Env::toc(start_time);
     
     return std::make_tuple(nnzmax, nrows, ncols);
@@ -104,9 +89,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                  //struct Bitmap spa_bitmap,
                  std::shared_ptr<struct Data_Block<Weight>> s,
                  const std::shared_ptr<struct Data_Block<Weight>> b,
+                 //uint64_t& index,
                  //std::vector<Weight> s,
                  //std::vector<Weight> b,
-                 int32_t tid) {
+                 const int32_t tid) {
                      
     double start_time = Env::tic();
     //if(!tid) {
@@ -153,6 +139,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         uint32_t end_col = Env::end_col[tid];
         uint32_t displacement_nnz = Env::displacement_nnz[tid];
         
+        uint64_t& index = Env::index_nnz[tid];
+        //printf("1.%d %lu %lu\n", tid, index, Env::index_nnz[tid]);
+        
+        
        // C_JA[start_col] = Env::offset_nnz[tid];
        // printf("here?\n");
         for(uint32_t j = 0; j < B_ncols; j++) {
@@ -163,7 +153,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                     //spa_bitmap.set_bit(A_IA[n]);
                 }
             }
-            C_CSC->populate_spa(&s_A, b_A, j, tid);
+            C_CSC->populate_spa(&s_A, b_A, start_col+j, index, tid);
             //C_CSC->populate_spa(spa_bitmap, s, b, j, tid);
           //  for(uint32_t i = 0; i < A_nrows; i++) {
             //    if(s_A[i]){
@@ -174,6 +164,9 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             
             
         }
+        //printf("2.%d %lu %lu\n", tid, index, Env::index_nnz[tid]);
+        //pthread_barrier_wait(&Env::thread_barrier);
+        //std::exit(0);
        // printf("exiting\n");
         //pthread_barrier_wait(&Env::thread_barrier);
        // std::exit(0);
@@ -187,11 +180,38 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         std::exit(Env::finalize()); 
     }
    
-    //if(!tid) {
-    //    Env::spmm_time += Env::toc(start_time);
-    //}
+    if(!tid) Env::spmm_time += Env::toc(start_time);
+
     Env::spmm_real_time[tid] += Env::toc(start_time);
 }
+
+template<typename Weight>
+inline void adjust(std::shared_ptr<struct Compressed_Format<Weight>> C,
+                   const int32_t tid) {
+                       
+    double start_time = Env::tic();                       
+    
+    const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C);
+    C_CSC->adjust(tid);
+    
+    if(!tid) Env::spmm_time += Env::toc(start_time);
+}
+
+template<typename Weight>
+inline void repopulate(std::shared_ptr<struct Compressed_Format<Weight>> A,
+                       std::shared_ptr<struct Compressed_Format<Weight>> C,
+                       const int32_t tid) {
+    double start_time = Env::tic();
+   
+    const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
+    const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C);
+
+    A_CSC->repopulate(C_CSC, tid);
+    //if(!tid) A_CSC->walk();
+    
+    if(!tid) Env::spmm_time += Env::toc(start_time);
+}
+
 
 template<typename Weight>
 inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> A,
@@ -212,17 +232,6 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
             allCategories[A_IA[i]] = 1;
         }
     }
-    /*
-    printf("0000\n");
-    
-    std::vector<bool> us;
-    pthread_barrier_wait(&Env::thread_barrier);
-    if(!tid) {
-        us.resize(Env::nthreads);
-    }
-    pthread_barrier_wait(&Env::thread_barrier);
-    */
-    //std::exit(0);
     
     bool me = 1;
     for(uint32_t i = 0; i < A_nrows; i++) {
@@ -233,7 +242,6 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
     }
     
     Env::checkconv[tid] = me;
-    //int32_t us = 0;
     
     pthread_barrier_wait(&Env::thread_barrier);
     int32_t us = std::accumulate(Env::checkconv.begin(), Env::checkconv.end(), 0);
@@ -257,6 +265,39 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
     //printf("2. R=%d T=%d me=%d uss=%d alu=%d %d %p\n", Env::rank, tid, me, us, all, converged, &us);
     //pthread_barrier_wait(&Env::thread_barrier);
     return(converged);
+}
+
+template<typename Weight>
+inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> A,
+                                      const std::vector<uint32_t> trueCategories) {
+  const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
+    const uint64_t A_nnz   = A_CSC->nnz;
+    const uint32_t A_nrows = A_CSC->nrows;
+    const uint32_t A_ncols = A_CSC->ncols;
+    const uint32_t* A_IA   = A_CSC->IA_blk->ptr;
+    const uint32_t* A_JA   = A_CSC->JA_blk->ptr;
+    const Weight*    A_A   = A_CSC->A_blk->ptr;
+    
+    std::vector<uint32_t> allCategories(A_nrows);
+
+    for(uint32_t j = 0; j < A_ncols; j++) {
+        for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
+            allCategories[A_IA[i]] = 1;
+        }
+    }
+    
+    char me = 1;
+    uint32_t j = 0;
+    for(uint32_t i = 0; i < A_nrows; i++) {
+        if(trueCategories[(Env::rank * A_nrows) + i] != allCategories[i]) {
+            me = 0;
+            break;
+        }
+    }
+    char all = 0;
+    MPI_Allreduce(&me, &all, 1, MPI_CHAR, MPI_SUM, MPI_COMM_WORLD);
+
+    return((all == Env::nranks));
 }
 
 /*
