@@ -89,9 +89,11 @@ namespace Env {
     int init();
     void barrier();
     int finalize();
-    //void assign_col(uint32_t ncols, int32_t tid);
+    
     //void assign_row(uint32_t nrows, int32_t tid);
-    //uint64_t assign_nnz();
+    void assign_col(uint32_t ncols, int32_t tid);
+    uint64_t assign_nnz();
+    void assign_cols();
     double clock();
     double tic();
     double toc(double start_time);
@@ -232,6 +234,26 @@ bool Env::numa_configure() {
     
     return(status);
 }
+
+void Env::assign_col(uint32_t ncols, int32_t tid) {
+    Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  );//+1;
+    Env::end_col[tid]   =  (ncols/Env::nthreads) * (tid+1);
+}
+
+uint64_t Env::assign_nnz() {
+    uint64_t nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
+    
+    uint64_t sum = 0;
+    for(int32_t i = Env::nthreads - 1; i > 0; i--) {
+        sum += Env::offset_nnz[i];
+        Env::offset_nnz[i] = nnz - sum;
+        Env::index_nnz[i] = Env::offset_nnz[i];
+    }
+    Env::offset_nnz[0] = 0;                               
+    Env::index_nnz[0] = 0;
+    return(nnz);
+}
+
 /*
 void Env::assign_row(uint32_t nrows, int32_t tid) {
     Env::start_row[tid] = (nrows/Env::nthreads) *  tid;
