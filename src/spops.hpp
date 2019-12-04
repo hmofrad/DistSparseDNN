@@ -15,6 +15,7 @@ template<typename Weight>
 inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct Compressed_Format<Weight>> A,
                                                          std::shared_ptr<struct Compressed_Format<Weight>> B,
                                                          std::shared_ptr<struct Data_Block<Weight>> s,
+                                                         bool refine,
                                                          const int32_t tid) {
     double start_time = Env::tic(); 
 
@@ -49,11 +50,19 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         nrows = A_nrows;
         ncols = B_ncols;
 
-        uint32_t start_col = Env::start_col[tid];
-        uint32_t end_col = Env::end_col[tid];
-        uint32_t displacement_nnz = Env::displacement_nnz[tid];
-        
-        for(uint32_t j = 0; j < B_ncols; j++) {
+        uint32_t start_col = 0;// = Env::start_col[tid];
+        uint32_t end_col   = 0;// = Env::end_col[tid];
+        //uint32_t displacement_nnz = Env::displacement_nnz[tid];
+        if(refine) {
+            start_col = Env::start_col[tid];
+            end_col   = Env::end_col[tid];    
+        }
+        else {
+            start_col = 0;
+            end_col   = B_ncols;    
+        }
+        //printf("%d %d %d\n", tid, start_col, end_col);
+        for(uint32_t j = start_col; j < end_col; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
@@ -85,6 +94,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                  std::shared_ptr<struct Compressed_Format<Weight>> C,
                  std::shared_ptr<struct Data_Block<Weight>> s,
                  const std::shared_ptr<struct Data_Block<Weight>> b,
+                 bool refine,
                  const int32_t tid) {
                      
     double start_time = Env::tic();
@@ -125,22 +135,39 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             std::exit(Env::finalize()); 
         }
         
-        uint32_t start_col = Env::start_col[tid];
-        uint32_t end_col = Env::end_col[tid];
-        uint32_t displacement_nnz = Env::displacement_nnz[tid];
+        //uint32_t start_col = Env::start_col[tid];
+        //uint32_t end_col = Env::end_col[tid];
+        //uint32_t displacement_nnz = Env::displacement_nnz[tid];
+        
+        uint32_t start_col = 0;// = Env::start_col[tid];
+        uint32_t end_col   = 0;// = Env::end_col[tid];
+        //uint32_t displacement_nnz = Env::displacement_nnz[tid];
+        uint32_t offset = 0;
+        if(refine) {
+            start_col = Env::start_col[tid];
+            end_col   = Env::end_col[tid];    
+            offset = 0;
+            C_JA[start_col] = Env::offset_nnz[tid];
+        }
+        else {
+            start_col = 0;
+            end_col   = B_ncols;    
+            offset = Env::start_col[tid];
+        }
         
         uint64_t& index = Env::index_nnz[tid];
         
-        for(uint32_t j = 0; j < B_ncols; j++) {
+        for(uint32_t j = start_col; j < end_col; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                     s_A[A_IA[n]] += (B_A[k] * A_A[n]);
                 }
             }
-            C_CSC->populate_spa(&s_A, b_A, start_col+j, index, tid);
+            C_CSC->populate_spa(&s_A, b_A, offset + j, index, tid);
         }
-        //if(!tid) A_CSC->walk();
+        //if(!tid) C_CSC->walk();
+        //C_CSC->walk(tid);
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
@@ -166,6 +193,26 @@ inline void adjust(std::shared_ptr<struct Compressed_Format<Weight>> C,
 }
 
 template<typename Weight>
+inline void walk_by_tid(std::shared_ptr<struct Compressed_Format<Weight>> C,
+                        const int32_t tid) {
+    const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C);
+    C_CSC->walk(tid);
+}
+
+template<typename Weight>
+inline void walk_by_rank(std::shared_ptr<struct Compressed_Format<Weight>> A) {
+    const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
+    A_CSC->walk();
+}
+
+template<typename Weight>
+inline void walk_by_rank1(std::shared_ptr<struct Compressed_Format<Weight>> A) {
+    const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
+    A_CSC->walk1();
+}
+
+
+template<typename Weight>
 inline void repopulate(std::shared_ptr<struct Compressed_Format<Weight>> A,
                        std::shared_ptr<struct Compressed_Format<Weight>> C,
                        const int32_t tid) {
@@ -175,8 +222,7 @@ inline void repopulate(std::shared_ptr<struct Compressed_Format<Weight>> A,
     const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C);
 
     A_CSC->repopulate(C_CSC, tid);
-    //if(!tid) A_CSC->walk();
-    
+
     if(!tid) Env::memory_time += Env::toc(start_time);
     Env::memory_allocation_time[tid] += Env::toc(start_time);
 }
