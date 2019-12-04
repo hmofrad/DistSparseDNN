@@ -34,6 +34,7 @@ struct Compressed_Format {
         virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {};
         virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other, const int32_t tid) {};
         virtual void walk() {};
+        virtual void walk1() {};
         virtual void walk(const int32_t tid) {};
         
         COMPRESSED_FORMAT compression_type;
@@ -46,7 +47,8 @@ struct Compressed_Format {
         
         std::shared_ptr<struct Data_Block<uint32_t>> IA_blk;
         std::shared_ptr<struct Data_Block<uint32_t>> JA_blk;
-        std::shared_ptr<struct Data_Block<Weight>>    A_blk;
+        std::shared_ptr<struct Data_Block<Weight>>   A_blk;
+        //std::shared_ptr<struct Data_Block<uint32_t>> JD_blk;
 };
 
 template<typename Weight>
@@ -63,6 +65,7 @@ struct CSC: public Compressed_Format<Weight> {
         void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
         //void populate_spa(struct Bitmap spa_bitmap, std::vector<Weight>& spa, const std::vector<Weight> bias, const uint32_t col, const int32_t tid);
         void walk();
+        void walk1();
         void walk(const int32_t tid);
         void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t tid);
         void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_);
@@ -119,6 +122,7 @@ template<typename Weight>
 void CSC<Weight>::refine_both(const uint32_t nrows) {    
     // Refine columns
     refine_cols();
+    
     // Refine Rows
     refine_rows(nrows);
 }
@@ -364,6 +368,58 @@ void CSC<Weight>::walk() {
         Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
     }  
     
+}
+
+template<typename Weight>
+void CSC<Weight>::walk1() {  
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight*    A = CSC::A_blk->ptr;
+    
+    double checksum = 0;
+    uint64_t checkcount = 0;
+    uint32_t displacement = 0;
+    int t = 0;
+    for(uint32_t j = 0; j < CSC::ncols; j++) { 
+    
+        if(j == Env::start_col[t]-1) {
+            displacement = Env::displacement_nnz[t]; 
+            t++;
+        }
+        else {
+            displacement = 0;        
+        }
+        
+        //if(!Env::rank)
+        //    std::cout << "j=" << j << "," << j-(t+1) << ": " << JA[j] + displacement << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] - displacement << std::endl;
+
+        for(uint32_t i = JA[j] + displacement; i < JA[j + 1]; i++) {
+            (void) IA[i];
+            (void) A[i];
+            checksum += A[i];
+            checkcount++;
+        }
+    }
+
+    Env::barrier();
+    if(CSC::one_rank) {
+        Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, checksum, checkcount);
+    }
+    else {
+        uint64_t nnz_ = CSC::nnz_i;
+        uint64_t nnz_ranks = 0;
+        double sum_ranks = 0;
+        uint64_t count_ranks = 0;
+        MPI_Allreduce(&nnz_, &nnz_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&checksum, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+        MPI_Allreduce(&checkcount, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+
+        if(count_ranks != nnz_ranks) {
+            Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!!\n");
+        }
+        
+        Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
+    }    
 }
 
 template<typename Weight>
