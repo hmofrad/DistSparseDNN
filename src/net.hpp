@@ -44,6 +44,7 @@ class Net {
         uint32_t maxLayers;
         
         PARALLELISM_TYPE parallelism_type; 
+        bool refine = true;
         
         void inferenceReLU(COMPRESSED_FORMAT compression_type);
         void printTimes();
@@ -82,14 +83,22 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
 
     nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
     ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
-    ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;    
-    //ncols += Env::nthreads; // Refine 
+    ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
     
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
-        inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
-                                                                   nnz, nrows, ncols, 
-                                                                   feature_file, input_type, 
-                                                                   TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_NONE_));                                                         
+        if(refine) {
+            ncols += Env::nthreads;
+            inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
+                                                                       nnz, nrows, ncols, 
+                                                                       feature_file, input_type, 
+                                                                       TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_COLS_));                                                                     
+        }
+        else {
+            inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
+                                                                       nnz, nrows, ncols, 
+                                                                       feature_file, input_type, 
+                                                                       TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_NONE_));                                                         
+        }
     }
     else if (parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) {                                                               
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks,
@@ -133,17 +142,25 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
         
         if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
-            layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
-                                                                   Env::nthreads, Env::nthreads, 
-                                                                   nnz, nrows, ncols, 
-                                                                   layerFile, input_type, 
-                                                                   TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_NONE_)); // REFINE_TYPE::_REFINE_BOTH_));                              
+            if(refine) {
+                layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
+                                                                       nnz, nrows, ncols, 
+                                                                       layerFile, input_type, 
+                                                                       TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_BOTH_));
+            }
+            else {
+                layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
+                                                                       Env::nthreads, Env::nthreads, 
+                                                                       nnz, nrows, ncols, 
+                                                                       layerFile, input_type, 
+                                                                       TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_NONE_));
+            }
         }
         else if (parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) {     
             layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
                                                                    nnz, nrows, ncols, 
                                                                    layerFile, input_type, 
-                                                                   TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_NONE_)); // REFINE_TYPE::_REFINE_BOTH_));                              
+                                                                   TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_NONE_));
         }
                   
         biasWeightVecs[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, Env::rank_socket_id));
@@ -166,7 +183,6 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
      
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
-        
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                             0, inputFeatures->nrows, inputFeatures->ncols, 
                                                             TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_NONE_));
@@ -298,44 +314,95 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
     auto& s_spa = spaWeightVec[tid];
 
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
-        Env::assign_col(ncols, tid);
+        Env::assign_col(ncols, refine, tid);
         auto start = std::chrono::high_resolution_clock::now();  
-        for (uint32_t l = 0; l < maxLayers; l++) {
-            A_tile = inputFeatures->tiles[Env::rank][0];
-            auto& A_spmat = A_tile.spmat;
-            B_tile = layers[l]->tiles[0][tid];
-            auto& B_spmat = B_tile.spmat;
-            std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
-            
-            pthread_barrier_wait(&Env::thread_barrier);
-            
-            start_time = Env::tic();
-            if(!tid) {
-                nnz = Env::assign_nnz();
-                Env::memory_time += Env::toc(start_time);
-            }
-            Env::memory_allocation_time[tid] += Env::toc(start_time);
-            
-            C_tile = output->tiles[Env::rank][0];
-            auto& C_spmat = C_tile.spmat;
-            auto& b_bias = biasWeightVecs[l];
-            
-            start_time = Env::tic();
-            if(!tid) {
-                C_spmat->reallocate(nnz, nrows, ncols);
-                Env::memory_time += Env::toc(start_time);
-            }
-            Env::memory_allocation_time[tid] += Env::toc(start_time);
-            
-            pthread_barrier_wait(&Env::thread_barrier);
-            
-            spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, tid);
-            pthread_barrier_wait(&Env::thread_barrier);
-            adjust(C_spmat, tid);
-            repopulate(A_spmat, C_spmat, tid);
-            if(!tid) Env::iteration++;
-        }    
         
+        if(refine) {
+            for (uint32_t l = 0; l < maxLayers; l++) {
+                if(not(l%2)) {
+                    A_tile = inputFeatures->tiles[Env::rank][0];
+                    C_tile = output->tiles[Env::rank][0];
+                }
+                else {
+                    A_tile = output->tiles[Env::rank][0];
+                    C_tile = inputFeatures->tiles[Env::rank][0];
+                }
+
+                auto& A_spmat = A_tile.spmat;
+                auto& C_spmat = C_tile.spmat;
+                B_tile = layers[l]->tiles[0][0];
+                auto& B_spmat = B_tile.spmat;
+                auto& b_bias = biasWeightVecs[l];  
+                std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
+                pthread_barrier_wait(&Env::thread_barrier);
+                
+                start_time = Env::tic();
+                if(!tid) {
+                    nnz = Env::assign_nnz();
+                    
+                    C_spmat->reallocate(nnz, nrows, ncols);
+                    Env::memory_time += Env::toc(start_time);
+                   //printf("NNZ ==> %lu\n", nnz);
+                }
+                Env::memory_allocation_time[tid] += Env::toc(start_time);
+                
+//                C_spmat->reallocate(nnz, nrows, ncols, tid);
+                
+                pthread_barrier_wait(&Env::thread_barrier);
+                spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
+                pthread_barrier_wait(&Env::thread_barrier);
+                adjust(C_spmat, tid);                
+                
+                //{
+                //    if(!tid) walk_by_rank1(C_spmat);
+                //}
+                
+                if(!tid) Env::iteration++;
+            }
+                
+                
+        }
+        else {
+            for (uint32_t l = 0; l < maxLayers; l++) {
+                A_tile = inputFeatures->tiles[Env::rank][0];
+                auto& A_spmat = A_tile.spmat;
+                B_tile = layers[l]->tiles[0][tid];
+                auto& B_spmat = B_tile.spmat;
+                std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
+                
+                pthread_barrier_wait(&Env::thread_barrier);
+                
+                start_time = Env::tic();
+                if(!tid) {
+                    nnz = Env::assign_nnz();
+                    Env::memory_time += Env::toc(start_time);
+                }
+                Env::memory_allocation_time[tid] += Env::toc(start_time);
+                
+                C_tile = output->tiles[Env::rank][0];
+                auto& C_spmat = C_tile.spmat;
+                auto& b_bias = biasWeightVecs[l];
+                
+                start_time = Env::tic();
+                
+                if(!tid) {
+                    C_spmat->reallocate(nnz, nrows, ncols);
+                    Env::memory_time += Env::toc(start_time);
+                }
+                Env::memory_allocation_time[tid] += Env::toc(start_time);
+                pthread_barrier_wait(&Env::thread_barrier);
+                
+                spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
+                pthread_barrier_wait(&Env::thread_barrier);
+                adjust(C_spmat, tid);
+                repopulate(A_spmat, C_spmat, tid);
+                
+                if(!tid) walk_by_rank(A_spmat);
+                
+                if(!tid) Env::iteration++;
+            }    
+        }        
+
         auto finish = std::chrono::high_resolution_clock::now();
         if(!tid) Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
         Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9    ;
@@ -371,7 +438,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
             B_tile = layers[l]->tiles[0][0];
             auto& B_spmat = B_tile.spmat;
             auto& b_bias = biasWeightVecs[l];  
-            std::tie(nnz, std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, tid);
+            std::tie(nnz, std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
             
             Env::index_nnz[tid] = 0;
             
@@ -380,7 +447,13 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
             if(!tid) Env::memory_time += Env::toc(start_time);
             Env::memory_allocation_time[tid] += Env::toc(start_time);
             
-            spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, tid);
+            spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
+            
+            //{
+            //adjust(C_spmat, tid);
+            //walk_by_tid(C_spmat, tid);
+            //}
+            
             if(!tid) Env::iteration++;
         }
         
