@@ -91,7 +91,7 @@ namespace Env {
     int finalize();
     
     //void assign_row(uint32_t nrows, int32_t tid);
-    void assign_col(uint32_t ncols, int32_t tid);
+    void assign_col(uint32_t ncols, bool refine, int32_t tid);
     uint64_t assign_nnz();
     void assign_cols();
     double clock();
@@ -235,8 +235,11 @@ bool Env::numa_configure() {
     return(status);
 }
 
-void Env::assign_col(uint32_t ncols, int32_t tid) {
-    Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  );//+1;
+void Env::assign_col(uint32_t ncols, bool refine, int32_t tid) {
+    if(refine)
+        Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  )+1;
+    else 
+        Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  );
     Env::end_col[tid]   =  (ncols/Env::nthreads) * (tid+1);
 }
 
