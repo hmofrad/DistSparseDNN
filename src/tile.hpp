@@ -51,7 +51,7 @@ void Tile<Weight>::sort(const RowSort<Weight> f_row, const ColSort<Weight> f_col
 
 template<typename Weight>
 void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint32_t ncols, const uint32_t tile_height, const uint32_t tile_width,
-                            const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type, const bool one_rank) {  
+                            const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type, const bool one_rank) {                         
     if(not triples.empty() and (nnz == triples.size())){
         if(compression_type == COMPRESSED_FORMAT::_CSC_) {
             spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width, one_rank);
