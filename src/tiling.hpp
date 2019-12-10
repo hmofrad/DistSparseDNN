@@ -1280,7 +1280,7 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
     
     
     //if(Env::rank == 1) {
-        
+        /*
         uint64_t balanced_nnz_per_rank = nnz/nranks;
         //printf("nnz== %lu %lu\n", nnz, balanced_nnz_per_rank);
         std::vector<uint64_t> nnz_per_rank(nranks);
@@ -1299,8 +1299,173 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n");
             std::exit(Env::finalize()); 
         }
+        */
+    uint64_t balanced_nnz_per_rank = nnz/nranks;        
+    MPI_Datatype MANY_TRIPLES;
+    MPI_Type_contiguous(sizeof(Triple<Weight>), MPI_BYTE, &MANY_TRIPLES);
+    MPI_Type_commit(&MANY_TRIPLES);
+    
+    MPI_Status status;   
+    MPI_Request request;   
+    std::vector<MPI_Request> requests;    
+    
+    std::vector<uint32_t> nnz_local(tile_height);
+    std::vector<uint32_t> nnz_global(nrows);
+    
+    std::vector<struct Triple<Weight>> outbox;
+    std::vector<struct Triple<Weight>> inbox;        
+    uint32_t outbox_size = 0;
+    uint32_t inbox_size = 0;
+    
+    std::vector<uint32_t> partitions;
+    partitions.resize(nranks * 2);
+    
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(tile.rank == Env::rank) {
+                auto& triples = tile.triples;
+                uint32_t row = triples[0].row;
+                uint32_t col = 0;
+                bool b = false;
+                uint64_t n = 0;
+                for(auto triple: triples) {
+                //for(n = 0; (n < triples.size()) and (not b); n++) {
+                    //auto t = triples[n];
+                    while((row != triple.row) and (row < (tile_height * (Env::rank+1)))) {
+                        nnz_local[row%tile_height] = col;
+                        row++;
+                        col = 0;
+                    }
+                    col++;
+                }
+                nnz_local[row%tile_height] = col;
+            }
+        }
+    }
+    
+    //if(!Env::rank) {
+        //uint64_t local_sum = std::accumulate(nnz_local.begin(), nnz_local.end(), 0);
+        //if(local_sum 
+        //if(local_sum 
+        //uint64_t n = 0;
+        //for(uint32_t i = 0; i < nnz_local.size(); i++) {
+            //printf("%d %d\n", i, nnz_local[i]);
+          //  n += nnz_local[i];
+        //}
+        //printf(">> %d %lu\n", Env::rank, n);
+    //}
+    
+    if(Env::rank == 0) {
         
-        std::vector<struct Triple<Weight>> outbox;
+        for(uint32_t r = 1; r < nranks; r++) {
+            MPI_Irecv(nnz_global.data() + (r * tile_height), tile_height, MPI_UNSIGNED, r, r, MPI_COMM_WORLD, &request);
+            requests.push_back(request);
+        }
+        
+        
+        
+        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+        requests.clear();
+        requests.shrink_to_fit();
+        //Env::barrier();
+        //printf(">>>>>>>>>>\n");
+        
+        
+        std::copy(nnz_local.begin(), nnz_local.end(), nnz_global.begin());
+        uint64_t global_sum = std::accumulate(nnz_global.begin(), nnz_global.end(), 0);
+        if(global_sum != nnz) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "Repartitioning error\n");
+            std::exit(Env::finalize()); 
+        }
+        //uint64_t n = 0;
+        //for(uint32_t i = 0; i < nrows; i++) {
+            //printf("%d %d\n", i, nnz_local[i]);
+          //  n += nnz_global[i];
+        //}
+        //printf(">>>>>> %d %lu\n", Env::rank, n);
+        printf(">>>>>> %lu\n", balanced_nnz_per_rank);
+        
+        uint64_t n = 0;
+        uint32_t start = 0;
+        uint32_t end = 0;
+        uint32_t r = 0;
+        for(uint32_t i = 0; i < nrows; i++) {
+            n += nnz_global[i];
+            if(((int64_t) (balanced_nnz_per_rank - n) < 0) or ((i+1) == nrows)) {
+                partitions[r*2] = (r == 0) ? 0 : partitions[(r*2)-1];
+                partitions[(r*2)+1] = (r == (nranks - 1)) ? nrows : i;
+                r++;
+                
+                //printf("%d %lu %ld\n", i, n, (int64_t) (balanced_nnz_per_rank - n));
+                n = 0;
+            }
+            //printf("%d %lu\n", i, n);
+        }
+        //printf("%d %lu\n", nrows-1, n);
+        
+        //partitions[r*2] = partitions[(r*2)-1];
+        //partitions[(r*2)+1] = nrows;
+        
+        /*
+        for(uint32_t r = 0; r < nranks; r++) {
+            printf("%d %d %d\n", r, partitions[r*2], partitions[(r*2)+1]);
+        }
+        printf("\n");
+        r = 0;
+        n = 0;
+        for(uint32_t i = 0; i < nrows; i++) {
+            if(i == partitions[r*2]) {
+                printf("%d %d %lu\n", r, i, n);
+                n = 0;
+                r++;
+            }
+            n += nnz_global[i];
+            
+        }
+        */
+        //printf("%d %d %lu\n", r, nrows, n);
+        //uint64_t s = std::accumulate(nnz_global.begin(), nnz_global.end(), 0);
+        //printf("sum = %lu\n", s);
+        
+    } else {
+        MPI_Send(nnz_local.data(), tile_height, MPI_UNSIGNED, 0, Env::rank, MPI_COMM_WORLD); 
+    }
+
+    printf("rank = %d\n", Env::rank);
+    Env::barrier();
+    
+    nnz_local.clear();
+    nnz_local.shrink_to_fit();
+    
+    
+    if(Env::rank == 0) {
+        for(uint32_t r = 1; r < nranks; r++) {
+            MPI_Isend(partitions.data(), partitions.size(), MPI_UNSIGNED, r, Env::rank, MPI_COMM_WORLD, &request); 
+            requests.push_back(request);
+        }
+        //printf("2. sent\n");
+        
+        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+        requests.clear();
+        requests.shrink_to_fit();
+    }
+    else {
+        MPI_Recv(partitions.data(), partitions.size(), MPI_UNSIGNED, 0, 0, MPI_COMM_WORLD, &status);
+    }
+    
+    
+    printf("2. rank = %d\n", Env::rank);
+    Env::barrier();
+    
+    
+    
+    
+
+ 
+    
+    
+    /*
         
         //outbox.insert(outbox.end(), tile.triples.begin(), tile.triples.end());
           //      tile.triples.clear();
@@ -1327,15 +1492,8 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
                                     break;
                                 }
                             }
-                        
-                        //if(b) {
-                          //  break;
-                        //}
-                        
-                        //c++;
-                       // n++;
                     }
-                    printf("0.%d %lu %ld\n", Env::rank, tile.triples.size(), (int64_t) (tile.triples.size() - balanced_nnz_per_rank));
+                    printf("0.%d %lu %ld %d %d\n", Env::rank, tile.triples.size(), (int64_t) (tile.triples.size() - balanced_nnz_per_rank), triples[0].row, triples[0].col);
                     //printf("%d %d %ld %ld\n", r, c, (int64_t) (nnz_per_rank[tile.rank] - n), (int64_t) (balanced_nnz_per_rank - n));    
                     if(n < triples.size()) {
                         //printf("1. sending %lu %lu\n", outbox.size(), tile.triples.size());
@@ -1349,54 +1507,33 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
         }
         
         
-    MPI_Datatype MANY_TRIPLES;
-    MPI_Type_contiguous(sizeof(Triple<Weight>), MPI_BYTE, &MANY_TRIPLES);
-    MPI_Type_commit(&MANY_TRIPLES);
         
-    //printf("%d %lu\n", Env::rank, outbox.size());
-       Env::barrier();
-        
-        
-        /*
-        for(uint32_t r = 0; r < nranks; r++) {
-            int32_t sender = r;
-            int32_t receiver =  (r + 1) % nranks;
-            
-            //if((Env::rank == sender) or (Env::rank == receiver)) {
-                
-            //}
-            
-            if(Env::rank == sender) {
-                
-                inbox.resize(inbox_sizes[r]);
-                //MPI_Send(outbox.data(), outbox.size(), MANY_TRIPLES, sender, sender, MPI_COMM_WORLD);
-                printf("%d: %d --> %d\n", r, sender, receiver);
-            }   
-            else if(Env::rank == receiver) {
-                inbox.resize(inbox_sizes[r]);
-                //MPI_Status status;
-                //MPI_Recv(inbox.data(), inbox.size(), MANY_TRIPLES, receiver, sender, MPI_COMM_WORLD, &status);
-                printf("%d: %d <-- %d\n", r, sender, receiver);
-            }
-            
-            Env::barrier();
-        }
-        */
+
         
         //MPI_Send(outbox.data(), outbox.size(), MANY_TRIPLES, sender, sender, MPI_COMM_WORLD);
-        uint32_t outbox_size = outbox.size();
-        uint32_t inbox_size = 0;
+        outbox_size = outbox.size();
+        inbox_size = 0;
         
         
         
         int32_t ring_next_rank = (Env::rank + 1) % nranks;
-        int32_t ring_prev_rank = (Env::rank - 1 + nranks) % nranks;
-        //printf("1. %d: [%d %d] [%d %d]\n", Env::rank, ring_next_rank, outbox_size, ring_prev_rank, inbox_size);
-        MPI_Send(&outbox_size, 1, MPI_UNSIGNED, ring_next_rank, Env::rank, MPI_COMM_WORLD); 
-        MPI_Status status;
-        MPI_Recv(&inbox_size,  1, MPI_UNSIGNED, ring_prev_rank, ring_prev_rank, MPI_COMM_WORLD, &status);
         
-        std::vector<struct Triple<Weight>> inbox;
+        int32_t ring_prev_rank = (Env::rank - 1 + nranks) % nranks;
+
+        if(ring_next_rank != 0) {
+            //ring_next_rank = Env::rank;
+            MPI_Send(&outbox_size, 1, MPI_UNSIGNED, ring_next_rank, Env::rank, MPI_COMM_WORLD); 
+        }
+        if(ring_prev_rank != (int32_t) (nranks - 1)) {
+            //ring_prev_rank = 0;
+            
+            MPI_Recv(&inbox_size,  1, MPI_UNSIGNED, ring_prev_rank, ring_prev_rank, MPI_COMM_WORLD, &status);
+        }
+        printf("X. %d: [%d %d] [%d %d]\n", Env::rank, ring_next_rank, outbox_size, ring_prev_rank, inbox_size);
+        
+        
+        
+        
         inbox.resize(inbox_size);
         
         printf("2. %d: [%d %d] [%d %d]\n", Env::rank, ring_next_rank, outbox_size, ring_prev_rank, inbox_size);
@@ -1409,16 +1546,16 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
                 auto& tile = tiles[i][j];
                 if(tile.rank == Env::rank) {
                     auto& triples = tile.triples;
-                    triples.insert(triples.end(), inbox.begin(), inbox.end());
+                    triples.insert(triples.begin(), inbox.begin(), inbox.end());
                     inbox.clear();
                     inbox.shrink_to_fit();
-                    printf("1.%d %lu %ld\n", Env::rank, tile.triples.size(), (int64_t) (tile.triples.size() - balanced_nnz_per_rank));
+                    printf("1.%d %lu %ld %d %d\n", Env::rank, tile.triples.size(), (int64_t) (tile.triples.size() - balanced_nnz_per_rank), triples[0].row, triples[0].col);
                 }
             }
         }
         outbox.clear();
         outbox.shrink_to_fit();
-        
+        */
         
         /*
                     auto& outbox = outboxes[r];
@@ -1434,16 +1571,12 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
     Env::barrier();
     
 
-    
     auto retval = MPI_Type_free(&MANY_TRIPLES);
     if(retval != MPI_SUCCESS) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tile repartitioning failed!\n");
         std::exit(Env::finalize()); 
     }
-    
-    
-    
-    
+
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Done refining tiles.\n");
     Env::barrier();
     std::exit(0);
