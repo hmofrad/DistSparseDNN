@@ -76,6 +76,8 @@ class Tiling {
         void insert_triple(const struct Triple<Weight> triple);
         void tile_exchange();
         void tile_load();
+        void sort_tile(COMPRESSED_FORMAT compression_type);
+        void repartition_tiles(COMPRESSED_FORMAT compression_type);
         void tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type);        
         void compress_tile(COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type);
 };
@@ -227,8 +229,10 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     
     print_tiling("rank");
     print_tiling("nedges");
-    
+    //sort_tile(compression_type);
+    repartition_tiles(compression_type);
     compress_tile(compression_type, refine_type);
+    
 }
 
 template<typename Weight>
@@ -399,6 +403,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     print_tiling("thread");
     print_tiling("nedges");
    
+    //sort_tile(compression_type);
     compress_tile(compression_type, refine_type);
 }
 
@@ -589,6 +594,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     //print_tiling("thread");
     print_tiling("nedges");
     
+    //sort_tile(compression_type);
     compress_tile(compression_type, refine_type);  
 }
 
@@ -721,6 +727,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     //print_tiling("thread");
     print_tiling("nedges");
     
+    //sort_tile(compression_type);
     compress_tile(compression_type, refine_type);  
 }
 
@@ -1229,6 +1236,217 @@ void Tiling<Weight>::tile_load_print(const std::vector<uint64_t> nedges_vec, con
     if(count) {
         Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Imbalance found among %d %ss are not balanced.\n", count, nedges_type.c_str());
     }
+}
+
+
+template<typename Weight>
+void Tiling<Weight>::sort_tile(COMPRESSED_FORMAT compression_type) {
+    Env::barrier();
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Start soring tiles\n");
+    
+    const RowSort<Weight> f_row;
+    const ColSort<Weight> f_col;	
+    
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(tile.rank == Env::rank) {
+                tile.sort(f_row, f_col, compression_type);
+            }
+        }
+    }    
+
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Done sorting tiles.\n");
+    Env::barrier();
+}
+
+template<typename Weight>
+void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
+    Env::barrier();
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Start refining tiles\n");
+    
+    
+    
+    const RowSort<Weight> f_row;
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(tile.rank == Env::rank) {
+                std::sort(tile.triples.begin(), tile.triples.end(), f_row); 
+            }
+        }
+    }   
+    
+    
+    //if(Env::rank == 1) {
+        
+        uint64_t balanced_nnz_per_rank = nnz/nranks;
+        //printf("nnz== %lu %lu\n", nnz, balanced_nnz_per_rank);
+        std::vector<uint64_t> nnz_per_rank(nranks);
+        
+        if ((tiling_type == TILING_TYPE::_1D_ROW_)) {
+            for (uint32_t i = 0; i < nrowgrps; i++) {
+                for (uint32_t j = 0; j < ncolgrps; j++) {
+                    auto& tile = tiles[i][j];
+                    nnz_per_rank[tile.rank] = tile.nedges;
+                    //printf("%d %d %d %lu %ld\n", Env::rank, i, 0, tile.nedges, tile.nedges - balanced_nnz_per_rank);
+                }
+            }
+
+        }
+        else {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n");
+            std::exit(Env::finalize()); 
+        }
+        
+        std::vector<struct Triple<Weight>> outbox;
+        
+        //outbox.insert(outbox.end(), tile.triples.begin(), tile.triples.end());
+          //      tile.triples.clear();
+            //    tile.triples.shrink_to_fit();
+        for (uint32_t i = 0; i < nrowgrps; i++) {
+            for (uint32_t j = 0; j < ncolgrps; j++) {
+                auto& tile = tiles[i][j];
+                if(tile.rank == Env::rank) {
+                    auto& triples = tile.triples;
+                    uint32_t row = triples[0].row;
+                    //uint32_t c = 0;
+                    uint64_t n = 0;
+                    bool b = false;
+                    //for(auto t: triples) {
+                        for(n = 0; (n < triples.size()) and (not b); n++) {
+                            auto t = triples[n];
+                            while(row != t.row) {
+                              //  printf("%d %d %ld %ld\n", r, c, (int64_t) (nnz_per_rank[tile.rank] - n), (int64_t) (balanced_nnz_per_rank - n));    
+                                row++;
+                                //c = 0;
+                                if((int64_t)(balanced_nnz_per_rank - n) < 0) {
+                                   // n++;
+                                    b = true;
+                                    break;
+                                }
+                            }
+                        
+                        //if(b) {
+                          //  break;
+                        //}
+                        
+                        //c++;
+                       // n++;
+                    }
+                    printf("0.%d %lu %ld\n", Env::rank, tile.triples.size(), (int64_t) (tile.triples.size() - balanced_nnz_per_rank));
+                    //printf("%d %d %ld %ld\n", r, c, (int64_t) (nnz_per_rank[tile.rank] - n), (int64_t) (balanced_nnz_per_rank - n));    
+                    if(n < triples.size()) {
+                        //printf("1. sending %lu %lu\n", outbox.size(), tile.triples.size());
+                        outbox.insert(outbox.begin(), triples.begin() + n, triples.end());
+                        triples.erase(triples.begin() + n, triples.end());
+                        //outbox.insert(outbox.end(), tile.triples[n], tile.triples.end());
+                        //printf("2. sending %lu %lu\n", outbox.size(), tile.triples.size());
+                    }
+                }
+            }
+        }
+        
+        
+    MPI_Datatype MANY_TRIPLES;
+    MPI_Type_contiguous(sizeof(Triple<Weight>), MPI_BYTE, &MANY_TRIPLES);
+    MPI_Type_commit(&MANY_TRIPLES);
+        
+    //printf("%d %lu\n", Env::rank, outbox.size());
+       Env::barrier();
+        
+        
+        /*
+        for(uint32_t r = 0; r < nranks; r++) {
+            int32_t sender = r;
+            int32_t receiver =  (r + 1) % nranks;
+            
+            //if((Env::rank == sender) or (Env::rank == receiver)) {
+                
+            //}
+            
+            if(Env::rank == sender) {
+                
+                inbox.resize(inbox_sizes[r]);
+                //MPI_Send(outbox.data(), outbox.size(), MANY_TRIPLES, sender, sender, MPI_COMM_WORLD);
+                printf("%d: %d --> %d\n", r, sender, receiver);
+            }   
+            else if(Env::rank == receiver) {
+                inbox.resize(inbox_sizes[r]);
+                //MPI_Status status;
+                //MPI_Recv(inbox.data(), inbox.size(), MANY_TRIPLES, receiver, sender, MPI_COMM_WORLD, &status);
+                printf("%d: %d <-- %d\n", r, sender, receiver);
+            }
+            
+            Env::barrier();
+        }
+        */
+        
+        //MPI_Send(outbox.data(), outbox.size(), MANY_TRIPLES, sender, sender, MPI_COMM_WORLD);
+        uint32_t outbox_size = outbox.size();
+        uint32_t inbox_size = 0;
+        
+        
+        
+        int32_t ring_next_rank = (Env::rank + 1) % nranks;
+        int32_t ring_prev_rank = (Env::rank - 1 + nranks) % nranks;
+        //printf("1. %d: [%d %d] [%d %d]\n", Env::rank, ring_next_rank, outbox_size, ring_prev_rank, inbox_size);
+        MPI_Send(&outbox_size, 1, MPI_UNSIGNED, ring_next_rank, Env::rank, MPI_COMM_WORLD); 
+        MPI_Status status;
+        MPI_Recv(&inbox_size,  1, MPI_UNSIGNED, ring_prev_rank, ring_prev_rank, MPI_COMM_WORLD, &status);
+        
+        std::vector<struct Triple<Weight>> inbox;
+        inbox.resize(inbox_size);
+        
+        printf("2. %d: [%d %d] [%d %d]\n", Env::rank, ring_next_rank, outbox_size, ring_prev_rank, inbox_size);
+       
+        MPI_Send(outbox.data(), outbox.size(), MANY_TRIPLES, ring_next_rank, Env::rank, MPI_COMM_WORLD); 
+        MPI_Recv(inbox.data(),  inbox.size(), MANY_TRIPLES, ring_prev_rank, ring_prev_rank, MPI_COMM_WORLD, &status);
+        
+        for (uint32_t i = 0; i < nrowgrps; i++) {
+            for (uint32_t j = 0; j < ncolgrps; j++) {
+                auto& tile = tiles[i][j];
+                if(tile.rank == Env::rank) {
+                    auto& triples = tile.triples;
+                    triples.insert(triples.end(), inbox.begin(), inbox.end());
+                    inbox.clear();
+                    inbox.shrink_to_fit();
+                    printf("1.%d %lu %ld\n", Env::rank, tile.triples.size(), (int64_t) (tile.triples.size() - balanced_nnz_per_rank));
+                }
+            }
+        }
+        outbox.clear();
+        outbox.shrink_to_fit();
+        
+        
+        /*
+                    auto& outbox = outboxes[r];
+            uint32_t outbox_size = outbox.size();
+            MPI_Sendrecv(&outbox_size, 1, MPI_UNSIGNED, r, 0, &inbox_sizes[r], 1, MPI_UNSIGNED,
+                                                        r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            auto& inbox = inboxes[r];
+            inbox.resize(inbox_sizes[r]);
+            MPI_Sendrecv(outbox.data(), outbox.size(), MANY_TRIPLES, r, 0, inbox.data(), inbox.size(), MANY_TRIPLES,
+                                                                     r, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        */
+        
+    Env::barrier();
+    
+
+    
+    auto retval = MPI_Type_free(&MANY_TRIPLES);
+    if(retval != MPI_SUCCESS) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tile repartitioning failed!\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    
+    
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile sort: Done refining tiles.\n");
+    Env::barrier();
+    std::exit(0);
 }
 
 template<typename Weight>
