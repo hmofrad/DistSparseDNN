@@ -1384,7 +1384,7 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
           //  n += nnz_global[i];
         //}
         //printf(">>>>>> %d %lu\n", Env::rank, n);
-        printf(">>>>>> %lu\n", balanced_nnz_per_rank);
+        //printf(">>>>>> %lu\n", balanced_nnz_per_rank);
         
         uint64_t n = 0;
         uint32_t start = 0;
@@ -1432,7 +1432,7 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
         MPI_Send(nnz_local.data(), tile_height, MPI_UNSIGNED, 0, Env::rank, MPI_COMM_WORLD); 
     }
 
-    printf("rank = %d\n", Env::rank);
+    //printf("rank = %d\n", Env::rank);
     Env::barrier();
     
     nnz_local.clear();
@@ -1455,10 +1455,16 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
     }
     
     
-    printf("2. rank = %d\n", Env::rank);
+    //printf("2. rank = %d\n", Env::rank);
     Env::barrier();
     
-    
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            tile.startRow = partitions[tile.rank*2];
+            tile.endRow = partitions[(tile.rank*2)+1];
+        }
+    }
     
     
 
