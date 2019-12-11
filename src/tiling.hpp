@@ -1386,9 +1386,9 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
-            tile.startRow = partitions[tile.rank*2];
+            tile.start_row = partitions[tile.rank*2];
             tile.endRow = partitions[(tile.rank*2)+1];
-            tile.tile_height = tile.endRow - tile.startRow;
+            tile.tile_height = tile.endRow - tile.start_row;
             tile.tile_width = tile_width;
         }
     }
@@ -1471,7 +1471,7 @@ void Tiling<Weight>::repartition_tiles(COMPRESSED_FORMAT compression_type) {
         for(uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
-                tile_height = tile.endRow - tile.startRow;
+                tile_height = tile.endRow - tile.start_row;
             }
         }
     }
