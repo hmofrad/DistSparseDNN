@@ -29,6 +29,8 @@ struct Tile{
         int32_t rank;
         int32_t thread;
         uint64_t nedges = 0;
+        uint32_t startRow = 0;
+        uint32_t endRow = 0;
 };
 
 template<typename Weight>
