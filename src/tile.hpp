@@ -20,7 +20,7 @@ struct Tile{
         ~Tile() {};
         
         void sort(const RowSort<Weight> f_row, const ColSort<Weight> f_col, const COMPRESSED_FORMAT compression_type);
-        void compress(const uint64_t nnz, const uint32_t nrows, const uint32_t ncols, const uint32_t tile_height, const uint32_t tile_width,
+        void compress(const uint64_t nnz, const uint32_t nrows, const uint32_t ncols, //const uint32_t tile_height, const uint32_t tile_width,
                       const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type, const bool one_rank);
         
         std::vector<struct Triple<Weight>> triples;
@@ -29,8 +29,12 @@ struct Tile{
         int32_t rank;
         int32_t thread;
         uint64_t nedges = 0;
-        uint32_t startRow = 0;
-        uint32_t endRow = 0;
+        uint32_t start_row = 0;
+        uint32_t end_row = 0;
+        uint32_t start_col = 0;
+        uint32_t end_col = 0;
+        uint32_t tile_height = 0;
+        uint32_t tile_width = 0;
 };
 
 template<typename Weight>
@@ -52,12 +56,16 @@ void Tile<Weight>::sort(const RowSort<Weight> f_row, const ColSort<Weight> f_col
 }
 
 template<typename Weight>
-void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint32_t ncols, const uint32_t tile_height, const uint32_t tile_width,
+void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint32_t ncols, //const uint32_t tile_height, const uint32_t tile_width,
                             const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type, const bool one_rank) {                         
-    if(not triples.empty() and (nnz == triples.size())){
+    if((not triples.empty()) and (nnz == triples.size())){
         if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+            //spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width, one_rank);
+            //spmat->populate(triples, tile_height, tile_width);
+            
             spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width, one_rank);
-            spmat->populate(triples, tile_height, tile_width);
+            spmat->populate(triples, start_row, end_row, start_col, end_col);
+
             
             if(refine_type == REFINE_TYPE::_REFINE_ROWS_) {
                 spmat->refine_rows(nrows);
