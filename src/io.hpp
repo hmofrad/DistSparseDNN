@@ -21,13 +21,15 @@ namespace IO {
     template<typename Weight>
     std::tuple<uint64_t, uint32_t, uint32_t> text_file_stat(const std::string inputFile);
     template<typename Weight>
-    void text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank);
+    //void text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank);
+    std::vector<struct Triple<Weight>> text_file_read(const std::string inputFile, bool one_rank);
     void text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
     
     template<typename Weight>
     std::tuple<uint64_t, uint32_t, uint32_t> binary_file_stat(const std::string inputFile);
     template<typename Weight>
-    void binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank);
+    std::vector<struct Triple<Weight>> binary_file_read(const std::string inputFile, bool one_rank);
+    //void binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank);
     void binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
 }
 
@@ -67,7 +69,7 @@ std::tuple<uint64_t, uint32_t, uint32_t> IO::text_file_stat(const std::string in
 }
 
 template<typename Weight>
-void IO::text_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank) {
+std::vector<struct Triple<Weight>> IO::text_file_read(const std::string inputFile, bool one_rank) {
     double start_time = Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start reading the input file %s\n", inputFile.c_str());
@@ -145,16 +147,17 @@ void IO::text_file_read(const std::string inputFile, std::vector<std::vector<str
         fin_t.close();
     }
     fin.close();
-
+    /*
     for(auto& triple: triples) {
         std::pair pair = std::make_pair((triple.row / tile_height), (triple.col / tile_width));
         tiles[pair.first][pair.second].triples.push_back(triple);
     }
-
+    */
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done reading the input file %s\n", inputFile.c_str());
     Env::barrier();
     
     Env::io_time += Env::toc(start_time);
+    return(triples);
 }
 
 void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
@@ -258,7 +261,7 @@ std::tuple<uint64_t, uint32_t, uint32_t> IO::binary_file_stat(const std::string 
 } 
  
 template<typename Weight>
-void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<struct Tile<Weight>>>& tiles, const uint32_t tile_height, const uint32_t tile_width, bool one_rank) {
+std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputFile, bool one_rank) {
     double start_time = Env::tic();
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the input file %s\n", inputFile.c_str());
@@ -326,18 +329,27 @@ void IO::binary_file_read(const std::string inputFile, std::vector<std::vector<s
         }
         fin_t.close();
     }
-
+    /*
     for(auto& triple: triples) {
         std::pair pair = std::make_pair((triple.row / tile_height), (triple.col / tile_width));
         tiles[pair.first][pair.second].triples.push_back(triple);
     }
-
+    */
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done reading the input file %s\n", inputFile.c_str());
     Env::barrier();
 
     Env::io_time += Env::toc(start_time);
+    return(triples);
 }
  
+/* 
+template<typename Weight>
+std::pair<uint32_t, uint32_t> IO::triple2tile(struct Triple<Weight> triple, std::vector<std::vector<uint32_t>> bounds){
+    std::pair<uint32_t, uint32_t> pair = std::make_pair((triple.row / tile_height), (triple.col / tile_width));
+    std::pair<uint32_t, uint32_t> pair = std::make_pair((triple.row / tile_height), (triple.col / tile_width));
+    return(pair);
+}
+*/
  
 
 void IO::binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
