@@ -23,6 +23,7 @@ struct Compressed_Format {
         Compressed_Format() {};
         virtual ~Compressed_Format() {};
         virtual void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t tile_height, const uint32_t tile_width) {};
+        virtual void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width) {};
         virtual void refine_both(const uint32_t nrows) {};
         virtual void refine_cols() {};
         virtual void refine_rows(const uint32_t nrows) {};
@@ -58,6 +59,7 @@ struct CSC: public Compressed_Format<Weight> {
         ~CSC(){};
         
         void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t tile_height, const uint32_t tile_width);
+        void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
         void refine_both(const uint32_t nrows);
         void refine_cols();
         void refine_rows(const uint32_t nrows);
@@ -90,6 +92,8 @@ CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncol
     CSC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSC::nnz, Env::rank_socket_id));
 }
 
+
+
 template<typename Weight>
 void CSC<Weight>::populate(const std::vector<struct Triple<Weight>> triples, const uint32_t tile_height, const uint32_t tile_width) {
     uint32_t* IA = CSC::IA_blk->ptr;
@@ -117,6 +121,37 @@ void CSC<Weight>::populate(const std::vector<struct Triple<Weight>> triples, con
     }
     CSC::nnz_i = CSC::nnz;
 }
+
+
+template<typename Weight>
+void CSC<Weight>::populate(const std::vector<struct Triple<Weight>> triples, const uint32_t start_row, const uint32_t tile_height, 
+                                                                             const uint32_t start_col, const uint32_t tile_width) {
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight* A = CSC::A_blk->ptr;
+    
+    uint32_t i = 0;
+    uint32_t j = 1; 
+    JA[0] = 0;
+    for(auto &triple: triples) {
+        std::pair pair = std::make_pair(((triple.row - start_row) % tile_height), ((triple.col - start_col) % tile_width));
+        while((j - 1) != pair.second) {
+            j++;
+            JA[j] = JA[j - 1];
+        }                  
+        JA[j]++;
+        IA[i] = pair.first;
+        A[i] = triple.weight;
+        i++;
+    }
+    
+    while(j < CSC::ncols) {
+        j++;
+        JA[j] = JA[j - 1];
+    }
+    CSC::nnz_i = CSC::nnz;    
+}
+
 
 template<typename Weight>
 void CSC<Weight>::refine_both(const uint32_t nrows) {    
