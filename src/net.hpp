@@ -44,7 +44,8 @@ class Net {
         uint32_t maxLayers;
         
         PARALLELISM_TYPE parallelism_type; 
-        bool refine = true;
+        bool refine = false;
+        bool repartition = true;
         
         void inferenceReLU(COMPRESSED_FORMAT compression_type);
         void printTimes();
@@ -83,6 +84,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
 
     nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
     ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
+    //if(not densitybased_partitioning)
     ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
     
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
@@ -128,9 +130,10 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-
-    //maxLayers = 1;
-    layers.resize(maxLayers);
+    printf("DONE\n");
+    std::exit(0);
+    maxLayers = 1;
+    //layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
         std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "/n" + std::to_string(Nneurons) + "-l" + std::to_string(i+1);
@@ -156,7 +159,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                        TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_NONE_));
             }
         }
-        else if (parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) {     
+        else if(parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) {     
             layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
                                                                    nnz, nrows, ncols, 
                                                                    layerFile, input_type, 
@@ -169,6 +172,9 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
+    
+    printf("DONE\n");
+    std::exit(0);
     
     for(uint32_t i = 0; i < maxLayers; i++) {
         Weight* b_A = biasWeightVecs[i]->ptr;
