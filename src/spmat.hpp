@@ -503,13 +503,13 @@ void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
 
 template<typename Weight>
 void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t tid) {
-    double start_time = Env::tic();
+   // double start_time = Env::tic();
     
     if(CSC::ncols != ncols_) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot reallocate.\n");
         std::exit(Env::finalize());     
     }
-    
+    //printf("REALLOCATE::: %lu %d %d %d\n", nnz_, nrows_, ncols_, tid);
     //if(!tid) {
         CSC::nnz_i = 0;
         CSC::nnz = nnz_;
@@ -526,7 +526,8 @@ void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
     //if(!tid) {
       //  Env::memory_time += Env::toc(start_time);
     //}
-    Env::memory_allocation_time[tid] += Env::toc(start_time);
+    //Env::memory_allocation_time[tid] += Env::toc(start_time);
+    
     /*
     pthread_barrier_wait(&Env::thread_barrier);
     
