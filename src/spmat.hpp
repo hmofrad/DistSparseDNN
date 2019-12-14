@@ -509,7 +509,7 @@ void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
         Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot reallocate.\n");
         std::exit(Env::finalize());     
     }
-    //printf("REALLOCATE::: %lu %d %d %d\n", nnz_, nrows_, ncols_, tid);
+    //printf("REALLOCATE::: tid=%d oldnnz=%lu newnnz=%lu oldnrows=%d newnrows%d oldncols=%d newncols=%d\n", tid, CSC::nnz, nnz_, CSC::nrows, nrows_, CSC::ncols, ncols_);
     //if(!tid) {
         CSC::nnz_i = 0;
         CSC::nnz = nnz_;
