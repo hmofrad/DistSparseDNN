@@ -157,7 +157,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         
         uint64_t& index = Env::index_nnz[tid];
         //printf("%d %lu %d %d %lu %d[%lu]\n", Env::rank, C_nnz, C_nrows, C_ncols, index, offset, C_CSC->IA_blk->nitems);
-        Env::barrier();
+        //Env::barrier();
         for(uint32_t j = start_col; j < end_col; j++) {
           //  printf("%d %d %lu\n", Env::rank, j, index);
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
