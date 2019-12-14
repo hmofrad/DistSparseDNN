@@ -22,6 +22,7 @@ struct Tile{
         void sort(const RowSort<Weight> f_row, const ColSort<Weight> f_col, const COMPRESSED_FORMAT compression_type);
         void compress(const uint64_t nnz, const uint32_t nrows, const uint32_t ncols, //const uint32_t tile_height, const uint32_t tile_width,
                       const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type, const bool one_rank);
+        void compress(const COMPRESSED_FORMAT compression_type);
         
         std::vector<struct Triple<Weight>> triples;
         std::shared_ptr<struct Compressed_Format<Weight>> spmat = nullptr;
@@ -33,8 +34,8 @@ struct Tile{
         uint32_t end_row = 0;
         uint32_t start_col = 0;
         uint32_t end_col = 0;
-        uint32_t tile_height = 0;
-        uint32_t tile_width = 0;
+        uint32_t height = 0;
+        uint32_t width = 0;
 };
 
 template<typename Weight>
@@ -56,14 +57,16 @@ void Tile<Weight>::sort(const RowSort<Weight> f_row, const ColSort<Weight> f_col
 }
 
 template<typename Weight>
+//void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint32_t ncols, //const uint32_t tile_height, const uint32_t tile_width,
 void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint32_t ncols, //const uint32_t tile_height, const uint32_t tile_width,
                             const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type, const bool one_rank) {                         
-    if((not triples.empty()) and (nnz == triples.size())){
+    //if((not triples.empty()) and (nnz == triples.size())){
+    if(not triples.empty()){        
         if(compression_type == COMPRESSED_FORMAT::_CSC_) {
             //spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width, one_rank);
             //spmat->populate(triples, tile_height, tile_width);
             
-            spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width, one_rank);
+            spmat = std::make_shared<CSC<Weight>>(triples.size(), height, width, one_rank);
             spmat->populate(triples, start_row, end_row, start_col, end_col);
 
             
@@ -82,14 +85,28 @@ void Tile<Weight>::compress(const uint64_t nnz, const uint32_t nrows, const uint
             triples.shrink_to_fit();
         }
     }
-    else {// if(nnz) {
+    
+   else {// if(nnz) {
         if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-            spmat = std::make_shared<CSC<Weight>>(nnz, tile_height, tile_width, one_rank);
+            spmat = std::make_shared<CSC<Weight>>(nnz, height, width, one_rank);
+           // printf("XXXXXXXXX %lu %d %d\n", nnz, height, width);
         }
     }
-    //else {
-    //    Logging::print(Logging::LOG_LEVEL::ERROR, "Compression failed\n");
-    //    std::exit(Env::finalize()); 
-    //}
+    
+    
+    /*
+    else {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Compression failed\n");
+        std::exit(Env::finalize()); 
+    }
+    */
+    
 }
+
+template<typename Weight>
+void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type) {
+    spmat = std::make_shared<CSC<Weight>>(0, height, width, false);
+}
+
+
 #endif
