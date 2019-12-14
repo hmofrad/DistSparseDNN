@@ -290,13 +290,15 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     
     if(not one_rank) {
         tile_exchange();
+        tile_load();
     }
-
-    for (uint32_t i = 0; i < nrowgrps; i++) {
-        for (uint32_t j = 0; j < ncolgrps; j++) {
-            auto& tile = tiles[i][j];
-            if(tile.rank == Env::rank) {
-                tiles[i][j].nedges = tiles[i][j].triples.size();
+    else {
+        for (uint32_t i = 0; i < nrowgrps; i++) {
+            for (uint32_t j = 0; j < ncolgrps; j++) {
+                auto& tile = tiles[i][j];
+                if(tile.rank == Env::rank) {
+                    tiles[i][j].nedges = tiles[i][j].triples.size();
+                }
             }
         }
     }
@@ -520,13 +522,15 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     
     if(not one_rank) {
         tile_exchange();
+        tile_load();
     }
-    
-    for (uint32_t i = 0; i < nrowgrps; i++) {
-        for (uint32_t j = 0; j < ncolgrps; j++) {
-            auto& tile = tiles[i][j];
-            if(tile.rank == Env::rank) {
-                tiles[i][j].nedges = tiles[i][j].triples.size();
+    else {
+        for (uint32_t i = 0; i < nrowgrps; i++) {
+            for (uint32_t j = 0; j < ncolgrps; j++) {
+                auto& tile = tiles[i][j];
+                if(tile.rank == Env::rank) {
+                    tiles[i][j].nedges = tiles[i][j].triples.size();
+                }
             }
         }
     }
@@ -1669,9 +1673,9 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
 
   //  }
                 
-    printf("61 %d>>>\n", Env::rank);
+    //printf("61 %d>>>\n", Env::rank);
     Env::barrier();
-    printf("6>>>\n");
+    //printf("6>>>\n");
     
         
     for (uint32_t i = 0; i < nrowgrps; i++) {
