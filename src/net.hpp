@@ -131,7 +131,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
 
-    //maxLayers = 1;
+    maxLayers = 1;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -202,7 +202,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                             0, inputFeatures->nrows, inputFeatures->ncols, 
                                                             TILING_TYPE::_1D_ROW_, compression_type, REFINE_TYPE::_REFINE_NONE_, 
                                                             inputFeatures->tiles, repartition)); 
-                                                            //printf("1._DATA_X_DATA_\n");
+                                                            //printf("1._DATA_X_DATA_ %d\n", inputFeatures->nrows);
+                                                            //std::exit(0);
         //if(repartition)                                                    
         //output->set_tile_info(inputFeatures->tiles, compression_type, REFINE_TYPE::_REFINE_NONE_);
     }
