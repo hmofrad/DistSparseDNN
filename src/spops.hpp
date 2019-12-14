@@ -156,8 +156,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         }
         
         uint64_t& index = Env::index_nnz[tid];
-        
+        //printf("%d %lu %d %d %lu %d[%lu]\n", Env::rank, C_nnz, C_nrows, C_ncols, index, offset, C_CSC->IA_blk->nitems);
+        Env::barrier();
         for(uint32_t j = start_col; j < end_col; j++) {
+          //  printf("%d %d %lu\n", Env::rank, j, index);
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
@@ -166,6 +168,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             }
             C_CSC->populate_spa(&s_A, b_A, offset + j, index, tid);
         }
+       // printf("spops %d?", Env::rank);
         //if(!tid) C_CSC->walk();
         //C_CSC->walk(tid);
     }
@@ -231,6 +234,7 @@ inline void repopulate(std::shared_ptr<struct Compressed_Format<Weight>> A,
 template<typename Weight>
 inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> A,
                                       const std::vector<uint32_t> trueCategories,
+                                      const uint32_t start_row,
                                       const int32_t tid) {
   const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
     const uint64_t A_nnz   = A_CSC->nnz;
@@ -250,7 +254,8 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
     
     bool me = 1;
     for(uint32_t i = 0; i < A_nrows; i++) {
-        if(trueCategories[(Env::tile_index[tid] * A_nrows) + i] != allCategories[i]) {
+        //if(trueCategories[(Env::tile_index[tid] * A_nrows) + i] != allCategories[i]) {
+        if(trueCategories[start_row + i] != allCategories[i]) {
             me = 0;
             break;
         }
