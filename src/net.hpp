@@ -131,7 +131,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
 
-   // maxLayers = 1;
+    maxLayers = 1;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -181,13 +181,15 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     spaWeightVec.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++) {
         if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
+            printf("%d %d %d\n", Env::rank, i, inputFeatures->get_tile_height(0));
             spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->get_tile_height(0), Env::threads_socket_id[i]));
+            
         }
         else if(parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) { 
             spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->get_tile_height(i), Env::threads_socket_id[i]));
         }
     }
-    
+    printf(">>> %d\n", Env::rank);
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                             0, inputFeatures->nrows, inputFeatures->ncols, 
@@ -207,7 +209,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         //if(repartition)                                                    
         //output->set_tile_info(inputFeatures->tiles, compression_type, REFINE_TYPE::_REFINE_NONE_);
     }
-        
+    printf("%d\n", Env::rank);
+    std::exit(0);   
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method.\n"); 
     Env::barrier();
     auto finish = std::chrono::high_resolution_clock::now();
