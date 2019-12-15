@@ -281,7 +281,8 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
 
 template<typename Weight>
 inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> A,
-                                      const std::vector<uint32_t> trueCategories) {
+                                      const std::vector<uint32_t> trueCategories,
+                                      const uint32_t start_row) {
   const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
     const uint64_t A_nnz   = A_CSC->nnz;
     const uint32_t A_nrows = A_CSC->nrows;
@@ -301,7 +302,7 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
     char me = 1;
     uint32_t j = 0;
     for(uint32_t i = 0; i < A_nrows; i++) {
-        if(trueCategories[(Env::rank * A_nrows) + i] != allCategories[i]) {
+        if(trueCategories[start_row + i] != allCategories[i]) {
             me = 0;
             break;
         }
