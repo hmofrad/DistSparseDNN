@@ -50,7 +50,7 @@ int main(int argc, char **argv) {
     
     Net<WGT> N(atoi(argv[2]), atoi(argv[4]), 
                ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]), 
-               PARALLELISM_TYPE::_DATA_X_DATA_);
+               PARALLELISM_TYPE::_DATA_X_MODEL_);
                //, INPUT_TYPE::_TEXT_) ;
                //, COMPRESSED_FORMAT::_CSC_);
     
