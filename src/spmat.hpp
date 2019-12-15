@@ -460,7 +460,7 @@ void CSC<Weight>::walk1() {
 template<typename Weight>
 void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {
     //double start_time = Env::tic();
-    
+    //printf("REALLOCATE::: tid=%d oldnnz=%lu newnnz=%lu oldnrows=%d newnrows%d oldncols=%d newncols=%d\n", Env::rank, CSC::nnz, nnz_, CSC::nrows, nrows_, CSC::ncols, ncols_);
     if(CSC::ncols != ncols_) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot reallocate.\n");
         std::exit(Env::finalize());     
