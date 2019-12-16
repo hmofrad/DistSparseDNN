@@ -156,7 +156,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         }
         
         uint64_t& index = Env::index_nnz[tid];
-        //printf("%d %lu %d %d %lu %d[%lu]\n", Env::rank, C_nnz, C_nrows, C_ncols, index, offset, C_CSC->IA_blk->nitems);
+        //printf("%d %d %d %d %d\n", Env::rank, tid, start_col, end_col, offset);
         //Env::barrier();
         for(uint32_t j = start_col; j < end_col; j++) {
           //  printf("%d %d %lu\n", Env::rank, j, index);
@@ -168,7 +168,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             }
             C_CSC->populate_spa(&s_A, b_A, offset + j, index, tid);
         }
-       // printf("spops %d?", Env::rank);
+        //printf("spops %d/%d?\n", Env::rank, tid);
         //if(!tid) C_CSC->walk();
         //C_CSC->walk(tid);
     }
