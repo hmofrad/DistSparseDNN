@@ -600,8 +600,8 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
 
     uint32_t  o_ncols = other->ncols;
     uint32_t  o_nrows = other->nrows;
-    uint32_t  o_nnz   = other->nnz;
-    uint32_t  o_nnz_i = other->nnz_i;
+    uint64_t  o_nnz   = other->nnz;
+    uint64_t  o_nnz_i = other->nnz_i;
     uint32_t* o_JA    = other->JA_blk->ptr;
     uint32_t* o_IA    = other->IA_blk->ptr;
     Weight*   o_A     = other->A_blk->ptr;
@@ -610,6 +610,8 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         fprintf(stderr, "Error: Cannot repopulate CSC\n");
         exit(1);
     }
+    
+    //printf("[%d %d] [%d %d] [%lu %lu] [%d %d] [%d %d] [%lu %lu] [%lu %lu] \n", Env::rank, tid, Env::start_col[tid], Env::end_col[tid], Env::index_nnz[tid], Env::offset_nnz[tid], o_nrows, o_ncols, CSC::nrows, CSC::ncols, CSC::nnz, CSC::nnz_i, o_nnz, o_nnz_i);
     
     if(!tid) {
         CSC::nnz = o_nnz_i;
@@ -620,10 +622,11 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         CSC::A_blk->reallocate(CSC::nnz_i);
         CSC::A_blk->clear();
     }
+    
     pthread_barrier_wait(&Env::thread_barrier);
     //#pragma omp barrier
     
-    //printf("MOVE\n");
+    
     uint32_t* JA = CSC::JA_blk->ptr;
     uint32_t* IA = CSC::IA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
@@ -634,10 +637,13 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     uint32_t end_col = Env::end_col[tid];
     //JA[start_col] = Env::offset_nnz[tid] - Env::displacement_nnz[tid];
     
+    
+    
     for(int32_t i = 0; i < tid; i++) {
         JA[start_col+1] += (Env::index_nnz[i] - Env::offset_nnz[i]);
     }
-    
+    //printf(">> %d %d\n", Env::rank, tid);
+    //pthread_barrier_wait(&Env::thread_barrier);
     //printf("%d %d %lu %lu %d\n", tid, JA[start_col], Env::index_nnz[0], Env::offset_nnz[0], (Env::index_nnz[i-1] - Env::offset_nnz[i-1]));
 //#pragma omp barrier
     //std::exit(0);
@@ -654,13 +660,14 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     //}
         
     //}
-    
+    //printf("[%d %d] [%d %d]\n", Env::rank, tid, Env::start_col[tid], Env::end_col[tid]);
     
     //if(tid){
     for(uint32_t j = start_col; j < end_col; j++) {
         JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
         
         uint32_t& k = JA[j+1];
+        //uint32_t m = 0;
         uint32_t m = (j == start_col) ? Env::displacement_nnz[tid] : 0;
         
         //printf("1. j=%d tid=%d JAj=%d JAj+1=%d m=%d i=%d\n", j, tid, JA[j], JA[j+1], m, o_JA[j] + m);
@@ -679,7 +686,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     //    if(j == start_col + 10) break;
     }
     //}
-    
+    //printf("Done %d %d\n", Env::rank, tid);
     
     pthread_barrier_wait(&Env::thread_barrier);
     //printf("????????\n");
