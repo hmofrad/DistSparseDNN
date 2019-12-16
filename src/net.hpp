@@ -45,7 +45,7 @@ class Net {
         
         PARALLELISM_TYPE parallelism_type; 
         bool refine = false;
-        bool repartition = true;
+        bool repartition = false;
         
         void inferenceReLU(COMPRESSED_FORMAT compression_type);
         void printTimes();
@@ -130,7 +130,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-
+    
     //maxLayers = 1;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
@@ -155,7 +155,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                        Env::nthreads, Env::nthreads, 
                                                                        nnz, nrows, ncols, 
                                                                        layerFile, input_type, 
-                                                                       TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_NONE_, false));
+                                                                       TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_NONE_, repartition));
             }
         }
         else if(parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) {     
@@ -165,10 +165,11 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                    TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_NONE_, false));
         }     
         biasWeightVecs[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, Env::rank_socket_id));
-        
+        //printf("%d\n", inputFeatures->ncols);
         Logging::enabled = false; 
     }
-    
+    //Env::barrier();
+    //std::exit(0);
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
 
@@ -333,7 +334,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                     A_tile = output->tiles[Env::rank][0];
                     C_tile = inputFeatures->tiles[Env::rank][0];
                 }
-
+                
                 auto& A_spmat = A_tile.spmat;
                 auto& C_spmat = C_tile.spmat;
                 B_tile = layers[l]->tiles[0][0];
@@ -375,6 +376,9 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 auto& A_spmat = A_tile.spmat;
                 B_tile = layers[l]->tiles[0][tid];
                 auto& B_spmat = B_tile.spmat;
+
+                Env::start_col[tid] = B_tile.start_col;
+                Env::end_col[tid] = B_tile.end_col;
                 
                 std::tie(Env::offset_nnz[tid], nrows, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
                 
@@ -384,6 +388,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 if(!tid) {
                     nnz = Env::assign_nnz();
                     Env::memory_time += Env::toc(start_time);
+                    //printf("%d/%d: %lu %d %d\n", Env::rank, tid, nnz, nrows, ncols);
                 }
                 Env::memory_allocation_time[tid] += Env::toc(start_time);
                 
@@ -398,19 +403,28 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                     Env::memory_time += Env::toc(start_time);
                 }
                 Env::memory_allocation_time[tid] += Env::toc(start_time);
+                
+                pthread_barrier_wait(&Env::thread_barrier);
+                //printf("1. %d %d\n",Env::rank, tid);
+                //printf(">>>spmm %d %d\n",Env::rank, tid);
+                spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
+                //printf(">>>>>>>> %d %d\n",Env::rank, tid);
                 pthread_barrier_wait(&Env::thread_barrier);
                 
-                spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
-                pthread_barrier_wait(&Env::thread_barrier);
                 adjust(C_spmat, tid);
+                
+                
                 repopulate(A_spmat, C_spmat, tid);
                 
                 //if(!tid) walk_by_rank(A_spmat);
-                
+                //printf("5. %d %d\n",Env::rank, tid);
                 if(!tid) Env::iteration++;
             }    
-        }        
-
+        }       
+       // printf("6. %d %d\n",Env::rank, tid);   
+        //pthread_barrier_wait(&Env::thread_barrier);        
+        
+        
         auto finish = std::chrono::high_resolution_clock::now();
         if(!tid) Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
         Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9    ;
@@ -430,6 +444,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
         }
         //printf("0000 %d %d %d\n", Env::rank, tid,  C_tile.start_row);
         pthread_barrier_wait(&Env::thread_barrier);
+        
         //Env::barrier();
         //printf("1111 %d %d\n", Env::rank, tid);
     }
