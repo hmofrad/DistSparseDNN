@@ -262,8 +262,7 @@ void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
 
 template<typename Weight>
 void CSC<Weight>::walk(const int32_t tid) {  
-    //std::vector<bool> rows(CSC::nrows);
-    //std::vector<bool> cols(CSC::ncols);
+
 
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
@@ -280,14 +279,14 @@ void CSC<Weight>::walk(const int32_t tid) {
     for(uint32_t j = 0; j < CSC::ncols; j++) {  
         // std::cout << "j=" << j << "," << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
         //if(JA[j+1] - JA[j])
-        //    Env::cols[tid][j] = true;
+            Env::cols[tid][j] = true;
         for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
             (void) IA[i];
             (void) A[i];
             Env::checksum[tid] += A[i];
             Env::checkcount[tid]++;
             //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
-            //Env::rows[tid][IA[i]] = true;
+            Env::rows[tid][IA[i]] = true;
             
             //cols[j] = 1;
         }
@@ -353,6 +352,47 @@ void CSC<Weight>::walk(const int32_t tid) {
         */
         
     }
+    /*
+    
+    if(Env::rows[tid].empty()) {
+        Env::rows[tid].resize(CSC::nrows);
+    }
+    
+    if(Env::cols[tid].empty()) {
+        Env::cols[tid].resize(CSC::ncols);
+    }
+    
+    
+    uint32_t nrows_ = 0;
+    std::vector<bool> rows_(CSC::nrows);
+    for(uint32_t i = 0; i < CSC::nrows; i++) {
+        if(Env::rows[tid][i]) {
+            rows_[i] = true;
+        }
+        if(rows_[i]) {
+            nrows_++;
+            rows_[i] = false;
+        }
+    }
+    
+    uint32_t ncols_ = 0;
+    std::vector<bool> cols_(CSC::ncols);
+    for(uint32_t i = 0; i < CSC::ncols; i++) {
+        if(Env::cols[tid][i]) {
+            cols_[i] = true;
+        }
+        if(cols_[i]) {
+            ncols_++;
+            cols_[i] = false;
+        }
+    }
+    Env::rows_threads[tid].push_back(nrows_);
+    Env::cols_threads[tid].push_back(ncols_);
+    */
+    //printf("[%d %d] [%d %d] [%d %d]\n", Env::rank, tid, CSC::nrows, nrows_, CSC::ncols, ncols_);
+    
+    
+    
     //pthread_barrier_wait(&Env::thread_barrier);
     //#pragma omp barrier  
 
@@ -594,10 +634,6 @@ void CSC<Weight>::adjust(const int32_t tid){
 
 template<typename Weight>
 void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, const int32_t tid) {
-    //printf("%d/%d: repopulate\n", Env::rank, tid);
-    
-    
-
     uint32_t  o_ncols = other->ncols;
     uint32_t  o_nrows = other->nrows;
     uint64_t  o_nnz   = other->nnz;
@@ -611,8 +647,6 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         exit(1);
     }
     
-    //printf("[%d %d] [%d %d] [%lu %lu] [%d %d] [%d %d] [%lu %lu] [%lu %lu] \n", Env::rank, tid, Env::start_col[tid], Env::end_col[tid], Env::index_nnz[tid], Env::offset_nnz[tid], o_nrows, o_ncols, CSC::nrows, CSC::ncols, CSC::nnz, CSC::nnz_i, o_nnz, o_nnz_i);
-    
     if(!tid) {
         CSC::nnz = o_nnz_i;
         CSC::nnz_i = o_nnz_i;
@@ -622,161 +656,29 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         CSC::A_blk->reallocate(CSC::nnz_i);
         CSC::A_blk->clear();
     }
-    
     pthread_barrier_wait(&Env::thread_barrier);
-    //#pragma omp barrier
-    
     
     uint32_t* JA = CSC::JA_blk->ptr;
     uint32_t* IA = CSC::IA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
-    
-    //printf(">>> %lu %lu\n", CSC::IA_blk->nitems, other->IA_blk->nitems);
 
     uint32_t start_col = Env::start_col[tid];
     uint32_t end_col = Env::end_col[tid];
-    //JA[start_col] = Env::offset_nnz[tid] - Env::displacement_nnz[tid];
-    
-    
-    
     for(int32_t i = 0; i < tid; i++) {
         JA[start_col+1] += (Env::index_nnz[i] - Env::offset_nnz[i]);
     }
-    //printf(">> %d %d\n", Env::rank, tid);
-    //pthread_barrier_wait(&Env::thread_barrier);
-    //printf("%d %d %lu %lu %d\n", tid, JA[start_col], Env::index_nnz[0], Env::offset_nnz[0], (Env::index_nnz[i-1] - Env::offset_nnz[i-1]));
-//#pragma omp barrier
-    //std::exit(0);
 
-    
-  //  end_col -= (tid == (Env::nthreads - 1)) ? 0 : 1;
-    //printf("%d %d %d\n", tid, JA[start_col], JA[start_col+1]);
-    //printf("TID=%d\n", tid);
-    //pthread_barrier_wait(&Env::thread_barrier);
-    
-    //if(tid){
-    //for(uint32_t j = 0; j < o_ncols; j++) {
-        //printf("%d %d %d %d\n", j, o_JA[j], o_JA[j+1], o_JA[j+1]-o_JA[j]);
-    //}
-        
-    //}
-    //printf("[%d %d] [%d %d]\n", Env::rank, tid, Env::start_col[tid], Env::end_col[tid]);
-    
-    //if(tid){
     for(uint32_t j = start_col; j < end_col; j++) {
         JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
-        
         uint32_t& k = JA[j+1];
-        //uint32_t m = 0;
         uint32_t m = (j == start_col) ? Env::displacement_nnz[tid] : 0;
-        
-        //printf("1. j=%d tid=%d JAj=%d JAj+1=%d m=%d i=%d\n", j, tid, JA[j], JA[j+1], m, o_JA[j] + m);
-        //if(tid)
-        //printf("%d %d %d %d %d\n", tid, j, k, JA[j+1], m);
         for(uint32_t i = o_JA[j] + m; i < o_JA[j + 1]; i++) {
-            //if(tid)
-            //printf("%d %d\n",k, i);
-            //JA[j+1]++;
             IA[k] = o_IA[i];
             A[k]  = o_A[i];
             k++;
         }
-        //if(tid)
-      //  printf("2. j=%d tid=%d JAj=%d JAj+1=%d k=%d\n", j, tid, JA[j], JA[j+1], k);
-    //    if(j == start_col + 10) break;
     }
-    //}
-    //printf("Done %d %d\n", Env::rank, tid);
-    
     pthread_barrier_wait(&Env::thread_barrier);
-    //printf("????????\n");
-    //#pragma omp barrier
-//    end_col += (tid == (Env::nthreads - 1)) ? 0 : 1;
-//    printf("%d %d %d - %d %d %d %d\n", tid, start_col, end_col, JA[start_col], JA[start_col+1], JA[end_col-1], JA[end_col]);
-  //  printf("%lu %lu\n", CSC::nnz, CSC::nnz_i);
-    //#pragma omp barrier
-/*    
-    uint32_t start_col = Env::start_col[tid];
-    uint32_t end_col = Env::end_col[tid];
-    
-    if(tid == 0) {
-        JA[0] = 0;
-        for(uint32_t j = start_col+1; j < end_col; j++) {
-            JA[j] += JA[j-1];
-        }
-    }
-    else {
-        JA[start_col] = 0;
-        for(int32_t i = 0; i < tid; i++) {
-            JA[start_col] += (Env::offset_nnz[i] - Env::start_nnz[i]);
-        }
-        
-        for(uint32_t j = start_col+1; j < end_col; j++) {
-            JA[j] += JA[j-1];
-        }
-    }
-    
-    if((tid == Env::nthreads - 1)) {
-        JA[end_col] += JA[end_col-1];
-    }
-    
-    
-    if(tid == 0) {
-        idx = 0;
-        for(uint32_t i = 0; i < Env::nthreads; i++) {    
-            idx += (Env::offset_nnz[i] - Env::start_nnz[i]);
-        }
-    }
-    
-    uint32_t o_ncols = other_csc->numcols();
-    uint32_t o_nnz = other_csc->numnonzeros();
-    uint32_t o_idx = other_csc->idx;
-    uint32_t *o_JA = other_csc->JA;
-    uint32_t *o_IA = other_csc->IA;
-    Weight   *o_A  = other_csc->A;
-    
-    if(ncols != o_ncols) {
-        fprintf(stderr, "Error: Cannot repopulate CSC\n");
-        exit(1);
-    }
-    
-    if(!tid) {
-        nnz = o_idx;
-        nnzmax = o_idx;
-        IA_blk->reallocate(&IA, nnz, (nnz * sizeof(uint32_t)));
-        A_blk->reallocate(&A, nnz, (nnz * sizeof(Weight)));            
-        clear();
-    }
-    #pragma omp barrier
-    uint32_t start_col = Env::start_col[tid];
-    uint32_t end_col = Env::end_col[tid];
-    uint64_t offset = 0;
-    uint64_t idx = 0;
-    JA[start_col] = 0;
-    if(tid) {
-        JA[start_col] = o_JA[start_col];
-        for(int32_t i = 0; i < tid; i++) {
-            //JA[start_col] += (Env::offset_nnz[i] - Env::start_nnz[i]);
-            offset += (Env::end_nnz[i] - Env::offset_nnz[i]);
-        }
-        idx = JA[start_col];
-    }
-    for(uint32_t j = start_col; j < end_col; j++) {
-        JA[j+1] = JA[j];
-        for(uint32_t i = o_JA[j] + offset; i < o_JA[j + 1] + offset; i++) {
-            JA[j+1]++;
-            IA[idx] = o_IA[i];
-            A[idx]  = o_A[i];
-            idx++;
-        }
-    }
-*/    
-    
-    
-    
-    
 }
-
-
 
 #endif
