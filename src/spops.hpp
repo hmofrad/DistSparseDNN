@@ -50,8 +50,8 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         nrows = A_nrows;
         ncols = B_ncols;
 
-        uint32_t start_col = 0;// = Env::start_col[tid];
-        uint32_t end_col   = 0;// = Env::end_col[tid];
+        uint32_t start_col = 0;
+        uint32_t end_col   = 0;
         //uint32_t displacement_nnz = Env::displacement_nnz[tid];
         if(refine) {
             start_col = Env::start_col[tid];
@@ -61,7 +61,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
             start_col = 0;
             end_col   = B_ncols;    
         }
-        //printf("%d %d %d\n", tid, start_col, end_col);
+
         for(uint32_t j = start_col; j < end_col; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
@@ -135,12 +135,8 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             std::exit(Env::finalize()); 
         }
         
-        //uint32_t start_col = Env::start_col[tid];
-        //uint32_t end_col = Env::end_col[tid];
-        //uint32_t displacement_nnz = Env::displacement_nnz[tid];
-        
-        uint32_t start_col = 0;// = Env::start_col[tid];
-        uint32_t end_col   = 0;// = Env::end_col[tid];
+        uint32_t start_col = 0;
+        uint32_t end_col   = 0;
         //uint32_t displacement_nnz = Env::displacement_nnz[tid];
         uint32_t offset = 0;
         if(refine) {
@@ -156,10 +152,8 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
         }
         
         uint64_t& index = Env::index_nnz[tid];
-        //printf("%d %d %d %d %d\n", Env::rank, tid, start_col, end_col, offset);
-        //Env::barrier();
+        
         for(uint32_t j = start_col; j < end_col; j++) {
-          //  printf("%d %d %lu\n", Env::rank, j, index);
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
@@ -168,9 +162,6 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             }
             C_CSC->populate_spa(&s_A, b_A, offset + j, index, tid);
         }
-        //printf("spops %d/%d?\n", Env::rank, tid);
-        //if(!tid) C_CSC->walk();
-        //C_CSC->walk(tid);
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM not implemented.\n");
@@ -230,7 +221,6 @@ inline void repopulate(std::shared_ptr<struct Compressed_Format<Weight>> A,
     Env::memory_allocation_time[tid] += Env::toc(start_time);
 }
 
-
 template<typename Weight>
 inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> A,
                                       const std::vector<uint32_t> trueCategories,
@@ -254,7 +244,6 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
     
     bool me = 1;
     for(uint32_t i = 0; i < A_nrows; i++) {
-        //if(trueCategories[(Env::tile_index[tid] * A_nrows) + i] != allCategories[i]) {
         if(trueCategories[start_row + i] != allCategories[i]) {
             me = 0;
             break;
