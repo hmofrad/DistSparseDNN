@@ -165,11 +165,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                    TILING_TYPE::_1D_COL_, compression_type, REFINE_TYPE::_REFINE_NONE_, false));
         }     
         biasWeightVecs[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, Env::rank_socket_id));
-        //printf("%d\n", inputFeatures->ncols);
         Logging::enabled = false; 
     }
-    //Env::barrier();
-    //std::exit(0);
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
 
@@ -340,18 +337,14 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 B_tile = layers[l]->tiles[0][0];
                 auto& B_spmat = B_tile.spmat;
                 auto& b_bias = biasWeightVecs[l];  
-                std::tie(Env::offset_nnz[tid], std::ignore, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
+                std::tie(Env::offset_nnz[tid], nrows, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
                 pthread_barrier_wait(&Env::thread_barrier);
                 
                 start_time = Env::tic();
                 if(!tid) {
                     nnz = Env::assign_nnz();
-                    
                     C_spmat->reallocate(nnz, nrows, ncols);
                     Env::memory_time += Env::toc(start_time);
-                   //printf("NNZ ==> %lu\n", nnz);
-                   //std::exit(0);
-                   
                 }
                 Env::memory_allocation_time[tid] += Env::toc(start_time);
                 
@@ -388,7 +381,6 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 if(!tid) {
                     nnz = Env::assign_nnz();
                     Env::memory_time += Env::toc(start_time);
-                    //printf("%d/%d: %lu %d %d\n", Env::rank, tid, nnz, nrows, ncols);
                 }
                 Env::memory_allocation_time[tid] += Env::toc(start_time);
                 
@@ -405,35 +397,23 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 Env::memory_allocation_time[tid] += Env::toc(start_time);
                 
                 pthread_barrier_wait(&Env::thread_barrier);
-                //printf("1. %d %d\n",Env::rank, tid);
-                //printf(">>>spmm %d %d\n",Env::rank, tid);
                 spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
-                //printf(">>>>>>>> %d %d\n",Env::rank, tid);
                 pthread_barrier_wait(&Env::thread_barrier);
                 
                 adjust(C_spmat, tid);
-                
-                
                 repopulate(A_spmat, C_spmat, tid);
                 
-                //if(!tid) walk_by_rank(A_spmat);
-                //printf("5. %d %d\n",Env::rank, tid);
                 if(!tid) Env::iteration++;
             }    
         }       
-       // printf("6. %d %d\n",Env::rank, tid);   
-        //pthread_barrier_wait(&Env::thread_barrier);        
-        
-        
+
         auto finish = std::chrono::high_resolution_clock::now();
         if(!tid) Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
         Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9    ;
-        //Env::barrier();
+
         C_tile = inputFeatures->tiles[Env::rank][0];
         auto& C_spmat = C_tile.spmat;
         if(!tid) {
-            //printf("%d %d %d\n", Env::rank, tid, C_tile.start_row);
-            //bool passed = validate_prediction(C_spmat, trueCategories);
             bool passed = validate_prediction(C_spmat, trueCategories, C_tile.start_row);
             if(passed) {
                 Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
@@ -442,11 +422,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
             }
         }
-        //printf("0000 %d %d %d\n", Env::rank, tid,  C_tile.start_row);
         pthread_barrier_wait(&Env::thread_barrier);
-        
-        //Env::barrier();
-        //printf("1111 %d %d\n", Env::rank, tid);
     }
     else if (parallelism_type  == PARALLELISM_TYPE::_DATA_X_DATA_) {
         auto start = std::chrono::high_resolution_clock::now();  
@@ -466,33 +442,22 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
             auto& B_spmat = B_tile.spmat;
             auto& b_bias = biasWeightVecs[l];  
             std::tie(nnz, nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
-            //printf("%d nnz=%lu %d %d\n", tid, Env::offset_nnz[tid], nrows, ncols );
-            
             Env::index_nnz[tid] = 0;
             
             start_time = Env::tic();
             C_spmat->reallocate(nnz, nrows, ncols, tid);
             if(!tid) Env::memory_time += Env::toc(start_time);
             Env::memory_allocation_time[tid] += Env::toc(start_time);
-            //printf("Here? %d\n", Env::rank);
-            //Env::barrier();
+
             spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
-            
-            //printf("SPMM %d %d %lu\n", Env::rank, tid, nnz);
-           // Env::barrier();
-           // std::exit(0);
-            
-            //{
-            //    adjust(C_spmat, tid);
-            //    walk_by_tid(C_spmat, tid);
-            //}
-            
+
             if(!tid) Env::iteration++;
         }
         
         auto finish = std::chrono::high_resolution_clock::now();
         if(!tid) Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
         Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
+        //printf("%d %f\n", tid, Env::execution_time[tid]);
         
         C_tile = inputFeatures->tiles[Env::tile_index[tid]][0];
         auto& C_spmat = C_tile.spmat;
