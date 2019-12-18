@@ -14,8 +14,8 @@
 #include <omp.h>
 #include <thread>
 #include <sys/sysinfo.h>
-//#include <numa.h>
-#include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
+#include <numa.h>
+//#include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
 
 
 #include "types.hpp"
@@ -49,6 +49,7 @@ namespace Env {
     double end_to_end_time = 0;
     
     std::vector<uint64_t> nnz_ranks;
+    std::vector<std::vector<uint64_t>> nnz_threads;
     std::vector<uint64_t> nnz_i_ranks;
     std::vector<double>   time_ranks;
     
@@ -76,8 +77,10 @@ namespace Env {
     std::vector<uint64_t> checkcount;
     std::vector<uint64_t> checknnz;
     std::vector<bool> checkconv;
-    //std::vector<std::vector<bool>> rows;
-    //std::vector<std::vector<bool>> cols;
+    std::vector<std::vector<bool>> rows;
+    std::vector<std::vector<bool>> cols;
+    std::vector<std::vector<uint64_t>> rows_threads;
+    std::vector<std::vector<uint64_t>> cols_threads;
     
     std::vector<double> spmm_symb_time;
     std::vector<double> spmm_real_time;
@@ -85,6 +88,8 @@ namespace Env {
     std::vector<double> execution_time;
     
     pthread_barrier_t thread_barrier;
+    pthread_mutex_t thread_mutex;
+
     
     int init();
     void barrier();
@@ -146,8 +151,10 @@ int Env::init() {
     checkcount.resize(Env::nthreads);
     checknnz.resize(Env::nthreads);
     checkconv.resize(Env::nthreads);
-    //rows.resize(Env::nthreads);
-    //cols.resize(Env::nthreads);
+    rows.resize(Env::nthreads);
+    cols.resize(Env::nthreads);
+    rows_threads.resize(Env::nthreads);
+    cols_threads.resize(Env::nthreads);
     count_nnz.resize(Env::nthreads);
     count_nnz_i.resize(Env::nthreads);
     tile_index.resize(Env::nthreads);
@@ -157,6 +164,12 @@ int Env::init() {
     spmm_real_time.resize(Env::nthreads);
     memory_allocation_time.resize(Env::nthreads);
     execution_time.resize(Env::nthreads);
+    nnz_threads.resize(Env::nthreads);
+    
+    thread_mutex = PTHREAD_MUTEX_INITIALIZER;
+    
+    //pthread_mutex_lock(&mutex);
+    //pthread_mutex_unlock(&mutex);
 
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
