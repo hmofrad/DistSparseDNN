@@ -15,7 +15,9 @@ template<typename Weight>
 inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct Compressed_Format<Weight>> A,
                                                          std::shared_ptr<struct Compressed_Format<Weight>> B,
                                                          std::shared_ptr<struct Data_Block<Weight>> s,
-                                                         bool refine,
+                                                         //bool refine,
+                                                         const uint32_t start_col,
+                                                         const uint32_t end_col,
                                                          const int32_t tid) {
     double start_time = Env::tic(); 
 
@@ -50,9 +52,11 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         nrows = A_nrows;
         ncols = B_ncols;
 
-        uint32_t start_col = 0;
-        uint32_t end_col   = 0;
+        //uint32_t start_col = 0;
+        //uint32_t end_col   = 0;
+        
         //uint32_t displacement_nnz = Env::displacement_nnz[tid];
+        /*
         if(refine) {
             start_col = Env::start_col[tid];
             end_col   = Env::end_col[tid];    
@@ -61,6 +65,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
             start_col = 0;
             end_col   = B_ncols;    
         }
+        */
 
         for(uint32_t j = start_col; j < end_col; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
