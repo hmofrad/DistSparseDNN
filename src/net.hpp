@@ -131,7 +131,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
     
-    //maxLayers = 1;
+    maxLayers = 1;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -215,6 +215,69 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     Env::barrier();
     printTimesExcel();
     //printTimes();
+    /*
+    if(Env::rank == 0) {
+        for(int i = 0; i < Env::nthreads; i++) {
+            for(auto r: Env::rows_threads[i]) {
+                printf("%lu ", r);
+            }
+            printf("\n");
+        }
+    }
+    Env::barrier();
+    if(Env::rank == 1) {
+        for(int i = 0; i < Env::nthreads; i++) {
+            for(auto r: Env::rows_threads[i]) {
+                printf("%lu ", r);
+            }
+            printf("\n");
+        }
+        
+    }
+    Env::barrier();
+    if(Env::rank == 2) {
+        for(int i = 0; i < Env::nthreads; i++) {
+            for(auto r: Env::rows_threads[i]) {
+                printf("%lu ", r);
+            }
+            printf("\n");
+        }
+        
+    }
+    Env::barrier();
+    
+    if(Env::rank == 0) {
+        printf("\n\n");
+        for(int i = 0; i < Env::nthreads; i++) {
+            for(auto r: Env::cols_threads[i]) {
+                printf("%lu ", r);
+            }
+            printf("\n");
+        }
+    }
+    Env::barrier();
+    if(Env::rank == 1) {
+        for(int i = 0; i < Env::nthreads; i++) {
+            for(auto r: Env::cols_threads[i]) {
+                printf("%lu ", r);
+            }
+            printf("\n");
+        }
+        
+    }
+    Env::barrier();
+    if(Env::rank == 2) {
+        for(int i = 0; i < Env::nthreads; i++) {
+            for(auto r: Env::cols_threads[i]) {
+                printf("%lu ", r);
+            }
+            printf("\n");
+        }
+        
+    }
+    Env::barrier();
+    */
+    
 }
 
 template<typename Weight>
@@ -316,6 +379,8 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
     struct Tile<Weight> B_tile;
     struct Tile<Weight> C_tile;
     auto& s_spa = spaWeightVec[tid];
+    
+    
 
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         Env::assign_col(ncols, refine, tid);
@@ -337,7 +402,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 B_tile = layers[l]->tiles[0][0];
                 auto& B_spmat = B_tile.spmat;
                 auto& b_bias = biasWeightVecs[l];  
-                std::tie(Env::offset_nnz[tid], nrows, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
+                //std::tie(Env::offset_nnz[tid], nrows, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
                 pthread_barrier_wait(&Env::thread_barrier);
                 
                 start_time = Env::tic();
@@ -373,7 +438,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 Env::start_col[tid] = B_tile.start_col;
                 Env::end_col[tid] = B_tile.end_col;
                 
-                std::tie(Env::offset_nnz[tid], nrows, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
+                //std::tie(Env::offset_nnz[tid], nrows, std::ignore) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
                 
                 pthread_barrier_wait(&Env::thread_barrier);
                 
@@ -403,6 +468,8 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 adjust(C_spmat, tid);
                 repopulate(A_spmat, C_spmat, tid);
                 
+                //if(!tid) walk_by_rank(A_spmat);
+                
                 if(!tid) Env::iteration++;
             }    
         }       
@@ -425,6 +492,10 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
         pthread_barrier_wait(&Env::thread_barrier);
     }
     else if (parallelism_type  == PARALLELISM_TYPE::_DATA_X_DATA_) {
+        std::vector<int32_t> my_helper_threads;
+        my_helper_threads.push_back(tid);
+        if(tid == 0) sleep(3);
+        if(tid == 5) sleep(6);
         auto start = std::chrono::high_resolution_clock::now();  
         for (uint32_t l = 0; l < maxLayers; l++) {
             if(not(l%2)) {
@@ -441,23 +512,101 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
             B_tile = layers[l]->tiles[0][0];
             auto& B_spmat = B_tile.spmat;
             auto& b_bias = biasWeightVecs[l];  
-            std::tie(nnz, nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, refine, tid);
-            Env::index_nnz[tid] = 0;
             
-            start_time = Env::tic();
-            C_spmat->reallocate(nnz, nrows, ncols, tid);
-            if(!tid) Env::memory_time += Env::toc(start_time);
-            Env::memory_allocation_time[tid] += Env::toc(start_time);
+            if(!Env::helper_threads.empty()) {
+                pthread_mutex_lock(&Env::thread_mutex);
+                    my_helper_threads.insert(my_helper_threads.end(), Env::helper_threads.begin(), Env::helper_threads.end());
+                    Env::helper_threads.erase(Env::helper_threads.begin(), Env::helper_threads.end());
+                    
+                    //num_threads += Env::n_helper_threads;
+                    //Env::n_helper_threads = 0;
+                    
+                    //my_helper_threads.resize(Env::helper_threads.size());
+                    //std::move(Env::helper_threads.begin(), Env::helper_threads.end(), my_helper_threads.begin()); 
+                    //my_helper_threads.push_back(tid);
+                    
+                    
+                    for(uint32_t t = 0; t < my_helper_threads.size(); t++) {
+                        uint32_t layer = l;
+                        uint32_t rowgroup = Env::tile_index[tid];
+                        uint32_t start_col = ((ncols/my_helper_threads.size()) * t);
+                        uint32_t end_col   = (t == (my_helper_threads.size()-1)) ? ncols : ((ncols/my_helper_threads.size()) * (t+1));
+                        Env::helper_threads_info[tid][my_helper_threads[t]] = std::move(Env::helper_thread_info(rowgroup, layer, start_col, end_col));
+                    }
+                    
+                    printf("There are %d helper threads [%lu %lu] %d\n", Env::n_helper_threads, Env::helper_threads.size(), my_helper_threads.size(), my_helper_threads[0]);
+                    
+                    //for(int32_t i = 0; i < num_threads; i++) {
+                      //  auto info = Env::helper_threads_info[tid][i];
+                        //printf("%d: %d %d %d %d\n", i, info.layer, info.rowgroup, info.start_col, info.end_col);
+                    //}
+                    
 
-            spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
+                    
+                    
+                pthread_mutex_unlock(&Env::thread_mutex);
+
+            //    const uint32_t start_col = Env::helper_threads_info[tid][tid].start_col;
+              //  const uint32_t end_col = Env::helper_threads_info[tid][tid].end_col;
+                //std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
+                //Env::index_nnz[tid] = 0;
+                
+//                printf("<%d %lu>\n", tid, Env::offset_nnz[tid]);                
+                
+                
+                
+                
+            }
+            //else {
+                const uint32_t start_col = 0;
+                const uint32_t end_col = std::static_pointer_cast<struct CSC<Weight>>(B_spmat)->ncols;
+                std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
+                Env::index_nnz[tid] = 0;
+                
+                start_time = Env::tic();
+                C_spmat->reallocate(Env::offset_nnz[tid], nrows, ncols, tid);
+                
+                printf("%d %lu\n", tid, Env::offset_nnz[tid]);
+                
+                if(!tid) Env::memory_time += Env::toc(start_time);
+                Env::memory_allocation_time[tid] += Env::toc(start_time);
+
+                spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
+            //}
+
+
+            //{	
+            //    adjust(C_spmat, tid);	
+            //    walk_by_tid(C_spmat, tid);	
+            //}
 
             if(!tid) Env::iteration++;
         }
-        
         auto finish = std::chrono::high_resolution_clock::now();
+        
+        
+        
         if(!tid) Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
         Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
-        //printf("%d %f\n", tid, Env::execution_time[tid]);
+        
+        
+        
+        printf("%d %lu %lu\n", tid, my_helper_threads.size(), Env::helper_threads.size());    
+        pthread_mutex_lock(&Env::thread_mutex);
+            //Env::n_helper_threads += num_threads;
+            //Env::n_helper_threads++;
+            //Env::helper_threads.push_back(tid);
+            Env::helper_threads.insert(Env::helper_threads.end(), my_helper_threads.begin(), my_helper_threads.end());
+            my_helper_threads.erase(my_helper_threads.begin(), my_helper_threads.end());
+        pthread_mutex_unlock(&Env::thread_mutex);
+        
+        while(Env::helper_threads.size() != (uint32_t) Env::nthreads) {
+            std::this_thread::sleep_for(std::chrono::nanoseconds(1));
+        }
+        
+        
+        
+
         
         C_tile = inputFeatures->tiles[Env::tile_index[tid]][0];
         auto& C_spmat = C_tile.spmat;
