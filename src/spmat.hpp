@@ -262,7 +262,15 @@ void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
 
 template<typename Weight>
 void CSC<Weight>::walk(const int32_t tid) {  
-
+    /*
+    if(Env::rows[tid].empty()) {
+        Env::rows[tid].resize(CSC::nrows);
+    }
+    
+    if(Env::cols[tid].empty()) {
+        Env::cols[tid].resize(CSC::ncols);
+    }
+    */
 
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
@@ -279,14 +287,15 @@ void CSC<Weight>::walk(const int32_t tid) {
     for(uint32_t j = 0; j < CSC::ncols; j++) {  
         // std::cout << "j=" << j << "," << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
         //if(JA[j+1] - JA[j])
-            Env::cols[tid][j] = true;
+            
         for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
             (void) IA[i];
             (void) A[i];
             Env::checksum[tid] += A[i];
             Env::checkcount[tid]++;
             //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
-            Env::rows[tid][IA[i]] = true;
+            //Env::cols[tid][j] = true;
+            //Env::rows[tid][IA[i]] = true;
             
             //cols[j] = 1;
         }
@@ -352,43 +361,29 @@ void CSC<Weight>::walk(const int32_t tid) {
         */
         
     }
+    
+
+    
     /*
-    
-    if(Env::rows[tid].empty()) {
-        Env::rows[tid].resize(CSC::nrows);
-    }
-    
-    if(Env::cols[tid].empty()) {
-        Env::cols[tid].resize(CSC::ncols);
-    }
-    
-    
     uint32_t nrows_ = 0;
-    std::vector<bool> rows_(CSC::nrows);
     for(uint32_t i = 0; i < CSC::nrows; i++) {
         if(Env::rows[tid][i]) {
-            rows_[i] = true;
-        }
-        if(rows_[i]) {
             nrows_++;
-            rows_[i] = false;
+            Env::rows[tid][i] = false;
         }
     }
     
     uint32_t ncols_ = 0;
-    std::vector<bool> cols_(CSC::ncols);
     for(uint32_t i = 0; i < CSC::ncols; i++) {
         if(Env::cols[tid][i]) {
-            cols_[i] = true;
-        }
-        if(cols_[i]) {
             ncols_++;
-            cols_[i] = false;
+            Env::cols[tid][i] = false;
         }
     }
     Env::rows_threads[tid].push_back(nrows_);
     Env::cols_threads[tid].push_back(ncols_);
     */
+    
     //printf("[%d %d] [%d %d] [%d %d]\n", Env::rank, tid, CSC::nrows, nrows_, CSC::ncols, ncols_);
     
     
