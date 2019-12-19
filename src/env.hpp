@@ -88,8 +88,13 @@ namespace Env {
     std::vector<double> execution_time;
     
     pthread_barrier_t thread_barrier;
+    pthread_cond_t thread_cond; 
     pthread_mutex_t thread_mutex;
-
+    //int32_t n_follower_threads;
+    std::vector<int32_t> follower_threads;
+    std::vector<std::vector<struct helper_thread_info>> follower_threads_info;
+    bool done;
+    std::vector<int32_t> follower_to_leader;
     
     int init();
     void barrier();
@@ -111,6 +116,19 @@ namespace Env {
     int get_nsockets();
     bool numa_configure();
     bool set_thread_affinity(const int32_t tid);
+    
+    struct helper_thread_info {
+            helper_thread_info(){};
+            helper_thread_info(int32_t thread_, uint32_t rowgroup_, uint32_t layer_, uint32_t start_col_, uint32_t end_col_) :
+            thread(thread_), rowgroup(rowgroup_), layer(layer_), start_col(start_col_), end_col(end_col_) {};
+           ~helper_thread_info(){};
+            uint32_t thread;
+            uint32_t rowgroup;
+            uint32_t layer;
+            uint32_t start_col;
+            uint32_t end_col;
+    };
+
 }
 
 int Env::init() {
@@ -167,6 +185,13 @@ int Env::init() {
     nnz_threads.resize(Env::nthreads);
     
     thread_mutex = PTHREAD_MUTEX_INITIALIZER;
+    thread_cond = PTHREAD_COND_INITIALIZER;
+    //done = false;
+    follower_to_leader.resize(Env::nthreads, -1);
+    //n_follower_threads = 0;
+    follower_threads_info.resize(Env::nthreads);
+    for(int32_t i = 0; i < Env::nthreads; i++)
+        follower_threads_info[i].resize(Env::nthreads);
     
     //pthread_mutex_lock(&mutex);
     //pthread_mutex_unlock(&mutex);
@@ -174,6 +199,7 @@ int Env::init() {
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
 }
+
 
 int Env::get_nsockets() {
     const char* command = "lscpu | grep 'Socket(s)' | sed 's/[^0-9]*//g'";
