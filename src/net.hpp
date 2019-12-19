@@ -492,10 +492,10 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
         pthread_barrier_wait(&Env::thread_barrier);
     }
     else if (parallelism_type  == PARALLELISM_TYPE::_DATA_X_DATA_) {
-        std::vector<int32_t> my_helper_threads;
-        my_helper_threads.push_back(tid);
+        std::vector<int32_t> my_follower_threads;
+        my_follower_threads.push_back(tid);
         if(tid == 0) sleep(3);
-        if(tid == 5) sleep(6);
+        if(tid == 5) sleep(10);
         auto start = std::chrono::high_resolution_clock::now();  
         for (uint32_t l = 0; l < maxLayers; l++) {
             if(not(l%2)) {
@@ -513,65 +513,96 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
             auto& B_spmat = B_tile.spmat;
             auto& b_bias = biasWeightVecs[l];  
             
-            if(!Env::helper_threads.empty()) {
+            
+            if(!Env::follower_threads.empty()) {
                 pthread_mutex_lock(&Env::thread_mutex);
-                    my_helper_threads.insert(my_helper_threads.end(), Env::helper_threads.begin(), Env::helper_threads.end());
-                    Env::helper_threads.erase(Env::helper_threads.begin(), Env::helper_threads.end());
+                if(!Env::follower_threads.empty()) {
+                    my_follower_threads.insert(my_follower_threads.end(), Env::follower_threads.begin(), Env::follower_threads.end());
+                    Env::follower_threads.erase(Env::follower_threads.begin(), Env::follower_threads.end());
                     
-                    //num_threads += Env::n_helper_threads;
-                    //Env::n_helper_threads = 0;
+                    //num_threads += Env::n_follower_threads;
+                    //Env::n_follower_threads = 0;
                     
-                    //my_helper_threads.resize(Env::helper_threads.size());
-                    //std::move(Env::helper_threads.begin(), Env::helper_threads.end(), my_helper_threads.begin()); 
-                    //my_helper_threads.push_back(tid);
+                    //my_follower_threads.resize(Env::follower_threads.size());
+                    //std::move(Env::follower_threads.begin(), Env::follower_threads.end(), my_follower_threads.begin()); 
+                    //my_follower_threads.push_back(tid);
                     
                     
-                    for(uint32_t t = 0; t < my_helper_threads.size(); t++) {
-                        uint32_t layer = l;
+                    for(uint32_t t = 0; t < my_follower_threads.size(); t++) {
+                        int32_t thread = my_follower_threads[t];
                         uint32_t rowgroup = Env::tile_index[tid];
-                        uint32_t start_col = ((ncols/my_helper_threads.size()) * t);
-                        uint32_t end_col   = (t == (my_helper_threads.size()-1)) ? ncols : ((ncols/my_helper_threads.size()) * (t+1));
-                        Env::helper_threads_info[tid][my_helper_threads[t]] = std::move(Env::helper_thread_info(rowgroup, layer, start_col, end_col));
+                        uint32_t layer = l;
+                        uint32_t start_col = ((ncols/my_follower_threads.size()) * t);
+                        uint32_t end_col   = (t == (my_follower_threads.size()-1)) ? ncols : ((ncols/my_follower_threads.size()) * (t+1));
+                        Env::follower_threads_info[tid][thread] = std::move(Env::helper_thread_info(thread, rowgroup, layer, start_col, end_col));
+                        Env::follower_to_leader[thread] = tid;
                     }
                     
-                    printf("There are %d helper threads [%lu %lu] %d\n", Env::n_helper_threads, Env::helper_threads.size(), my_helper_threads.size(), my_helper_threads[0]);
-                    
+                    printf("%d: There are [%lu %lu] %d\n", tid, Env::follower_threads.size(), my_follower_threads.size(), Env::follower_to_leader[0]);
+                }
                     //for(int32_t i = 0; i < num_threads; i++) {
-                      //  auto info = Env::helper_threads_info[tid][i];
+                      //  auto info = Env::follower_threads_info[tid][i];
                         //printf("%d: %d %d %d %d\n", i, info.layer, info.rowgroup, info.start_col, info.end_col);
                     //}
                     
 
                     
                     
-                pthread_mutex_unlock(&Env::thread_mutex);
+                
 
-            //    const uint32_t start_col = Env::helper_threads_info[tid][tid].start_col;
-              //  const uint32_t end_col = Env::helper_threads_info[tid][tid].end_col;
+            //    const uint32_t start_col = Env::follower_threads_info[tid][tid].start_col;
+              //  const uint32_t end_col = Env::follower_threads_info[tid][tid].end_col;
                 //std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
                 //Env::index_nnz[tid] = 0;
                 
 //                printf("<%d %lu>\n", tid, Env::offset_nnz[tid]);                
                 
-                
-                
+                pthread_cond_broadcast(&Env::thread_cond); 
+                //pthread_cond_signal(&Env::thread_cond); 
+                pthread_mutex_unlock(&Env::thread_mutex);
                 
             }
+            
             //else {
+            if(my_follower_threads.size() == 1) {
                 const uint32_t start_col = 0;
-                const uint32_t end_col = std::static_pointer_cast<struct CSC<Weight>>(B_spmat)->ncols;
+                const uint32_t end_col   = std::static_pointer_cast<struct CSC<Weight>>(B_spmat)->ncols;
                 std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
                 Env::index_nnz[tid] = 0;
-                
+                printf("1. tid=%d nnz=%lu ht=%lu\n", tid, Env::offset_nnz[tid], my_follower_threads.size());
+                /*
                 start_time = Env::tic();
                 C_spmat->reallocate(Env::offset_nnz[tid], nrows, ncols, tid);
                 
-                printf("%d %lu\n", tid, Env::offset_nnz[tid]);
+                
                 
                 if(!tid) Env::memory_time += Env::toc(start_time);
                 Env::memory_allocation_time[tid] += Env::toc(start_time);
 
                 spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
+                */
+            }
+            else { // my_follower_threads.size() > 1
+                const uint32_t start_col = Env::follower_threads_info[tid][tid].start_col;
+                const uint32_t end_col   = Env::follower_threads_info[tid][tid].end_col;
+                std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
+                Env::index_nnz[tid] = 0;
+                printf("2. tid=%d nnz=%lu ht=%lu\n", tid, Env::offset_nnz[tid], my_follower_threads.size());
+                /*
+                start_time = Env::tic();
+                C_spmat->reallocate(Env::offset_nnz[tid], nrows, ncols, tid);
+                
+                
+                
+                if(!tid) Env::memory_time += Env::toc(start_time);
+                Env::memory_allocation_time[tid] += Env::toc(start_time);
+
+                spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, refine, tid);
+            
+                printf(">>>> %d %lu\n ", tid, my_follower_threads.size());
+                */
+                
+            }
             //}
 
 
@@ -582,29 +613,76 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
 
             if(!tid) Env::iteration++;
         }
+
+        
+        //if(Env::follower_threads.size() == (uint32_t) Env::nthreads) Env::done = true;
+        
+        printf("%d %lu %lu\n", tid, my_follower_threads.size(), Env::follower_threads.size());    
+        while(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
+            pthread_mutex_lock(&Env::thread_mutex);
+                //Env::n_follower_threads += num_threads;
+                //Env::n_follower_threads++;
+                //Env::follower_threads.push_back(tid);
+                if(!my_follower_threads.empty()) {
+                    Env::follower_threads.insert(Env::follower_threads.end(), my_follower_threads.begin(), my_follower_threads.end());
+                    my_follower_threads.erase(my_follower_threads.begin(), my_follower_threads.end());
+                }
+                Env::follower_to_leader[tid];
+                if(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
+                    printf("wait for %d\n", tid);
+                    pthread_cond_wait(&Env::thread_cond, &Env::thread_mutex);    
+                }
+                else {
+                    printf("Bcast all %d\n", tid);
+                    pthread_cond_broadcast(&Env::thread_cond);    
+                }
+            pthread_mutex_unlock(&Env::thread_mutex);
+            
+            
+            int32_t& my_leader = Env::follower_to_leader[tid];
+            printf("tid %d with leader %d\n", tid, my_leader);
+            if(my_leader != -1) {
+                uint32_t           layer = Env::follower_threads_info[my_leader][tid].layer;
+                const uint32_t rowgroup  = Env::follower_threads_info[my_leader][tid].rowgroup;
+                const uint32_t start_col = Env::follower_threads_info[my_leader][tid].start_col;
+                const uint32_t end_col   = Env::follower_threads_info[my_leader][tid].end_col;
+                printf("%d: layer = %d\n", tid, layer);
+                for (uint32_t l = layer; l < maxLayers; l++) {
+                    if(not(l%2)) {
+                        A_tile = inputFeatures->tiles[rowgroup][0];
+                        C_tile = output->tiles[rowgroup][0];
+                    }
+                    else {
+                        A_tile = output->tiles[rowgroup][0];
+                        C_tile = inputFeatures->tiles[rowgroup][0];
+                    }
+
+                    auto& A_spmat = A_tile.spmat;
+                    auto& C_spmat = C_tile.spmat;
+                    B_tile = layers[l]->tiles[0][0];
+                    auto& B_spmat = B_tile.spmat;
+                    auto& b_bias = biasWeightVecs[l];  
+                
+                    std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
+                    Env::index_nnz[tid] = 0;
+                    printf("2. tid=%d/%d nnz=%lu ht=%lu\n", my_leader, tid, Env::offset_nnz[tid], my_follower_threads.size());
+                }
+                //my_leader = -1;
+            }
+        }
+        
         auto finish = std::chrono::high_resolution_clock::now();
-        
-        
-        
         if(!tid) Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
         Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
         
         
         
-        printf("%d %lu %lu\n", tid, my_helper_threads.size(), Env::helper_threads.size());    
-        pthread_mutex_lock(&Env::thread_mutex);
-            //Env::n_helper_threads += num_threads;
-            //Env::n_helper_threads++;
-            //Env::helper_threads.push_back(tid);
-            Env::helper_threads.insert(Env::helper_threads.end(), my_helper_threads.begin(), my_helper_threads.end());
-            my_helper_threads.erase(my_helper_threads.begin(), my_helper_threads.end());
-        pthread_mutex_unlock(&Env::thread_mutex);
+        //while(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
+            //std::this_thread::sleep_for(std::chrono::nanoseconds(1));
+            
+        //}
         
-        while(Env::helper_threads.size() != (uint32_t) Env::nthreads) {
-            std::this_thread::sleep_for(std::chrono::nanoseconds(1));
-        }
-        
-        
+        printf("%d I'm done \n", tid);    
         
 
         
