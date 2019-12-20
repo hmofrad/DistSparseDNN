@@ -51,12 +51,12 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         }
         nrows = A_nrows;
         ncols = B_ncols;
-
-        //uint32_t start_col = 0;
-        //uint32_t end_col   = 0;
+        /*
+        uint32_t start_col = 0;
+        uint32_t end_col   = 0;
         
         //uint32_t displacement_nnz = Env::displacement_nnz[tid];
-        /*
+        
         if(refine) {
             start_col = Env::start_col[tid];
             end_col   = Env::end_col[tid];    
@@ -99,7 +99,9 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
                  std::shared_ptr<struct Compressed_Format<Weight>> C,
                  std::shared_ptr<struct Data_Block<Weight>> s,
                  const std::shared_ptr<struct Data_Block<Weight>> b,
-                 bool refine,
+                 //bool refine,
+                 const uint32_t start_col,
+                 const uint32_t end_col,
                  const int32_t tid) {
                      
     double start_time = Env::tic();
@@ -140,6 +142,7 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             std::exit(Env::finalize()); 
         }
         
+        /*
         uint32_t start_col = 0;
         uint32_t end_col   = 0;
         //uint32_t displacement_nnz = Env::displacement_nnz[tid];
@@ -156,6 +159,10 @@ inline void spmm(std::shared_ptr<struct Compressed_Format<Weight>> A,
             offset = Env::start_col[tid];
         }
         
+        uint64_t& index = Env::index_nnz[tid];
+        */
+        
+        uint32_t offset = 0;
         uint64_t& index = Env::index_nnz[tid];
         
         for(uint32_t j = start_col; j < end_col; j++) {
