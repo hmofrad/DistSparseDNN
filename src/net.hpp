@@ -537,7 +537,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                         Env::follower_threads_info[tid][thread] = std::move(Env::helper_thread_info(thread, rowgroup, layer, start_col, end_col));
                         Env::follower_to_leader[thread] = tid;
                     }
-                    
+                    Env::num_follower_threads[tid] = my_follower_threads.size()-1;
                     printf("%d: There are [%lu %lu] %d\n", tid, Env::follower_threads.size(), my_follower_threads.size(), Env::follower_to_leader[0]);
                 }
                     //for(int32_t i = 0; i < num_threads; i++) {
@@ -585,9 +585,46 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
             else { // my_follower_threads.size() > 1
                 const uint32_t start_col = Env::follower_threads_info[tid][tid].start_col;
                 const uint32_t end_col   = Env::follower_threads_info[tid][tid].end_col;
+                uint64_t& my_nnz = Env::follower_threads_info[tid][tid].nnz;
                 std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
+                my_nnz = Env::offset_nnz[tid];
                 Env::index_nnz[tid] = 0;
+                
                 printf("2. tid=%d nnz=%lu ht=%lu\n", tid, Env::offset_nnz[tid], my_follower_threads.size());
+                
+                start_time = Env::tic();
+                //while((Env::thread_counters[tid] + 1) != my_follower_threads.size()) {
+                  //  std::this_thread::sleep_for(std::chrono::nanoseconds(1));
+                    //printf("%d %lu\n", Env::thread_counters[tid], (my_follower_threads.size() - 1));
+                //}
+                
+                pthread_mutex_lock(&Env::thread_mutexes1[tid]);
+                pthread_cond_wait(&Env::thread_conds1[tid], &Env::thread_mutexes1[tid]);  
+                pthread_mutex_unlock(&Env::thread_mutexes1[tid]);
+                
+                pthread_mutex_lock(&Env::thread_mutexes[tid]);
+                Env::thread_counters[tid] = 0;
+                nnz = 0;
+                for(auto t: my_follower_threads) {
+                    auto& thread_info = Env::follower_threads_info[tid][t];
+                    printf("t=%d  nnz = %lu\n", t, thread_info.nnz);
+                    nnz += thread_info.nnz;
+                    thread_info.nnz = 0;
+                }
+                printf(">>>>>%d total nnz = %lu\n", tid, nnz);
+                
+                pthread_cond_broadcast(&Env::thread_conds[tid]);  
+                pthread_mutex_unlock(&Env::thread_mutexes[tid]);
+                Env::memory_time += Env::toc(start_time);
+                Env::memory_allocation_time[tid] += Env::toc(start_time);
+                
+                C_tile = output->tiles[Env::rank][0];
+                auto& C_spmat = C_tile.spmat;
+                auto& b_bias = biasWeightVecs[l];
+                
+               
+                
+                
                 /*
                 start_time = Env::tic();
                 C_spmat->reallocate(Env::offset_nnz[tid], nrows, ncols, tid);
@@ -627,7 +664,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                     Env::follower_threads.insert(Env::follower_threads.end(), my_follower_threads.begin(), my_follower_threads.end());
                     my_follower_threads.erase(my_follower_threads.begin(), my_follower_threads.end());
                 }
-                Env::follower_to_leader[tid];
+                Env::follower_to_leader[tid] = -1;
                 if(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
                     printf("wait for %d\n", tid);
                     pthread_cond_wait(&Env::thread_cond, &Env::thread_mutex);    
@@ -646,6 +683,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 const uint32_t rowgroup  = Env::follower_threads_info[my_leader][tid].rowgroup;
                 const uint32_t start_col = Env::follower_threads_info[my_leader][tid].start_col;
                 const uint32_t end_col   = Env::follower_threads_info[my_leader][tid].end_col;
+                uint64_t& my_nnz = Env::follower_threads_info[my_leader][tid].nnz;
                 printf("%d: layer = %d\n", tid, layer);
                 for (uint32_t l = layer; l < maxLayers; l++) {
                     if(not(l%2)) {
@@ -664,7 +702,20 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                     auto& b_bias = biasWeightVecs[l];  
                 
                     std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
+                    my_nnz = Env::offset_nnz[tid];
                     Env::index_nnz[tid] = 0;
+                    printf("%d: mynnz=%lu\n", tid, my_nnz);
+                    pthread_mutex_lock(&Env::thread_mutexes[my_leader]);
+                    Env::thread_counters[my_leader]++;
+                    printf("<%d %d>\n", tid, Env::thread_counters[my_leader]);
+                    if(Env::thread_counters[my_leader] == Env::num_follower_threads[my_leader]) {
+                        pthread_mutex_lock(&Env::thread_mutexes1[my_leader]);
+                        pthread_cond_signal(&Env::thread_conds1[my_leader]); 
+                        pthread_mutex_unlock(&Env::thread_mutexes1[my_leader]);
+                    }
+                    pthread_cond_wait(&Env::thread_conds[my_leader], &Env::thread_mutexes[my_leader]);  
+                    pthread_mutex_unlock(&Env::thread_mutexes[my_leader]);
+                    
                     printf("2. tid=%d/%d nnz=%lu ht=%lu\n", my_leader, tid, Env::offset_nnz[tid], my_follower_threads.size());
                 }
                 //my_leader = -1;
