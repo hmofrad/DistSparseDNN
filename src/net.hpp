@@ -622,6 +622,10 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 auto& C_spmat = C_tile.spmat;
                 auto& b_bias = biasWeightVecs[l];
                 
+                start_time = Env::tic();
+                C_spmat->reallocate(nnz, nrows, ncols);
+                Env::memory_time += Env::toc(start_time);
+                Env::memory_allocation_time[tid] += Env::toc(start_time);
                
                 
                 
