@@ -90,7 +90,12 @@ namespace Env {
     pthread_barrier_t thread_barrier;
     pthread_cond_t thread_cond; 
     pthread_mutex_t thread_mutex;
-    //int32_t n_follower_threads;
+    std::vector<pthread_cond_t> thread_conds; 
+    std::vector<pthread_mutex_t> thread_mutexes;
+    std::vector<pthread_cond_t> thread_conds1; 
+    std::vector<pthread_mutex_t> thread_mutexes1;
+    std::vector<uint32_t> thread_counters;
+    std::vector<uint32_t> num_follower_threads;
     std::vector<int32_t> follower_threads;
     std::vector<std::vector<struct helper_thread_info>> follower_threads_info;
     bool done;
@@ -127,7 +132,10 @@ namespace Env {
             uint32_t layer;
             uint32_t start_col;
             uint32_t end_col;
+            uint64_t nnz;
     };
+    
+    //void pthread_barrier_wait_for_leader(int32_t leader, std::vector<int32_t> threads)
 
 }
 
@@ -186,9 +194,22 @@ int Env::init() {
     
     thread_mutex = PTHREAD_MUTEX_INITIALIZER;
     thread_cond = PTHREAD_COND_INITIALIZER;
+    thread_mutexes.resize(Env::nthreads);
+    thread_conds.resize(Env::nthreads);
+    thread_mutexes1.resize(Env::nthreads);
+    thread_conds1.resize(Env::nthreads);
+    thread_counters.resize(Env::nthreads);
+    for(int32_t i = 0; i < Env::nthreads; i++) {
+        thread_mutexes[i] = PTHREAD_MUTEX_INITIALIZER;
+        thread_conds[i] = PTHREAD_COND_INITIALIZER;
+        thread_mutexes1[i] = PTHREAD_MUTEX_INITIALIZER;
+        thread_conds1[i] = PTHREAD_COND_INITIALIZER;
+        thread_counters[i] = 0;
+    }
+    
     //done = false;
     follower_to_leader.resize(Env::nthreads, -1);
-    //n_follower_threads = 0;
+    num_follower_threads.resize(Env::nthreads);
     follower_threads_info.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++)
         follower_threads_info[i].resize(Env::nthreads);
