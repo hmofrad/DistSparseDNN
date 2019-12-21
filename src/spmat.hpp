@@ -34,6 +34,7 @@ struct Compressed_Format {
         virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t tid) {};
         virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {};
         virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other, const int32_t tid) {};
+        virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other, const int32_t tid, const int32_t leader) {};
         virtual void walk() {};
         virtual void walk1() {};
         virtual void walk(const int32_t tid) {};
@@ -73,6 +74,7 @@ struct CSC: public Compressed_Format<Weight> {
         void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_);
         void adjust(const int32_t tid);
         void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const int32_t tid, const int32_t leader);
 
         
         uint64_t nnz_i = 0;
@@ -675,5 +677,71 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     }
     pthread_barrier_wait(&Env::thread_barrier);
 }
+
+template<typename Weight>
+void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, const int32_t tid, const int32_t leader) {
+    uint32_t  o_ncols = other->ncols;
+    uint32_t  o_nrows = other->nrows;
+    uint64_t  o_nnz   = other->nnz;
+    uint64_t  o_nnz_i = other->nnz_i;
+    uint32_t* o_JA    = other->JA_blk->ptr;
+    uint32_t* o_IA    = other->IA_blk->ptr;
+    Weight*   o_A     = other->A_blk->ptr;
+
+    if(CSC::ncols != o_ncols){// or (CSC::nrows != o_nrows)) {
+        fprintf(stderr, "Error: Cannot repopulate CSC\n");
+        exit(1);
+    }
+    
+    if(tid == leader) {
+        CSC::nnz = o_nnz_i;
+        CSC::nnz_i = o_nnz_i;
+        CSC::JA_blk->clear();
+        CSC::IA_blk->reallocate(CSC::nnz_i);
+        CSC::IA_blk->clear();
+        CSC::A_blk->reallocate(CSC::nnz_i);
+        CSC::A_blk->clear();
+        pthread_mutex_lock(&Env::thread_mutexes[tid]);
+        pthread_cond_broadcast(&Env::thread_conds[tid]);  
+        pthread_mutex_unlock(&Env::thread_mutexes[tid]);
+    }
+    else {
+        pthread_mutex_lock(&Env::thread_mutexes[leader]);
+        pthread_cond_wait(&Env::thread_conds[leader], &Env::thread_mutexes[leader]);  
+        pthread_mutex_unlock(&Env::thread_mutexes[leader]);
+    }
+    
+    uint32_t* JA = CSC::JA_blk->ptr;
+    uint32_t* IA = CSC::IA_blk->ptr;
+    Weight*    A = CSC::A_blk->ptr;
+
+    uint32_t start_col = Env::start_col[tid];
+    uint32_t end_col = Env::end_col[tid];
+    for(int32_t i = 0; i < tid; i++) {
+        JA[start_col+1] += (Env::index_nnz[i] - Env::offset_nnz[i]);
+    }
+
+    for(uint32_t j = start_col; j < end_col; j++) {
+        JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
+        uint32_t& k = JA[j+1];
+        uint32_t m = (j == start_col) ? Env::displacement_nnz[tid] : 0;
+        for(uint32_t i = o_JA[j] + m; i < o_JA[j + 1]; i++) {
+            IA[k] = o_IA[i];
+            A[k]  = o_A[i];
+            k++;
+        }
+    }
+    if(tid == leader){
+        pthread_mutex_lock(&Env::thread_mutexes[tid]);
+        pthread_cond_broadcast(&Env::thread_conds[tid]);  
+        pthread_mutex_unlock(&Env::thread_mutexes[tid]);
+    }
+    else {
+        pthread_mutex_lock(&Env::thread_mutexes[leader]);
+        pthread_cond_wait(&Env::thread_conds[leader], &Env::thread_mutexes[leader]);  
+        pthread_mutex_unlock(&Env::thread_mutexes[leader]);
+    }
+}
+
 
 #endif
