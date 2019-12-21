@@ -88,12 +88,15 @@ namespace Env {
     std::vector<double> execution_time;
     
     pthread_barrier_t thread_barrier;
+    std::vector<pthread_barrier_t> thread_barriers;
     pthread_cond_t thread_cond; 
     pthread_mutex_t thread_mutex;
     std::vector<pthread_cond_t> thread_conds; 
     std::vector<pthread_mutex_t> thread_mutexes;
     std::vector<pthread_cond_t> thread_conds1; 
     std::vector<pthread_mutex_t> thread_mutexes1;
+    std::vector<pthread_cond_t> thread_conds2; 
+    std::vector<pthread_mutex_t> thread_mutexes2;
     std::vector<uint32_t> thread_counters;
     std::vector<uint32_t> num_follower_threads;
     std::vector<int32_t> follower_threads;
@@ -198,12 +201,17 @@ int Env::init() {
     thread_conds.resize(Env::nthreads);
     thread_mutexes1.resize(Env::nthreads);
     thread_conds1.resize(Env::nthreads);
+    thread_mutexes2.resize(Env::nthreads);
+    thread_conds2.resize(Env::nthreads);
     thread_counters.resize(Env::nthreads);
+    thread_barriers.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++) {
         thread_mutexes[i] = PTHREAD_MUTEX_INITIALIZER;
         thread_conds[i] = PTHREAD_COND_INITIALIZER;
         thread_mutexes1[i] = PTHREAD_MUTEX_INITIALIZER;
         thread_conds1[i] = PTHREAD_COND_INITIALIZER;
+        thread_mutexes2[i] = PTHREAD_MUTEX_INITIALIZER;
+        thread_conds2[i] = PTHREAD_COND_INITIALIZER;
         thread_counters[i] = 0;
     }
     
