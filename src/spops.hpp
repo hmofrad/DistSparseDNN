@@ -198,6 +198,7 @@ inline void adjust(std::shared_ptr<struct Compressed_Format<Weight>> C,
     Env::memory_allocation_time[tid] += Env::toc(start_time);
 }
 
+
 template<typename Weight>
 inline void walk_by_tid(std::shared_ptr<struct Compressed_Format<Weight>> C,
                         const int32_t tid) {
@@ -228,6 +229,22 @@ inline void repopulate(std::shared_ptr<struct Compressed_Format<Weight>> A,
     const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C);
 
     A_CSC->repopulate(C_CSC, tid);
+
+    if(!tid) Env::memory_time += Env::toc(start_time);
+    Env::memory_allocation_time[tid] += Env::toc(start_time);
+}
+
+template<typename Weight>
+inline void repopulate(std::shared_ptr<struct Compressed_Format<Weight>> A,
+                       std::shared_ptr<struct Compressed_Format<Weight>> C,
+                       const int32_t tid,
+                       const int32_t leader) {
+    double start_time = Env::tic();
+   
+    const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
+    const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C);
+
+    A_CSC->repopulate(C_CSC, tid, leader);
 
     if(!tid) Env::memory_time += Env::toc(start_time);
     Env::memory_allocation_time[tid] += Env::toc(start_time);
