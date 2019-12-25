@@ -131,7 +131,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
     
-    maxLayers = 5;
+    //maxLayers = 10;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -535,8 +535,8 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
     else if (parallelism_type  == PARALLELISM_TYPE::_DATA_X_DATA_) {
         std::vector<int32_t> my_follower_threads;
         my_follower_threads.push_back(tid);
-        if(tid == 0) sleep(3);
-        //if(tid == 5) sleep(10);
+        //if(tid == 0) sleep(6);
+        //if(tid == 4) sleep(10);
         auto start = std::chrono::high_resolution_clock::now();  
         for (uint32_t l = 0; l < maxLayers; l++) {
             if(not(l%2)) {
@@ -553,9 +553,10 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
             B_tile = layers[l]->tiles[0][0];
             auto& B_spmat = B_tile.spmat;
             auto& b_bias = biasWeightVecs[l];  
-            
-            if(!Env::follower_threads.empty()) {
-            //if(!Env::follower_threads.empty() and (my_follower_threads.size() == 1)) {
+            //if(0){
+            //if(!Env::follower_threads.empty()) {
+                        //pthread_mutex_lock(&Env::thread_mutexes[tid]);    
+            if(!Env::follower_threads.empty() and (my_follower_threads.size() == 1)) {
                 pthread_mutex_lock(&Env::thread_mutex);
                 if(!Env::follower_threads.empty()) {
                     my_follower_threads.insert(my_follower_threads.end(), Env::follower_threads.begin(), Env::follower_threads.end());
@@ -596,17 +597,27 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 //std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
                 //Env::index_nnz[tid] = 0;
                 
-                printf("leader tid=%d starts with %lu followers\n", tid, my_follower_threads.size()-1); 
-                pthread_barrier_init(&Env::thread_barriers[tid], NULL, my_follower_threads.size()-1);
+                //printf("leader tid=%d starts with %lu followers: ", tid, my_follower_threads.size()-1); 
+                //for(auto f: my_follower_threads) {printf("%d ", f);} printf("\n");
+                
+                
+                pthread_barrier_init(&Env::thread_barriers[tid], NULL, my_follower_threads.size());
+                
+                
+                
                 pthread_cond_broadcast(&Env::thread_cond); 
                 //pthread_cond_signal(&Env::thread_cond); 
                 pthread_mutex_unlock(&Env::thread_mutex);
                 
             }
             
+
+            //pthread_cond_broadcast(&Env::thread_conds[tid]);  
+            //pthread_mutex_unlock(&Env::thread_mutexes[tid]);
+            
             //else {
             if(my_follower_threads.size() == 1) {
-                printf("-leader tid=%d, layer=%d\n", tid, l);
+                //printf("-leader tid=%d, layer=%d\n", tid, l);
                 const uint32_t start_col = 0;
                 const uint32_t end_col   = std::static_pointer_cast<struct CSC<Weight>>(B_spmat)->ncols;
                 std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
@@ -624,8 +635,24 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, start_col, end_col, tid);
             }
             else { // my_follower_threads.size() > 1
-                printf("+leader tid=%d, layer=%d, f=%lu\n", tid, l, my_follower_threads.size()-1);
-     
+                //printf("+leader %d layer=%d nfollowers=%lu\n", tid, l, my_follower_threads.size()-1);
+                
+                
+                //pthread_mutex_lock(&Env::thread_mutexes[tid]);
+                //pthread_cond_broadcast(&Env::thread_conds[tid]);  
+                //pthread_mutex_unlock(&Env::thread_mutexes[tid]);
+                
+                pthread_barrier_wait(&Env::thread_barriers[tid]);
+                //pthread_mutex_lock(&Env::thread_mutexes[tid]);
+                //for(uint32_t i = 0; i < my_follower_threads.size()-1; i++)
+                  //  pthread_cond_signal(&Env::thread_conds[tid]); 
+                //pthread_cond_broadcast(&Env::thread_conds[tid]);             
+                //pthread_mutex_unlock(&Env::thread_mutexes[tid]);
+                
+                //pthread_mutex_lock(&Env::thread_mutexes[tid]);
+                //pthread_cond_wait(&Env::thread_conds[tid], &Env::thread_mutexes[tid]);  
+                //pthread_mutex_unlock(&Env::thread_mutexes[tid]);
+                
                 const uint32_t start_col = Env::follower_threads_info[tid][tid].start_col;
                 const uint32_t end_col   = Env::follower_threads_info[tid][tid].end_col;
                 uint64_t& my_nnz = Env::follower_threads_info[tid][tid].nnz;
@@ -641,12 +668,15 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                     //printf("%d %lu\n", Env::thread_counters[tid], (my_follower_threads.size() - 1));
                 //}
                 
-                pthread_mutex_lock(&Env::thread_mutexes1[tid]);
-                pthread_cond_wait(&Env::thread_conds1[tid], &Env::thread_mutexes1[tid]);  
-                pthread_mutex_unlock(&Env::thread_mutexes1[tid]);
-                
-                pthread_mutex_lock(&Env::thread_mutexes[tid]);
+                //pthread_mutex_lock(&Env::thread_mutexes1[tid]);
+                //pthread_cond_wait(&Env::thread_conds1[tid], &Env::thread_mutexes1[tid]);  
+                //pthread_mutex_unlock(&Env::thread_mutexes1[tid]);
                 Env::thread_counters[tid] = 0;
+                //printf("+leader tid=%d, layer=%d, before nnz\n", tid, l);
+                
+                pthread_barrier_wait(&Env::thread_barriers[tid]);
+                //pthread_mutex_lock(&Env::thread_mutexes[tid]);
+                
                 nnz = 0;
                 for(auto t: my_follower_threads) {
                     //auto& thread_info = Env::follower_threads_info[tid][t];
@@ -654,7 +684,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                     nnz += Env::offset_nnz[t];
                     //thread_info.nnz = 0;
                 }
-                printf("+leader tid=%d, layer=%d, nnz = %lu\n", tid, l, nnz);
+                //printf("+leader tid=%d, layer=%d, total nnz = %lu\n", tid, l, nnz);
                 
                     
                     //uint64_t nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
@@ -662,7 +692,7 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 uint64_t sum = 0;
                 for(int32_t i = my_follower_threads.size() - 1; i > 0; i--) {
                     int32_t t = my_follower_threads[i];
-                    auto& thread_info = Env::follower_threads_info[tid][t];
+                    //auto& thread_info = Env::follower_threads_info[tid][t];
                     sum += Env::offset_nnz[t];
                     Env::offset_nnz[t] = nnz - sum;
                     Env::index_nnz[t] = Env::offset_nnz[t];
@@ -672,37 +702,50 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                     
                 C_spmat->reallocate(nnz, nrows, ncols);          
                     
-                pthread_cond_broadcast(&Env::thread_conds[tid]);  
-                pthread_mutex_unlock(&Env::thread_mutexes[tid]);
+                //pthread_cond_broadcast(&Env::thread_conds[tid]);  
+                //pthread_mutex_unlock(&Env::thread_mutexes[tid]);
                 
                 
                 
                 Env::memory_time += Env::toc(start_time);
                 Env::memory_allocation_time[tid] += Env::toc(start_time);
-                
+                pthread_barrier_wait(&Env::thread_barriers[tid]);
                 spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, start_col, end_col, tid);
-        
-                pthread_mutex_lock(&Env::thread_mutexes1[tid]);
-                pthread_cond_broadcast(&Env::thread_conds1[tid]);  
-                pthread_mutex_unlock(&Env::thread_mutexes1[tid]);
-                /*
+                pthread_barrier_wait(&Env::thread_barriers[tid]);
+                
+                //pthread_mutex_lock(&Env::thread_mutexes1[tid]);
+                //pthread_cond_broadcast(&Env::thread_conds1[tid]);  
+                //pthread_mutex_unlock(&Env::thread_mutexes1[tid]);
+                Env::displacement_nnz[tid] = 0;
+                for(uint32_t i = 1; i < my_follower_threads.size(); i++) {    
+                    int32_t t_minus_1 = my_follower_threads[i-1];
+                    int32_t t = my_follower_threads[i];
+                    Env::displacement_nnz[t] = Env::offset_nnz[t] - Env::index_nnz[t_minus_1];
+                }
+                
                 const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_spmat);
                 C_CSC->nnz_i = 0;
                 for(uint32_t i = 0; i < my_follower_threads.size(); i++) {    
                     int32_t t = my_follower_threads[i];
                     C_CSC->nnz_i += (Env::index_nnz[t] - Env::offset_nnz[t]);
                 }
-                printf("+leader tid=%d, layer=%d, nnzi=%lu\n", tid, l, C_CSC->nnz_i);
+                //printf("+leader tid=%d, layer=%d, nnzi=%lu\n", tid, l, C_CSC->nnz_i);
                 
-                pthread_mutex_lock(&Env::thread_mutexes2[tid]);
-                pthread_cond_broadcast(&Env::thread_conds2[tid]);  
-                pthread_mutex_unlock(&Env::thread_mutexes2[tid]);
+                //pthread_mutex_lock(&Env::thread_mutexes2[tid]);
+                //pthread_cond_broadcast(&Env::thread_conds2[tid]);  
+                //pthread_mutex_unlock(&Env::thread_mutexes2[tid]);
+                pthread_barrier_wait(&Env::thread_barriers[tid]);
+                repopulate(A_spmat, C_spmat, tid, tid, my_follower_threads);
                 
-                //repopulate(A_spmat, C_spmat, tid, tid);
-                */
                 
-                printf("+leader tid=%d, layer=%d done\n", tid, l);
+                //if(!Env::follower_threads.empty()) {
+                   // pthread_mutex_lock(&Env::thread_mutexes[my_leader]);
+                   // pthread_cond_wait(&Env::thread_conds[my_leader], &Env::thread_mutexes[my_leader]);  
+                    //pthread_mutex_unlock(&Env::thread_mutexes[my_leader]);
+                //}
                 
+                //printf("+leader tid=%d, layer=%d done\n", tid, l);
+                //pthread_barrier_wait(&Env::thread_barriers[my_leader]);
                 
                 //pthread_mutex_lock(&Env::thread_mutexes[tid]);
                 //pthread_cond_broadcast(&Env::thread_conds[tid]);  
@@ -733,11 +776,13 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
             if(!tid) Env::iteration++;
         }
 
-        printf("tid=%d added to the queue %lu %lu\n", tid, Env::follower_threads.size(), my_follower_threads.size());    
+        //printf("tid=%d added to the queue %lu %lu: ", tid, Env::follower_threads.size(), my_follower_threads.size());   
+        //for(auto f: my_follower_threads) {printf("%d ", f);} printf("\n");        
         //if(Env::follower_threads.size() == (uint32_t) Env::nthreads) Env::done = true;
         
         //printf("%d %lu %lu\n", tid, my_follower_threads.size(), Env::follower_threads.size());    
         while(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
+            //pthread_barrier_wait(&Env::thread_barriers[Env::follower_to_leader[tid]]);
             pthread_mutex_lock(&Env::thread_mutex);
                 //Env::n_follower_threads += num_threads;
                 //Env::n_follower_threads++;
@@ -748,11 +793,11 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 }
                 Env::follower_to_leader[tid] = -1;
                 if(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
-                    //printf("wait for %d\n", tid);
+                    //printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> tid %d is waiting %lu\n", tid, Env::follower_threads.size());
                     pthread_cond_wait(&Env::thread_cond, &Env::thread_mutex);    
                 }
                 else {
-                    //printf("Bcast all %d\n", tid);
+                    //printf(">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> Bcast all %d %lu\n", tid, Env::follower_threads.size());
                     pthread_cond_broadcast(&Env::thread_cond);    
                 }
             pthread_mutex_unlock(&Env::thread_mutex);
@@ -766,11 +811,31 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                 const uint32_t rowgroup  = Env::follower_threads_info[my_leader][tid].rowgroup;
                 uint64_t& my_nnz = Env::follower_threads_info[my_leader][tid].nnz;
                 for (uint32_t l = layer; l < maxLayers; l++) {
+                    //printf(" leader %d layer=%d, follower=%d\n", my_leader, l, tid);
+                    
+                    pthread_barrier_wait(&Env::thread_barriers[my_leader]);
+                    //pthread_mutex_lock(&Env::thread_mutexes[my_leader]);
+                    //pthread_cond_wait(&Env::thread_conds[my_leader], &Env::thread_mutexes[my_leader]);  
+                    //pthread_mutex_unlock(&Env::thread_mutexes[my_leader]);
+                    
+                    
+                    
+                    /*
+                    pthread_mutex_lock(&Env::thread_mutexes[my_leader]);
+                    Env::thread_counters[my_leader]++;
+                    if(Env::thread_counters[my_leader] == Env::num_follower_threads[my_leader]) {
+                        pthread_mutex_lock(&Env::thread_mutexes1[my_leader]);
+                        pthread_cond_signal(&Env::thread_conds1[my_leader]); 
+                        pthread_mutex_unlock(&Env::thread_mutexes1[my_leader]);
+                    }
+                    pthread_cond_wait(&Env::thread_conds[my_leader], &Env::thread_mutexes[my_leader]);  
+                    pthread_mutex_unlock(&Env::thread_mutexes[my_leader]);
+                    */
                     const uint32_t start_col = Env::follower_threads_info[my_leader][tid].start_col;
                     const uint32_t end_col   = Env::follower_threads_info[my_leader][tid].end_col;
                     
                     
-                    printf("follower=%d/%d, layer=%d\n", tid, my_leader, l);
+                    
                     if(not(l%2)) {
                         A_tile = inputFeatures->tiles[rowgroup][0];
                         C_tile = output->tiles[rowgroup][0];
@@ -789,35 +854,41 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
                     std::tie(Env::offset_nnz[tid], nrows, ncols) =  spmm_sym(A_spmat, B_spmat, s_spa, start_col, end_col, tid);
                     my_nnz = Env::offset_nnz[tid];
                     //Env::index_nnz[tid] = 0;
-                    printf("follower=%d/%d layer=%d nnz=%lu\n", tid, my_leader,l,  my_nnz);
-                    pthread_mutex_lock(&Env::thread_mutexes[my_leader]);
-                    Env::thread_counters[my_leader]++;
+                    //printf("follower=%d/%d layer=%d my nnz=%lu\n", tid, my_leader,l,  my_nnz);
+                    //pthread_mutex_lock(&Env::thread_mutexes[my_leader]);
+                    //Env::thread_counters[my_leader]++;
                     //printf("<%d %d>\n", tid, Env::thread_counters[my_leader]);
-                    if(Env::thread_counters[my_leader] == Env::num_follower_threads[my_leader]) {
-                        pthread_mutex_lock(&Env::thread_mutexes1[my_leader]);
-                        pthread_cond_signal(&Env::thread_conds1[my_leader]); 
-                        pthread_mutex_unlock(&Env::thread_mutexes1[my_leader]);
-                    }
-                    pthread_cond_wait(&Env::thread_conds[my_leader], &Env::thread_mutexes[my_leader]);  
-                    pthread_mutex_unlock(&Env::thread_mutexes[my_leader]);
+                    //if(Env::thread_counters[my_leader] == Env::num_follower_threads[my_leader]) {
+                    ///  pthread_mutex_lock(&Env::thread_mutexes1[my_leader]);
+                    //    pthread_cond_signal(&Env::thread_conds1[my_leader]); 
+                    //    pthread_mutex_unlock(&Env::thread_mutexes1[my_leader]);
+                    //}
+                    //pthread_cond_wait(&Env::thread_conds[my_leader], &Env::thread_mutexes[my_leader]);  
+                    //pthread_mutex_unlock(&Env::thread_mutexes[my_leader]);
                     
+                    pthread_barrier_wait(&Env::thread_barriers[my_leader]);
+                    
+                    pthread_barrier_wait(&Env::thread_barriers[my_leader]);
+                    //printf("follower=%d/%d layer=%d going for spmm\n", tid, my_leader, l);
                     spmm(A_spmat, B_spmat, C_spmat, s_spa, b_bias, start_col, end_col, tid);
+                    pthread_barrier_wait(&Env::thread_barriers[my_leader]);
                     
-                    pthread_mutex_lock(&Env::thread_mutexes1[my_leader]);
-                    pthread_cond_wait(&Env::thread_conds1[my_leader], &Env::thread_mutexes1[my_leader]);  
-                    pthread_mutex_unlock(&Env::thread_mutexes1[my_leader]);
+                    //pthread_mutex_lock(&Env::thread_mutexes1[my_leader]);
+                    //pthread_cond_wait(&Env::thread_conds1[my_leader], &Env::thread_mutexes1[my_leader]);  
+                    //pthread_mutex_unlock(&Env::thread_mutexes1[my_leader]);
                     
-                    printf("follower=%d/%d layer=%d spmm is done\n", tid, my_leader, l);
+                    //printf("follower=%d/%d layer=%d spmm is done\n", tid, my_leader, l);
                     
-                    /*
-                    pthread_mutex_lock(&Env::thread_mutexes2[my_leader]);
-                    pthread_cond_wait(&Env::thread_conds2[my_leader], &Env::thread_mutexes2[my_leader]);  
-                    pthread_mutex_unlock(&Env::thread_mutexes2[my_leader]);
-                    printf("follower=%d/%d layer=%d synch is done\n", tid, my_leader, l);
                     
-                    repopulate(A_spmat, C_spmat, tid, my_leader);
-                    printf("follower=%d/%d layer=%d repo is done\n", tid, my_leader, l);
-                    */
+                    //pthread_mutex_lock(&Env::thread_mutexes2[my_leader]);
+                    //pthread_cond_wait(&Env::thread_conds2[my_leader], &Env::thread_mutexes2[my_leader]);  
+                    //pthread_mutex_unlock(&Env::thread_mutexes2[my_leader]);
+                    
+                    pthread_barrier_wait(&Env::thread_barriers[my_leader]);
+                    //printf("follower=%d/%d layer=%d synch is done\n", tid, my_leader, l);
+                    repopulate(A_spmat, C_spmat, tid, my_leader, my_follower_threads);
+                    //printf("follower=%d/%d layer=%d repo is done\n", tid, my_leader, l);
+                    //pthread_barrier_wait(&Env::thread_barriers[my_leader]);
                     
                     //printf("2. tid=%d/%d [idx=%lu nnz=%lu] ht=%lu %lu\n", my_leader, tid, Env::index_nnz[tid], Env::offset_nnz[tid], my_follower_threads.size(), C_spmat->nnz);
                 }
@@ -836,13 +907,15 @@ void Net<Weight>::inferenceReLU_t(const int32_t tid) {
             
         //}
         
-        printf("tid=%d left\n", tid);    
+        //printf("tid=%d left %d\n", tid, Env::follower_to_leader[tid]);    
         
 
         
         C_tile = inputFeatures->tiles[Env::tile_index[tid]][0];
         auto& C_spmat = C_tile.spmat;
         bool passed = validate_prediction(C_spmat, trueCategories, C_tile.start_row, tid);
+        //bool passed = false;
+        //printf("tid=%d passed %d\n", tid, passed);   
         if(passed) {
             if(!tid) Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
         }
