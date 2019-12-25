@@ -89,6 +89,7 @@ namespace Env {
     
     pthread_barrier_t thread_barrier;
     std::vector<pthread_barrier_t> thread_barriers;
+    std::vector<pthread_barrier_t> thread_barriers1;
     pthread_cond_t thread_cond; 
     pthread_mutex_t thread_mutex;
     std::vector<pthread_cond_t> thread_conds; 
@@ -205,6 +206,9 @@ int Env::init() {
     thread_conds2.resize(Env::nthreads);
     thread_counters.resize(Env::nthreads);
     thread_barriers.resize(Env::nthreads);
+    thread_barriers1.resize(Env::nthreads);
+    follower_to_leader.resize(Env::nthreads, -1);
+    //follower_to_leader.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++) {
         thread_mutexes[i] = PTHREAD_MUTEX_INITIALIZER;
         thread_conds[i] = PTHREAD_COND_INITIALIZER;
@@ -213,10 +217,12 @@ int Env::init() {
         thread_mutexes2[i] = PTHREAD_MUTEX_INITIALIZER;
         thread_conds2[i] = PTHREAD_COND_INITIALIZER;
         thread_counters[i] = 0;
+        //pthread_barrier_init(&thread_barriers[i], NULL, 1);
+        //follower_to_leader[i] = i;
     }
     
     //done = false;
-    follower_to_leader.resize(Env::nthreads, -1);
+    
     num_follower_threads.resize(Env::nthreads);
     follower_threads_info.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++)
