@@ -238,15 +238,16 @@ template<typename Weight>
 inline void repopulate(std::shared_ptr<struct Compressed_Format<Weight>> A,
                        std::shared_ptr<struct Compressed_Format<Weight>> C,
                        const int32_t tid,
-                       const int32_t leader) {
+                       const int32_t leader,
+                       const std::vector<int32_t> my_follower_threads) {
     double start_time = Env::tic();
    
     const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A);
     const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C);
 
-    A_CSC->repopulate(C_CSC, tid, leader);
-
-    if(!tid) Env::memory_time += Env::toc(start_time);
+    A_CSC->repopulate(C_CSC, tid, leader, my_follower_threads);
+    
+    if(tid == leader) Env::memory_time += Env::toc(start_time);
     Env::memory_allocation_time[tid] += Env::toc(start_time);
 }
 
@@ -262,15 +263,21 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
     const uint32_t* A_IA   = A_CSC->IA_blk->ptr;
     const uint32_t* A_JA   = A_CSC->JA_blk->ptr;
     const Weight*    A_A   = A_CSC->A_blk->ptr;
-    
+    //printf("0. tid=%d %d %d %lu\n", tid, A_nrows, A_ncols, A_CSC->JA_blk->nitems);
     std::vector<uint32_t> allCategories(A_nrows);
 
     for(uint32_t j = 0; j < A_ncols; j++) {
         for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
+            
+            //if(A_IA[i] >= A_nrows) {
+              //  printf("0. tid=%d %d\n", tid, A_IA[i]);
+                //std::exit(0);
+            //}
             allCategories[A_IA[i]] = 1;
+            
         }
     }
-    
+
     bool me = 1;
     for(uint32_t i = 0; i < A_nrows; i++) {
         if(trueCategories[start_row + i] != allCategories[i]) {
@@ -280,7 +287,7 @@ inline bool validate_prediction(const std::shared_ptr<struct Compressed_Format<W
     }
     
     Env::checkconv[tid] = me;
-    
+
     pthread_barrier_wait(&Env::thread_barrier);
     int32_t us = std::accumulate(Env::checkconv.begin(), Env::checkconv.end(), 0);
     int32_t all = 0;
