@@ -30,30 +30,22 @@ class Tiling {
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
                const std::string input_file, const INPUT_TYPE input_type, 
-               const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, 
-               const REFINE_TYPE refine_type = REFINE_TYPE::_REFINE_NONE_, const bool repartition = true);
+               const TILING_TYPE tiling_type_, const bool repartition = false);
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, 
                const uint32_t nranks_, const uint32_t rank_nthreads_, const uint32_t nthreads_,
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
                const std::string input_file, const INPUT_TYPE input_type, 
-               const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, 
-               const REFINE_TYPE refine_type = REFINE_TYPE::_REFINE_NONE_, const bool repartition = true);               
+               const TILING_TYPE tiling_type_, const bool repartition = false);               
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
-               const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, 
-               const REFINE_TYPE refine_type = REFINE_TYPE::_REFINE_NONE_,
-               const std::vector<std::vector<struct Tile<Weight>>> other_tiles = nullptr, const bool repartition = true);
+               const TILING_TYPE tiling_type_, const bool repartition = false);
                 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_,
                const uint32_t rank_nthreads_, const uint32_t nthreads_, 
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
-               const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, 
-               const REFINE_TYPE refine_type = REFINE_TYPE::_REFINE_NONE_, 
-               const std::vector<std::vector<struct Tile<Weight>>> other_tiles = nullptr, const bool repartition = true);
-        
-
+               const TILING_TYPE tiling_type_, const bool repartition = false);
 
         uint32_t ntiles, nrowgrps, ncolgrps;
         uint32_t nranks, rank_ntiles, rank_nrowgrps, rank_ncolgrps;
@@ -67,8 +59,6 @@ class Tiling {
         uint64_t nnz;        
         uint32_t nrows, ncols;
         
-        
-
         uint32_t tile_height, tile_width;
         TILING_TYPE tiling_type;
         
@@ -77,9 +67,8 @@ class Tiling {
         
         bool one_rank = false;
         void set_threads_indices();
-        uint32_t get_tile_height(const int32_t thread_id); 
-        uint32_t get_tile_start_col(const int32_t thread_id); 
-        void set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles); 
+        uint32_t get_tile_info(const std::string field, const int32_t tid);
+        void     set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles); 
 
     private:
         void integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b);
@@ -87,14 +76,15 @@ class Tiling {
         void print_tiling(const std::string field);
         bool assert_tiling();
         
-        void tile_load();
-        void repartition_tiles(const std::string input_file, const INPUT_TYPE input_type);
-        void tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type);        
-        
-        void compress_triples(const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type);
         void exchange_triples();
         void insert_triples(std::vector<struct Triple<Weight>>& triples);
         void delete_triples(std::vector<struct Triple<Weight>>& triples);
+        void compress_triples();
+        
+        void repartition_tiles(const std::string input_file, const INPUT_TYPE input_type);
+        
+        void tile_load();
+        void tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type);
 };
 
 /* Process-based tiling based on MPI ranks*/ 
@@ -102,8 +92,8 @@ template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
-                       const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, 
-                       const REFINE_TYPE refine_type, const bool repartition) 
+                       const TILING_TYPE tiling_type_,
+                       const bool repartition) 
         : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
           nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
             
@@ -256,13 +246,12 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     print_tiling("rank");
     print_tiling("nedges");
 
-    //if((not one_rank) and repartition) {
     if(repartition) {        
         repartition_tiles(input_file, input_type);
         print_tiling("nedges");
         print_tiling("height");
     }
-    compress_triples(compression_type, refine_type);    
+    compress_triples();    
 }
 
 template<typename Weight>
@@ -270,8 +259,8 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                        const uint32_t rank_nthreads_, const uint32_t nthreads_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
-                       const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, 
-                       const REFINE_TYPE refine_type, const bool repartition)
+                       const TILING_TYPE tiling_type_, 
+                       const bool repartition)
                      : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        rank_nthreads(rank_nthreads_), nthreads(nthreads_),
                        nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
@@ -434,15 +423,13 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     print_tiling("thread");
     print_tiling("nedges");
    
-
-    //if((not one_rank) and repartition) {
     if(repartition) {
         repartition_tiles(input_file, input_type);
         print_tiling("nedges");
         print_tiling("width");
     }
 
-    compress_triples(compression_type, refine_type);
+    compress_triples();
 }
 
 
@@ -450,8 +437,7 @@ template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                        const uint32_t rank_nthreads_, const uint32_t nthreads_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
-                       const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type, 
-                       const std::vector<std::vector<struct Tile<Weight>>> other_tiles, const bool repartition) 
+                       const TILING_TYPE tiling_type_, const bool repartition)
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        nthreads(nthreads_),
                        nnz(nnz_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
@@ -555,26 +541,19 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
             tiles[i][j].nedges = 0;
         }
     }
-    
-    
+
     print_tiling("rank");
     print_tiling("thread");
     print_tiling("nedges");
-    
-    if(repartition) {
-        set_tile_info(other_tiles);
-        print_tiling("height");
-    }
 
-    compress_triples(compression_type, refine_type);  
+    compress_triples();  
 }
 
 
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
-                       const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type,
-                       const std::vector<std::vector<struct Tile<Weight>>> other_tiles, const bool repartition) 
+                       const TILING_TYPE tiling_type_, const bool repartition)
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        nnz(nnz_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
                            
@@ -668,15 +647,9 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     
     print_tiling("rank");
     print_tiling("nedges");
-    
-    if(repartition) {
-        set_tile_info(other_tiles);
-        print_tiling("height");
-    }
 
-    compress_triples(compression_type, refine_type);  
+    compress_triples();  
 }
-
 
 template<typename Weight>
 void Tiling<Weight>::set_threads_indices() {
@@ -725,16 +698,21 @@ void Tiling<Weight>::print_tiling(const std::string field) {
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {  
             auto& tile = tiles[i][j];   
-            if(field.compare("rank") == 0) 
+            if(field.compare("rank") == 0) {
                 Logging::print(Logging::LOG_LEVEL::VOID, "%d ", tile.rank);
-            else if(field.compare("thread") == 0) 
+            }
+            else if(field.compare("thread") == 0) {
                 Logging::print(Logging::LOG_LEVEL::VOID, "%d ", tile.thread);
-            else if(field.compare("nedges") == 0) 
+            }
+            else if(field.compare("nedges") == 0) {
                 Logging::print(Logging::LOG_LEVEL::VOID, "%d ", tile.nedges);
-            else if(field.compare("height") == 0) 
+            }
+            else if(field.compare("height") == 0) {
                 Logging::print(Logging::LOG_LEVEL::VOID, "%d ", tile.height);
-            else if(field.compare("width") == 0) 
+            }
+            else if(field.compare("width") == 0) {
                 Logging::print(Logging::LOG_LEVEL::VOID, "%d ", tile.width);
+            }
             if(j > skip) {
                 Logging::print(Logging::LOG_LEVEL::VOID, "...");
                 break;
@@ -894,6 +872,7 @@ void Tiling<Weight>::tile_load() {
         }
     }
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Done calculating load.\n");
+    Env::barrier();
     /*
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Start calculating imbalance.\n");
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Total number of edges = %lu\n", nedges);
@@ -903,8 +882,9 @@ void Tiling<Weight>::tile_load() {
     tile_load_print(colgrp_nedges, nedges, ncolgrps, "column group");
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile load: Done calculating imbalance.\n");
-    */
     Env::barrier();
+    */
+    
 }
 
 template<typename Weight>
@@ -1350,7 +1330,6 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             Env::barrier();
         }
         
-                
         for (uint32_t i = 0; i < nrowgrps; i++) {
             for (uint32_t j = 0; j < ncolgrps; j++) {
                 auto& tile = tiles[i][j];
@@ -1440,33 +1419,23 @@ void Tiling<Weight>::delete_triples(std::vector<struct Triple<Weight>>& triples)
 }
 
 template<typename Weight>
-uint32_t Tiling<Weight>::get_tile_height(const int32_t thread_id) {
+uint32_t Tiling<Weight>::get_tile_info(const std::string field, const int32_t tid) {
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
-            if((tile.rank == Env::rank) and (tile.thread == thread_id)) {
-                return(tile.height);
+            if((tile.rank == Env::rank) and (tile.thread == tid)) {
+                if(field.compare("start_row") == 0) {
+                    return(tile.start_row);
+                }
+                else if(field.compare("height") == 0) {
+                    return(tile.height);
+                }
             }
         }
     }
     Logging::print(Logging::LOG_LEVEL::WARN, "Tile info: Something is wrong.\n");
-    return(-1);
+    return(0);
 }
-
-template<typename Weight>
-uint32_t Tiling<Weight>::get_tile_start_col(const int32_t thread_id) {
-    for (uint32_t i = 0; i < nrowgrps; i++) {
-        for (uint32_t j = 0; j < ncolgrps; j++) {
-            auto& tile = tiles[i][j];
-            if((tile.rank == Env::rank) and (tile.thread == thread_id)) {
-                return(tile.start_col);
-            }
-        }
-    }
-    Logging::print(Logging::LOG_LEVEL::WARN, "Tile info: Something is wrong.\n");
-    return(-1);
-}
-
 
 template<typename Weight>
 void Tiling<Weight>::set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles) {
@@ -1482,27 +1451,24 @@ void Tiling<Weight>::set_tile_info(const std::vector<std::vector<struct Tile<Wei
             tile.width = other.width;
         }
     }
+    print_tiling("height");
 }
 
 template<typename Weight>
-void Tiling<Weight>::compress_triples(const COMPRESSED_FORMAT compression_type, const REFINE_TYPE refine_type) {
+void Tiling<Weight>::compress_triples(){//(const REFINE_TYPE refine_type) {
     Env::barrier();
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Start compressing tile using %s \n", COMPRESSED_FORMATS[compression_type]);
-    
-    const RowSort<Weight> f_row;
-    const ColSort<Weight> f_col;	
-    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Start compressing tile using CSC\n");
+
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
-                tile.sort(f_row, f_col, compression_type);
-                tile.compress(tile.triples.size(), nrows, ncols, compression_type, refine_type, one_rank);
+                tile.compress(one_rank);
             }
         }
     }    
 
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Done compressing tiles with %s.\n", REFINE_TYPES[refine_type]);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Done compressing tiles.\n");
     Env::barrier();      
 }
 #endif
