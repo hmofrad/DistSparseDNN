@@ -16,8 +16,6 @@
 #include <sys/sysinfo.h>
 #include <numa.h>
 //#include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
-
-
 #include "types.hpp"
 
 
@@ -38,6 +36,7 @@ namespace Env {
     bool NUMA_ALLOC = false;
     
     std::vector<uint32_t> tile_index;
+    std::vector<struct thread_struct> threads;
     
     int iteration = 0;
     
@@ -77,10 +76,6 @@ namespace Env {
     std::vector<uint64_t> checkcount;
     std::vector<uint64_t> checknnz;
     std::vector<bool> checkconv;
-    std::vector<std::vector<bool>> rows;
-    std::vector<std::vector<bool>> cols;
-    std::vector<std::vector<uint64_t>> rows_threads;
-    std::vector<std::vector<uint64_t>> cols_threads;
     
     std::vector<double> spmm_symb_time;
     std::vector<double> spmm_real_time;
@@ -110,7 +105,7 @@ namespace Env {
     int finalize();
     
     //void assign_row(uint32_t nrows, int32_t tid);
-    void assign_col(uint32_t ncols, bool refine, int32_t tid);
+    void assign_col(uint32_t ncols, int32_t tid);
     uint64_t assign_nnz();
     void assign_cols();
     double clock();
@@ -125,6 +120,18 @@ namespace Env {
     int get_nsockets();
     bool numa_configure();
     bool set_thread_affinity(const int32_t tid);
+    
+    struct thread_struct {
+        thread_struct(){};
+        ~thread_struct(){};
+        int32_t thread_id;
+        uint32_t start_col;
+        uint32_t end_col;
+        uint32_t off_col; 
+        uint64_t idx_nnz; // Index
+        uint64_t off_nnz; // Offset 
+        uint64_t dis_nnz; // Displacement 
+    };
     
     struct helper_thread_info {
             helper_thread_info(){};
@@ -181,10 +188,6 @@ int Env::init() {
     checkcount.resize(Env::nthreads);
     checknnz.resize(Env::nthreads);
     checkconv.resize(Env::nthreads);
-    rows.resize(Env::nthreads);
-    cols.resize(Env::nthreads);
-    rows_threads.resize(Env::nthreads);
-    cols_threads.resize(Env::nthreads);
     count_nnz.resize(Env::nthreads);
     count_nnz_i.resize(Env::nthreads);
     tile_index.resize(Env::nthreads);
@@ -227,6 +230,13 @@ int Env::init() {
     follower_threads_info.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++)
         follower_threads_info[i].resize(Env::nthreads);
+    
+    threads.resize(Env::nthreads);
+    //for(uint32_t i = 0; i < Env::nthreads; i++) {
+    //    threads[i].thread_id = i;
+    //}
+    //std::iota(threads.begin(),threads.end(),0);
+
     
     //pthread_mutex_lock(&mutex);
     //pthread_mutex_unlock(&mutex);
@@ -309,11 +319,11 @@ bool Env::numa_configure() {
     return(status);
 }
 
-void Env::assign_col(uint32_t ncols, bool refine, int32_t tid) {
-    if(refine)
-        Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  )+1;
-    else 
-        Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  );
+void Env::assign_col(uint32_t ncols, int32_t tid) {
+    //if(refine)
+      //  Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  )+1;
+    //else 
+    Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  );
     Env::end_col[tid]   =  (ncols/Env::nthreads) * (tid+1);
 }
 
