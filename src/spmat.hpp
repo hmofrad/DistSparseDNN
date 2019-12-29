@@ -279,17 +279,10 @@ void CSC<Weight>::adjust(const int32_t tid){
 
 template<typename Weight>
 void CSC<Weight>::adjust(const int32_t leader_tid, const int32_t tid){    
-    //uint32_t displacement = (tid == 0) ? 0 : Env::offset_nnz[tid] - Env::index_nnz[tid-1];
-    //Env::displacement_nnz[tid] = displacement;
     Env::threads[tid].dis_nnz = (tid == 0) ? 0 : Env::threads[tid].off_nnz - Env::threads[tid-1].idx_nnz;
     pthread_barrier_wait(&Env::thread_barrier);
     if((leader_tid == -1) or (tid == leader_tid)) {
-        //CSC::nnz_i = 0;
-        //for(int32_t i = 0; i < Env::nthreads; i++) {    
-        //    CSC::nnz_i += (Env::index_nnz[i] - Env::offset_nnz[i]);
-        //}
         CSC::nnz_i = 0;
-        //std::vector<struct Env::thread_struct>::iterator it;
         for(auto it = Env::threads.begin(); it != Env::threads.end(); it++) {
             CSC::nnz_i += ((*it).idx_nnz - (*it).off_nnz);
         }        
@@ -327,12 +320,6 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     uint32_t* IA = CSC::IA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
 
-    //uint32_t start_col = Env::start_col[tid];
-    //uint32_t end_col = Env::end_col[tid];
-    //for(int32_t i = 0; i < tid; i++) {
-      //  JA[start_col+1] += (Env::index_nnz[i] - Env::offset_nnz[i]);
-    //}
-    
     for(int32_t i = 0; i < tid; i++) {
         JA[start_col+1] += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
     }
@@ -340,7 +327,6 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     for(uint32_t j = start_col; j < end_col; j++) {
         JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
         uint32_t& k = JA[j+1];
-        //uint32_t m = (j == start_col) ? Env::displacement_nnz[tid] : 0;
         uint32_t m = (j == start_col) ? dis_nnz : 0;
         for(uint32_t i = o_JA[j] + m; i < o_JA[j + 1]; i++) {
             IA[k] = o_IA[i];
