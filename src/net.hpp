@@ -854,31 +854,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         start_time = Env::tic();
             const int32_t leader_tid = 0;
             Env::adjust_nnz(nnz, leader_tid, tid);
-            /*
-            if(!tid) {
-                nnz = 0;
-                std::vector<struct Env::thread_struct>::iterator it;// = Env::threads.begin();
-                for(it = Env::threads.begin(); it != Env::threads.end(); it++) {
-                    nnz += (*it).off_nnz;
-                }
-                uint64_t sum = 0;
-                std::vector<struct Env::thread_struct>::reverse_iterator rit;
-                for (rit = Env::threads.rbegin(); rit != Env::threads.rend()-1; rit++) {
-                    sum += (*rit).off_nnz;
-                    (*rit).off_nnz = nnz - sum;
-                    (*rit).idx_nnz = (*rit).off_nnz;
-                }
-                thread_st.idx_nnz = 0;
-                thread_st.off_nnz = 0;
-            }
-            */
-        //Env::memory_allocation_time[tid] += Env::toc(start_time);
-        
-        //start_time = Env::tic();
-            //if(!tid) {
-                C_CSC->reallocate(nnz, nrows, ncols, leader_tid, tid);
-              //  Env::memory_time += Env::toc(start_time);
-            //}
+            C_CSC->reallocate(nnz, nrows, ncols, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
         
         start_time = Env::tic();
@@ -890,37 +866,14 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         
         start_time = Env::tic();
             Env::adjust_displacement(tid);
-            //Env::threads[tid].dis_nnz = (tid == 0) ? 0 : Env::threads[tid].off_nnz - Env::threads[tid-1].idx_nnz;
-            //const int32_t leader_tid = 0;
             C_CSC->adjust(leader_tid, tid);	
-            /*
-            if(!tid) {
-                //const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_spmat);
-                C_CSC->nnz_i = 0;
-                std::vector<struct Env::thread_struct>::iterator it;
-                for(it = Env::threads.begin(); it != Env::threads.end(); it++) {
-                    C_CSC->nnz_i += ((*it).idx_nnz - (*it).off_nnz);
-                }
-            }
-            */
-            //pthread_barrier_wait(&Env::thread_barrier);            
             start_col = B_tile.start_col;
             end_col   = B_tile.end_col;
             uint32_t dis_nnz = thread_st.dis_nnz;
             repopulate(A_CSC, C_CSC, start_col, end_col, dis_nnz, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
         
-        A_CSC->walk_dxm(false, leader_tid, tid);
-        
-        //if(!tid) 
-            
-        /*
-        if(!tid) {
-            //walk_by_rank(A_spmat);
-            const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_spmat);
-            A_CSC->walk(false);
-        }
-        */
+        //A_CSC->walk_dxm(false, leader_tid, tid);
         
         if(!tid) Env::iteration++;
     }    
@@ -993,8 +946,8 @@ void Net<Weight>::data_x_data(const int32_t tid) {
             C_CSC->adjust(tid);
         Env::spmm_real_time[tid] += Env::toc(start_time);  
         
-        leader_tid = 0;
-        C_CSC->walk_dxd(false, leader_tid, tid);
+        //leader_tid = 0;
+        //C_CSC->walk_dxd(false, leader_tid, tid);
 
         if(!tid) Env::iteration++;
     }
