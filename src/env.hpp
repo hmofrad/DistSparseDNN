@@ -37,6 +37,7 @@ namespace Env {
     
     std::vector<uint32_t> tile_index;
     std::vector<struct thread_struct> threads;
+    std::vector<struct counter_struct> counters; 
     
     int iteration = 0;
     
@@ -75,7 +76,7 @@ namespace Env {
     std::vector<double>   checksum;
     std::vector<uint64_t> checkcount;
     std::vector<uint64_t> checknnz;
-    std::vector<bool> checkconv;
+    std::vector<bool>     checkconv;
     
     std::vector<double> spmm_symb_time;
     std::vector<double> spmm_real_time;
@@ -146,6 +147,15 @@ namespace Env {
             uint64_t nnz;
     };
     
+    struct counter_struct {
+        double   checksum;
+        uint64_t checkcount;
+        uint64_t checknnz;
+        bool     checkconv;
+    };
+    
+    void adjust_displacement(const int32_t tid);
+    void adjust_nnz(uint64_t& nnz, const int32_t leader_tid, const int32_t tid);
     //void pthread_barrier_wait_for_leader(int32_t leader, std::vector<int32_t> threads)
 
 }
@@ -232,6 +242,9 @@ int Env::init() {
         follower_threads_info[i].resize(Env::nthreads);
     
     threads.resize(Env::nthreads);
+    counters.resize(Env::nthreads);
+    
+    
     //for(uint32_t i = 0; i < Env::nthreads; i++) {
     //    threads[i].thread_id = i;
     //}
@@ -339,6 +352,30 @@ uint64_t Env::assign_nnz() {
     Env::offset_nnz[0] = 0;                               
     Env::index_nnz[0] = 0;
     return(nnz);
+}
+
+void Env::adjust_nnz(uint64_t& nnz, const int32_t leader_tid, const int32_t tid) {
+    if(tid == leader_tid) {
+        nnz = 0;
+        //std::vector<struct Env::thread_struct>::iterator it;
+        for(auto it = Env::threads.begin(); it != Env::threads.end(); it++) {
+            nnz += (*it).off_nnz;
+        }
+        
+        uint64_t sum = 0;
+        //std::vector<struct Env::thread_struct>::reverse_iterator rit;
+        for (auto rit = Env::threads.rbegin(); rit != Env::threads.rend()-1; rit++) {
+            sum += (*rit).off_nnz;
+            (*rit).off_nnz = nnz - sum;
+            (*rit).idx_nnz = (*rit).off_nnz;
+        }
+        Env::threads[0].idx_nnz = 0;
+        Env::threads[0].off_nnz = 0;
+    }
+}
+
+void Env::adjust_displacement(const int32_t tid) {
+    Env::threads[tid].dis_nnz = (tid == 0) ? 0 : Env::threads[tid].off_nnz - Env::threads[tid-1].idx_nnz;
 }
 
 /*
