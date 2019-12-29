@@ -18,7 +18,6 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
                                                          const uint32_t start_col,
                                                          const uint32_t end_col,
                                                          const int32_t tid) {
-    double start_time = Env::tic(); 
 
     uint64_t nnzmax = 0;
     uint32_t nrows = 0;
@@ -62,9 +61,6 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
         }
     }
 
-    if(!tid) Env::spmm_sym_time  += Env::toc(start_time);
-    Env::spmm_symb_time[tid] += Env::toc(start_time);
-    
     return std::make_tuple(nnzmax, nrows, ncols);
 }
 
@@ -79,8 +75,6 @@ inline void spmm(std::shared_ptr<struct CSC<Weight>> A_CSC,
                  const uint32_t off_col,
                  uint64_t& idx_nnz,
                  const int32_t tid) {
-                     
-    double start_time = Env::tic();
 
     const uint64_t A_nnz   = A_CSC->nnz;
     const uint32_t A_nrows = A_CSC->nrows;
@@ -123,9 +117,6 @@ inline void spmm(std::shared_ptr<struct CSC<Weight>> A_CSC,
         }
         C_CSC->populate_spa(&s_A, b_A, off_col + j, idx_nnz, tid);
     }
-
-    if(!tid) Env::spmm_time += Env::toc(start_time);
-    Env::spmm_real_time[tid] += Env::toc(start_time);
 }
 
 template<typename Weight>
@@ -177,9 +168,9 @@ inline void repopulate(std::shared_ptr<struct CSC<Weight>> A_CSC,
 
 template<typename Weight>
 inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
-                                      const std::vector<uint32_t> trueCategories,
-                                      const uint32_t start_row,
-                                      const int32_t tid) {
+                                const std::vector<uint32_t> trueCategories,
+                                const uint32_t start_row,
+                                const int32_t tid) {
     const uint64_t A_nnz   = A_CSC->nnz;
     const uint32_t A_nrows = A_CSC->nrows;
     const uint32_t A_ncols = A_CSC->ncols;
@@ -222,8 +213,8 @@ inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
 
 template<typename Weight>
 inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
-                                      const std::vector<uint32_t> trueCategories,
-                                      const uint32_t start_row) {
+                                const std::vector<uint32_t> trueCategories,
+                                const uint32_t start_row) {
     const uint64_t A_nnz   = A_CSC->nnz;
     const uint32_t A_nrows = A_CSC->nrows;
     const uint32_t A_ncols = A_CSC->ncols;
