@@ -148,7 +148,7 @@ inline void repopulate(std::shared_ptr<struct CSC<Weight>> A_CSC,
                        const uint32_t dis_nnz,
                        const int32_t tid) {
     double start_time = Env::tic();
-    A_CSC->repopulate(C_CSC, start_col, end_col, dis_nnz, tid);
+    //A_CSC->repopulate(C_CSC, start_col, end_col, dis_nnz, tid);
     if(!tid) Env::memory_time += Env::toc(start_time);
     Env::memory_allocation_time[tid] += Env::toc(start_time);
 }
@@ -156,12 +156,12 @@ inline void repopulate(std::shared_ptr<struct CSC<Weight>> A_CSC,
 template<typename Weight>
 inline void repopulate(std::shared_ptr<struct CSC<Weight>> A_CSC,
                        std::shared_ptr<struct CSC<Weight>> C_CSC,
+                      const int32_t leader,
                        const int32_t tid,
-                       const int32_t leader,
                        const std::vector<int32_t> my_follower_threads) {
                            
     double start_time = Env::tic();
-    A_CSC->repopulate(C_CSC, tid, leader, my_follower_threads);
+    //A_CSC->repopulate(C_CSC, tid, leader, my_follower_threads);
     if(tid == leader) Env::memory_time += Env::toc(start_time);
     Env::memory_allocation_time[tid] += Env::toc(start_time);
 }
