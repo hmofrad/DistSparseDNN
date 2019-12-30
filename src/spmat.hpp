@@ -381,7 +381,8 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
             uint32_t start_col = Env::follower_threads_info[leader][t].start_col;
             for(uint32_t j = 0; j < i; j++) {
                 int32_t tt = my_follower_threads[j];
-                JA[start_col+1] += (Env::index_nnz[tt] - Env::offset_nnz[tt]);
+                //JA[start_col+1] += (Env::index_nnz[tt] - Env::offset_nnz[tt]);
+                JA[start_col+1] += (Env::threads[tt].idx_nnz - Env::threads[tt].off_nnz);
             }
         }
     }
@@ -403,7 +404,8 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     for(uint32_t j = start_col; j < end_col; j++) {
         JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
         uint32_t& k = JA[j+1];
-        uint32_t m = (j == start_col) ? Env::displacement_nnz[tid] : 0;
+        //uint32_t m = (j == start_col) ? Env::displacement_nnz[tid] : 0;
+        uint32_t m = (j == start_col) ? Env::threads[tid].dis_nnz : 0;
         for(uint32_t i = o_JA[j] + m; i < o_JA[j + 1]; i++) {
             IA[k] = o_IA[i];
             A[k]  = o_A[i];
