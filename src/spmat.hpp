@@ -27,8 +27,9 @@ struct CSC {
         void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid);
         void adjust(const int32_t tid);
         void adjust(const int32_t leader_tid, const int32_t tid);
-        void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t tid);
-        void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const int32_t tid, const int32_t leader, const std::vector<int32_t> my_follower_threads);
+        void adjust(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
 
         uint64_t nnz   = 0;
         uint64_t nnz_i = 0;
@@ -279,8 +280,8 @@ void CSC<Weight>::adjust(const int32_t tid){
 
 template<typename Weight>
 void CSC<Weight>::adjust(const int32_t leader_tid, const int32_t tid){    
-    Env::threads[tid].dis_nnz = (tid == 0) ? 0 : Env::threads[tid].off_nnz - Env::threads[tid-1].idx_nnz;
-    pthread_barrier_wait(&Env::thread_barrier);
+    //Env::threads[tid].dis_nnz = (tid == 0) ? 0 : Env::threads[tid].off_nnz - Env::threads[tid-1].idx_nnz;
+    //pthread_barrier_wait(&Env::thread_barrier);
     if((leader_tid == -1) or (tid == leader_tid)) {
         CSC::nnz_i = 0;
         for(auto it = Env::threads.begin(); it != Env::threads.end(); it++) {
@@ -291,7 +292,19 @@ void CSC<Weight>::adjust(const int32_t leader_tid, const int32_t tid){
 }
 
 template<typename Weight>
-void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t tid) {
+void CSC<Weight>::adjust(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid){    
+    if((leader_tid == -1) or (tid == leader_tid)) {
+        CSC::nnz_i = 0;
+        for(uint32_t i = 0; i < my_threads.size(); i++) {    
+            int32_t t = my_threads[i];
+            CSC::nnz_i += (Env::threads[t].idx_nnz - Env::threads[t].off_nnz);
+        }
+    }
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+}
+
+template<typename Weight>
+void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid) {
     uint32_t  o_ncols = other->ncols;
     uint32_t  o_nrows = other->nrows;
     uint64_t  o_nnz   = other->nnz;
@@ -305,7 +318,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         exit(1);
     }
     
-    if(!tid) {
+    if(tid == leader_tid) {
         CSC::nnz = o_nnz_i;
         CSC::nnz_i = o_nnz_i;
         CSC::JA_blk->clear();
@@ -338,7 +351,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
 }
 
 template<typename Weight>
-void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, const int32_t tid, const int32_t leader, const std::vector<int32_t> my_follower_threads) {
+void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::vector<int32_t> my_threads, const int32_t leader_tid,  const int32_t tid) {
     uint32_t  o_ncols = other->ncols;
     uint32_t  o_nrows = other->nrows;
     uint64_t  o_nnz   = other->nnz;
@@ -354,7 +367,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     
 
     
-    if(tid == leader) {
+    if(tid == leader_tid) {
         CSC::nnz = o_nnz_i;
         CSC::nnz_i = o_nnz_i;
         CSC::JA_blk->clear();
@@ -365,7 +378,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     }    
     
     
-    pthread_barrier_wait(&Env::thread_barriers[leader]);
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
     
 
     
@@ -373,14 +386,14 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     uint32_t* IA = CSC::IA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
     
-    if(tid == leader) {
+    if(tid == leader_tid) {
         JA[0] = 0;
         JA[1] = 0;
-        for(uint32_t i = 0; i < my_follower_threads.size(); i++) {
-            int32_t t = my_follower_threads[i];
-            uint32_t start_col = Env::follower_threads_info[leader][t].start_col;
+        for(uint32_t i = 0; i < my_threads.size(); i++) {
+            int32_t t = my_threads[i];
+            uint32_t start_col = Env::follower_threads_info[leader_tid][t].start_col;
             for(uint32_t j = 0; j < i; j++) {
-                int32_t tt = my_follower_threads[j];
+                int32_t tt = my_threads[j];
                 //JA[start_col+1] += (Env::index_nnz[tt] - Env::offset_nnz[tt]);
                 JA[start_col+1] += (Env::threads[tt].idx_nnz - Env::threads[tt].off_nnz);
             }
@@ -392,14 +405,14 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         
     
     //else {
-      //  pthread_mutex_lock(&Env::thread_mutexes[leader]);
-        //pthread_cond_wait(&Env::thread_conds[leader], &Env::thread_mutexes[leader]);  
-        //pthread_mutex_unlock(&Env::thread_mutexes[leader]);
+      //  pthread_mutex_lock(&Env::thread_mutexes[leader_tid]);
+        //pthread_cond_wait(&Env::thread_conds[leader_tid], &Env::thread_mutexes[leader_tid]);  
+        //pthread_mutex_unlock(&Env::thread_mutexes[leader_tid]);
     //}
-    pthread_barrier_wait(&Env::thread_barriers[leader]);
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
     
-    const uint32_t start_col = Env::follower_threads_info[leader][tid].start_col;
-    const uint32_t end_col   = Env::follower_threads_info[leader][tid].end_col;
+    const uint32_t start_col = Env::follower_threads_info[leader_tid][tid].start_col;
+    const uint32_t end_col   = Env::follower_threads_info[leader_tid][tid].end_col;
 
     for(uint32_t j = start_col; j < end_col; j++) {
         JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
@@ -412,7 +425,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
             k++;
         }
     }
-    pthread_barrier_wait(&Env::thread_barriers[leader]);
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
 }
 
 
