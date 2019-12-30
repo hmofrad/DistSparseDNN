@@ -156,10 +156,14 @@ namespace Env {
         bool     checkconv;
     };
     
-    void adjust_displacement(const int32_t tid);
-    void adjust_nnz(uint64_t& nnz, const int32_t leader_tid, const int32_t tid);
-    //void pthread_barrier_wait_for_leader(int32_t leader, std::vector<int32_t> threads)
 
+    void adjust_nnz(uint64_t& nnz, const int32_t leader_tid, const int32_t tid);
+    void adjust_nnz(const std::vector<int32_t> my_threads, uint64_t& nnz, const int32_t leader_tid, const int32_t tid);
+    void adjust_displacement(const int32_t tid);
+    void adjust_displacement(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+    
+    //void pthread_barrier_wait_for_leader(int32_t leader, std::vector<int32_t> threads)
+    void bad_barrier(const int32_t nfollowers, const int32_t leader_tid, const int32_t tid);
 }
 
 int Env::init() {
@@ -232,7 +236,7 @@ int Env::init() {
         thread_mutexes2[i] = PTHREAD_MUTEX_INITIALIZER;
         thread_conds2[i] = PTHREAD_COND_INITIALIZER;
         thread_counters[i] = 0;
-        //pthread_barrier_init(&thread_barriers[i], NULL, 1);
+        pthread_barrier_init(&thread_barriers[i], NULL, Env::nthreads);
         //follower_to_leader[i] = i;
     }
     
@@ -376,8 +380,50 @@ void Env::adjust_nnz(uint64_t& nnz, const int32_t leader_tid, const int32_t tid)
     }
 }
 
+void Env::adjust_nnz(const std::vector<int32_t> my_threads, uint64_t& nnz, const int32_t leader_tid, const int32_t tid) {
+    if(tid == leader_tid) {
+        nnz = 0;
+        for(auto t: my_threads) {
+            nnz += Env::threads[t].off_nnz;
+        }
+        
+        uint64_t sum = 0;
+        for(int32_t i = my_threads.size() - 1; i > 0; i--) {
+            int32_t t = my_threads[i];
+            sum += Env::threads[t].off_nnz;
+            Env::threads[t].off_nnz = nnz - sum;
+            Env::threads[t].idx_nnz = Env::threads[t].off_nnz;
+        }
+        Env::threads[tid].off_nnz = 0;                               
+        Env::threads[tid].idx_nnz = 0;
+    }
+}
+
 void Env::adjust_displacement(const int32_t tid) {
     Env::threads[tid].dis_nnz = (tid == 0) ? 0 : Env::threads[tid].off_nnz - Env::threads[tid-1].idx_nnz;
+}
+
+void Env::adjust_displacement(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {
+    if(tid == leader_tid) {
+        Env::threads[tid].dis_nnz = 0;
+        for(uint32_t i = 1; i < my_threads.size(); i++) {    
+            int32_t t_minus_1 = my_threads[i-1];
+            int32_t t = my_threads[i];
+            Env::threads[t].dis_nnz = Env::threads[t].off_nnz - Env::threads[t_minus_1].idx_nnz;
+        }
+    }
+}
+
+void bad_barrier(const int32_t nfollowers, const int32_t leader_tid, const int32_t tid) {
+    printf("nf=%d leader=%d tid=%d ?=%d\n", nfollowers, leader_tid, tid, leader_tid == tid);
+    if(tid == leader_tid) {
+        for(int32_t i = 0; i < (Env::nthreads - nfollowers); i++) {
+            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);    
+        }
+    }
+    else {
+        pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+    }
 }
 
 /*
