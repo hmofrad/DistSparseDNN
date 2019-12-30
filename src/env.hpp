@@ -126,6 +126,8 @@ namespace Env {
         thread_struct(){};
         ~thread_struct(){};
         int32_t thread_id;
+        uint32_t rowgroup;
+        uint32_t start_layer;
         uint32_t start_col;
         uint32_t end_col;
         uint32_t off_col; 
