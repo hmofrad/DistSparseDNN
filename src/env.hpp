@@ -47,6 +47,7 @@ namespace Env {
     double memory_time = 0;
     double exec_time = 0;
     double end_to_end_time = 0;
+    double hybrid_time = 0;
     
     std::vector<uint64_t> nnz_ranks;
     std::vector<std::vector<uint64_t>> nnz_threads;
@@ -82,6 +83,7 @@ namespace Env {
     std::vector<double> spmm_real_time;
     std::vector<double> memory_allocation_time;
     std::vector<double> execution_time;
+    std::vector<double> hybrid_probe_time;
     
     pthread_barrier_t thread_barrier;
     std::vector<pthread_barrier_t> thread_barriers;
@@ -162,8 +164,10 @@ namespace Env {
     void adjust_displacement(const int32_t tid);
     void adjust_displacement(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
     
-    //void pthread_barrier_wait_for_leader(int32_t leader, std::vector<int32_t> threads)
-    void bad_barrier(const int32_t nfollowers, const int32_t leader_tid, const int32_t tid);
+    void init_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
+    void increase_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
+    void decrease_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
+    
 }
 
 int Env::init() {
@@ -213,6 +217,7 @@ int Env::init() {
     spmm_real_time.resize(Env::nthreads);
     memory_allocation_time.resize(Env::nthreads);
     execution_time.resize(Env::nthreads);
+    hybrid_probe_time.resize(Env::nthreads);
     nnz_threads.resize(Env::nthreads);
     
     thread_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -241,8 +246,14 @@ int Env::init() {
     }
     
     //done = false;
-    
+    //init_num_threads();
     num_threads.resize(Env::nthreads);
+    for(int32_t i = 0; i < Env::nthreads; i++) {
+        init_num_threads(0, i, i);
+    }
+        
+    
+    
     follower_threads_info.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++)
         follower_threads_info[i].resize(Env::nthreads);
@@ -414,18 +425,32 @@ void Env::adjust_displacement(const std::vector<int32_t> my_threads, const int32
     }
 }
 
-void bad_barrier(const int32_t nfollowers, const int32_t leader_tid, const int32_t tid) {
-    printf("nf=%d leader=%d tid=%d ?=%d\n", nfollowers, leader_tid, tid, leader_tid == tid);
+void Env::init_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid) {
     if(tid == leader_tid) {
-        for(int32_t i = 0; i < (Env::nthreads - nfollowers); i++) {
-            pthread_barrier_wait(&Env::thread_barriers1[leader_tid]);    
-        }
+        Env::num_threads[tid] = value;
+    }
+}
+
+void Env::increase_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid) {
+    if(tid == leader_tid) {
+        pthread_mutex_lock(&Env::thread_mutexes[tid]); 
+        Env::num_threads[tid] += value;
+        pthread_mutex_unlock(&Env::thread_mutexes[tid]); 
+    }
+}
+
+void Env::decrease_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid) {
+    pthread_mutex_lock(&Env::thread_mutexes[leader_tid]); 
+    Env::num_threads[leader_tid] -= value;
+    if(Env::num_threads[leader_tid] == 0) {
+        pthread_cond_broadcast(&Env::thread_conds[leader_tid]);   
     }
     else {
-        pthread_barrier_wait(&Env::thread_barriers1[leader_tid]);
+        pthread_cond_wait(&Env::thread_conds[leader_tid], &Env::thread_mutexes[leader_tid]); 
     }
-    
+    pthread_mutex_unlock(&Env::thread_mutexes[leader_tid]);
 }
+
 
 /*
 void Env::assign_row(uint32_t nrows, int32_t tid) {
