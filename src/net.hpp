@@ -53,6 +53,7 @@ class Net {
         void hybrid_x_hybrid(const int32_t tid);
         void hybrid(std::vector<int32_t>& my_threads, const uint32_t rowgroup, const uint32_t layer, const int32_t leader, const int32_t tid);
         int32_t add_to_my_followers(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid);
+        void add_to_my_followers(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid);
         bool add_to_idle_threads(std::vector<int32_t>& my_threads, const int32_t tid);
         
 };
@@ -1094,8 +1095,6 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     }
     
     pthread_barrier_wait(&Env::thread_barrier);        
-   
-
 }
 
 template<typename Weight>
@@ -1104,7 +1103,6 @@ int32_t Net<Weight>::add_to_my_followers(std::vector<int32_t>& my_threads, const
     if(!Env::follower_threads.empty()) {
     //if(!Env::follower_threads.empty() and (my_threads.size() == 1)) {
         pthread_mutex_lock(&Env::thread_mutex);  
-        uint32_t old_nthreads = num_threads;
         if(!Env::follower_threads.empty()) {
             num_threads += Env::follower_threads.size();
             my_threads.insert(my_threads.end(), Env::follower_threads.begin(), Env::follower_threads.end());
@@ -1124,18 +1122,82 @@ int32_t Net<Weight>::add_to_my_followers(std::vector<int32_t>& my_threads, const
                 Env::follower_to_leader[t] = tid;
             }
         }
-        if(old_nthreads == 1) {
-            pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
-        }
-        else {
-            pthread_barrier_destroy(&Env::thread_barriers[tid]);
-            pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
-        }
+        
+        pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
+        pthread_barrier_init(&Env::thread_barriers1[tid], NULL, num_threads);
         
         pthread_cond_broadcast(&Env::thread_cond); 
         pthread_mutex_unlock(&Env::thread_mutex);
     }
     return(num_threads);
+}
+
+
+template<typename Weight>
+void Net<Weight>::add_to_my_followers(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid) {  
+    uint32_t old_num_threads = 0;
+    uint32_t new_num_threads = 0;
+    uint32_t num_threads = 0;
+    if(tid == leader) {
+        old_num_threads = my_threads.size();
+        if(!Env::follower_threads.empty()) {
+        //if(!Env::follower_threads.empty() and (my_threads.size() == 1)) {
+            pthread_mutex_lock(&Env::thread_mutex);  
+            if(!Env::follower_threads.empty()) {
+                num_threads = (my_threads.size() + Env::follower_threads.size());
+                my_threads.insert(my_threads.end(), Env::follower_threads.begin(), Env::follower_threads.end());
+                Env::follower_threads.erase(Env::follower_threads.begin(), Env::follower_threads.end());
+                for(uint32_t i = 0; i < num_threads; i++) {
+                    int32_t t = my_threads[i];
+                    Env::threads[t].rowgroup = Env::tile_index[tid];
+                    Env::threads[t].start_layer = start_layer;
+                    Env::threads[t].start_col = ((ncols/num_threads) * i);
+                    Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
+                    
+                    uint32_t rowgroup = Env::tile_index[tid];
+                    uint32_t layer = start_layer;
+                    uint32_t start_col = ((ncols/num_threads) * i);
+                    uint32_t end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
+                    Env::follower_threads_info[tid][t] = std::move(Env::helper_thread_info(t, rowgroup, layer, start_col, end_col));                
+                    Env::follower_to_leader[t] = tid;
+                }
+            }
+            //if(old_nthreads == 1) {
+            //pthread_barrier_init(&Env::thread_barriers1[tid], NULL, num_threads);
+            
+            //}
+            //else {
+              //  pthread_barrier_destroy(&Env::thread_barriers[tid]);
+                //pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
+            //}
+            
+            //pthread_cond_broadcast(&Env::thread_cond); 
+            //pthread_mutex_unlock(&Env::thread_mutex);
+        }
+    }
+    
+    if((tid == leader) and (num_threads)) {
+        new_num_threads = num_threads;
+        if(old_num_threads != new_num_threads) {
+            printf("################################ tid %d: init barrier 1\n", tid);
+            //pthread_barrier_destroy(&Env::thread_barriers1[tid]);
+            pthread_barrier_init(&Env::thread_barriers1[tid], NULL, num_threads);
+        }
+    }
+    printf("tid=%d before wait\n", tid);
+    pthread_barrier_wait(&Env::thread_barriers[leader]);
+    if((tid == leader) and (num_threads)) {
+        if(old_num_threads != new_num_threads) {
+            printf("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@ tid %d: init barrier 2 [%d->%d]\n", tid, old_num_threads, new_num_threads);
+            //pthread_barrier_destroy(&Env::thread_barriers[tid]);
+            pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
+        }
+        
+        pthread_cond_broadcast(&Env::thread_cond); 
+        pthread_mutex_unlock(&Env::thread_mutex);    
+    }
+    printf("tid=%d after wait\n", tid);
+    //return(num_threads);
 }
 
 template<typename Weight>
@@ -1179,24 +1241,33 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t rowgro
     
     std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];  
     struct Env::thread_struct& thread_st = Env::threads[tid];
-    
+    bool old_thread = false;
     for(uint32_t l = layer; l < maxLayers; l++) {
         printf("[tid=%d,leader=%d,layer=%d,nthreads=%lu]\n", tid, leader, l, my_threads.size());
+        
+        if(old_thread)
+            add_to_my_followers(my_threads, l, ncols, leader, tid);
+        old_thread = true;
+        //printf("leader tid= %d  probes new followers = %lu\n", tid, my_threads.size());
         /*
-        if(tid == leader) {
-            printf("leader tid= %d  probes\n", tid);
+       // if(tid == leader) {
+         //   printf("leader tid= %d  probes\n", tid);
             int32_t old_sz = my_threads.size();
-            int32_t new_sz = add_to_my_followers(my_threads, l, ncols, tid);
-            printf("leader tid= %d oldsz=%d newsz=%d ?=%d\n", tid, old_sz, new_sz, old_sz == new_sz);
-            if(old_sz != new_sz) {
+            int32_t num_threads;
+            //int32_t new_sz = add_to_my_followers(my_threads, &num_threads, ncols, leader, tid);
+           // printf("leader tid= %d oldsz=%d newsz=%d ?=%d\n", tid, old_sz, new_sz, old_sz == new_sz);
+            if((old_sz != new_sz) and (tid == leader)) {
                     printf(">>>>>>>>>>>>>>>>>>>>>>\n");
+                    printf("leader tid= %d oldsz=%d newsz=%d ?=%d %d\n", tid, old_sz, new_sz, old_sz == new_sz, num_threads);
                 //std::exit(0);
             }
-        }
+        //}
         */
+        printf("tid=%d leader=%d before\n", tid, leader);
+        pthread_barrier_wait(&Env::thread_barriers1[leader]);
+        printf("tid=%d leader=%d after\n", tid, leader);
         
-        
-        pthread_barrier_wait(&Env::thread_barriers[leader]);
+        //pthread_barrier_wait(&Env::thread_barriers[leader]);
         if(not(l%2)) {
             A_tile = inputFeatures->tiles[rowgroup][0];
             C_tile = output->tiles[rowgroup][0];
