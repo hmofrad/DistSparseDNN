@@ -236,7 +236,7 @@ int Env::init() {
         thread_mutexes2[i] = PTHREAD_MUTEX_INITIALIZER;
         thread_conds2[i] = PTHREAD_COND_INITIALIZER;
         thread_counters[i] = 0;
-        pthread_barrier_init(&thread_barriers[i], NULL, Env::nthreads);
+        //pthread_barrier_init(&thread_barriers1[i], NULL, Env::nthreads);
         //follower_to_leader[i] = i;
     }
     
@@ -418,12 +418,13 @@ void bad_barrier(const int32_t nfollowers, const int32_t leader_tid, const int32
     printf("nf=%d leader=%d tid=%d ?=%d\n", nfollowers, leader_tid, tid, leader_tid == tid);
     if(tid == leader_tid) {
         for(int32_t i = 0; i < (Env::nthreads - nfollowers); i++) {
-            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);    
+            pthread_barrier_wait(&Env::thread_barriers1[leader_tid]);    
         }
     }
     else {
-        pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+        pthread_barrier_wait(&Env::thread_barriers1[leader_tid]);
     }
+    
 }
 
 /*
