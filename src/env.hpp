@@ -95,7 +95,7 @@ namespace Env {
     std::vector<pthread_cond_t> thread_conds2; 
     std::vector<pthread_mutex_t> thread_mutexes2;
     std::vector<uint32_t> thread_counters;
-    std::vector<uint32_t> num_follower_threads;
+    std::vector<uint32_t> num_threads;
     std::vector<int32_t> follower_threads;
     std::vector<std::vector<struct helper_thread_info>> follower_threads_info;
     bool done;
@@ -242,7 +242,7 @@ int Env::init() {
     
     //done = false;
     
-    num_follower_threads.resize(Env::nthreads);
+    num_threads.resize(Env::nthreads);
     follower_threads_info.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++)
         follower_threads_info[i].resize(Env::nthreads);
