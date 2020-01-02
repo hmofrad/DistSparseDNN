@@ -69,6 +69,7 @@ class Tiling {
         void set_threads_indices();
         uint32_t get_tile_info(const std::string field, const int32_t tid);
         void     set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles); 
+        void test();
 
     private:
         void integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b);
@@ -251,7 +252,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         print_tiling("nedges");
         print_tiling("height");
     }
-    compress_triples();    
+    compress_triples(); 
 }
 
 template<typename Weight>
@@ -430,6 +431,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     }
 
     compress_triples();
+    test();    
 }
 
 
@@ -657,7 +659,7 @@ void Tiling<Weight>::set_threads_indices() {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
-                Env::tile_index[tile.thread] = i;
+                Env::thread_rowgroup[tile.thread] = i;
             }
         }
     } 
@@ -1471,4 +1473,150 @@ void Tiling<Weight>::compress_triples(){//(const REFINE_TYPE refine_type) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Done compressing tiles.\n");
     Env::barrier();      
 }
+
+
+template<typename Weight>
+void Tiling<Weight>::test() {
+    
+    auto tile = tiles[0][0];
+    std::shared_ptr<struct CSC<Weight>> CSC = tile.spmat;
+    
+    
+    const uint64_t  nnz   = CSC->nnz;
+    const uint32_t  nrows = CSC->nrows;
+    const uint32_t  ncols = CSC->ncols;
+    const uint32_t*    IA = CSC->IA_blk->ptr;
+    const uint32_t*    JA = CSC->JA_blk->ptr;
+    const Weight*       A = CSC->A_blk->ptr;
+    
+    uint64_t balanced_nnz = CSC->nnz/2;
+    
+    printf("%d %lu %d %lu\n", Env::rank, CSC->nnz, CSC->nrows, balanced_nnz);
+    
+    std::vector<uint32_t> rows(nrows);
+    for(uint32_t j = 0; j < ncols; j++) {
+        for(uint32_t i = JA[j]; i < JA[j+1]; i++) {
+            rows[IA[i]]++;
+        }
+    }
+    
+    /*
+    uint64_t max_nnz = 0;
+    uint32_t row = 0;
+    for(uint32_t i = 0; i < nrows; i++) {
+        max_nnz += rows[i];
+        if(max_nnz >= balanced_nnz) {
+            row = i-1;
+            break;
+        }
+    }
+    */
+    
+    
+    uint32_t i = 0;
+    uint64_t new_nnz1 = 0;
+    while(new_nnz1 < balanced_nnz) {
+        new_nnz1 += rows[i];
+        i++;
+    }
+    uint32_t nrows1 = i;
+    
+    //uint64_t s = 0;
+    //for(i = 0; i < row; i++) {
+      //  s += rows[i];
+    //}
+    //printf("%d <%lu %lu %lu>\n", row, max_nnz, balanced_nnz, s);
+    
+    
+    uint32_t new_height1 = nrows1;
+    uint32_t new_height2 = tile.height - nrows1;
+    uint32_t new_width = tile.width;
+    uint64_t new_nnz2 = nnz - new_nnz1; 
+    
+    printf("[%d %d %d] [%lu %lu %lu]\n", new_height1, new_height2, new_height1 + new_height2, new_nnz1, new_nnz2, new_nnz1 + new_nnz2);
+    std::shared_ptr<struct CSC<Weight>> CSC1 = std::make_shared<struct CSC<Weight>>(new_nnz1, new_height1, new_width);
+    std::shared_ptr<struct CSC<Weight>> CSC2 = std::make_unique<struct CSC<Weight>>(new_nnz2, new_height2, new_width);
+    
+    uint32_t* IA1 = CSC1->IA_blk->ptr;
+    uint32_t* JA1 = CSC1->JA_blk->ptr;
+    Weight*    A1 = CSC1->A_blk->ptr;
+    
+    uint32_t* IA2 = CSC2->IA_blk->ptr;
+    uint32_t* JA2 = CSC2->JA_blk->ptr;
+    Weight*    A2 = CSC2->A_blk->ptr;
+    
+    
+    //uint32_t i1 = 0;
+    //uint32_t i2 = 0;
+    //uint32_t j1 = 1;
+    //uint32_t j2 = 1;
+    JA1[0] = 0;
+    JA2[0] = 0;
+    for(uint32_t j = 0; j < ncols; j++) {
+        //JA1[j+1] = 
+        uint32_t& k1 = JA1[j+1];
+        k1 = JA1[j];
+        uint32_t& k2 = JA2[j+1];
+        k2 = JA2[j];
+        //uint32_t j1_old = JA1[j+1];
+        //uint32_t j2_old = JA2[j+1];
+        //if(JA[j+1] - JA[j]) {
+        for(uint32_t i = JA[j]; i < JA[j+1]; i++) {
+            if(IA[i] < new_height1) {
+                //JA1[j+1]++
+                IA1[k1] = IA[i];
+                A1[k1] = A[i];
+                k1++;
+            }
+            else {
+                //JA1[j+1]++;
+                IA2[k2] = IA[i] - new_height1;
+                A2[k2] = A[i];
+                k2++;
+            }
+        }
+    }
+    
+    double checksum1   = 0;
+    uint64_t checkcount1 = 0;    
+    double checksum2   = 0;
+    uint64_t checkcount2 = 0;    
+    for(uint32_t j = 0; j < ncols; j++) {
+        for(uint32_t i = JA1[j]; i < JA1[j+1]; i++) {
+            checksum1 += A1[i];
+            checkcount1++;
+        }
+    }
+    
+    for(uint32_t j = 0; j < ncols; j++) {
+        for(uint32_t i = JA2[j]; i < JA2[j+1]; i++) {
+            checksum2 += A2[i];
+            checkcount2++;
+        }
+    }
+    
+    printf("[%f %lu %lu] [%f %lu %lu]\n", checksum1, checkcount1, new_nnz1, checksum2, checkcount2, new_nnz2);
+    
+    
+
+        
+        //else {
+        //    JA1[j+1] = JA[j];
+        //    JA2[j+1] = JA[j];
+        //}
+    //}
+    
+
+
+    
+    
+    
+    
+    
+    
+    
+    Env::barrier();
+    std::exit(0);
+}
+
 #endif
