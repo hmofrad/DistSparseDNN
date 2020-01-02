@@ -1556,6 +1556,7 @@ void Tiling<Weight>::test() {
         //JA1[j+1] = 
         uint32_t& k1 = JA1[j+1];
         k1 = JA1[j];
+
         uint32_t& k2 = JA2[j+1];
         k2 = JA2[j];
         //uint32_t j1_old = JA1[j+1];
