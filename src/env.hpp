@@ -1,6 +1,6 @@
 /*
  * env.hpp: MPI runtime environment
- * (c) Mohammad Hasanzadeh Mofrad, 2019
+ * (c) Mohammad Hasanzadeh Mofrad, 2020
  * (e) m.hasanzadeh.mofrad@gmail.com 
  */
 
@@ -31,54 +31,16 @@ namespace Env {
     std::vector<int> threads_core_id;
     std::vector<int> threads_socket_id;
     int num_unique_cores = 0;
-    //std::vector<int> Env::core_ids_unique;
     const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
     bool NUMA_ALLOC = false;
     
-    std::vector<uint32_t> tile_index;
-    std::vector<struct thread_struct> threads;
+    std::vector<uint32_t> thread_rowgroup;
     std::vector<struct counter_struct> counters; 
     
     int iteration = 0;
     
-    double io_time = 0;
-    double spmm_sym_time = 0;
-    double spmm_time = 0;
-    double memory_time = 0;
-    double exec_time = 0;
-    double end_to_end_time = 0;
-    double hybrid_time = 0;
-    
-    std::vector<uint64_t> nnz_ranks;
-    std::vector<std::vector<uint64_t>> nnz_threads;
-    std::vector<uint64_t> nnz_i_ranks;
-    std::vector<double>   time_ranks;
-    
-    std::vector<uint64_t> nnz_mean_thread_ranks;
-    std::vector<uint64_t> nnz_std_dev_thread_ranks;
-    std::vector<uint64_t> nnz_min_thread_ranks;
-    std::vector<uint64_t> nnz_max_thread_ranks;
-    std::vector<uint64_t> nnz_i_mean_thread_ranks;
-    std::vector<uint64_t> nnz_i_std_dev_thread_ranks;
-    std::vector<uint64_t> nnz_i_min_thread_ranks;
-    std::vector<uint64_t> nnz_i_max_thread_ranks;
-    
-    std::vector<uint64_t> offset_nnz; /* Thread Offset from the beginning of the compressed format data */
-    std::vector<uint64_t> index_nnz;  /* Current index of thread pointing to where the new data will be inserted */
-    std::vector<uint32_t> displacement_nnz; /* The part that a thread may skip cuasing some internal fragmentation */  
-    std::vector<uint64_t> count_nnz;
-    std::vector<uint64_t> count_nnz_i;
-    std::vector<uint32_t> start_col;
-    std::vector<uint32_t> end_col;
-    std::vector<uint32_t> start_row;
-    std::vector<uint32_t> end_row;
-    std::vector<uint64_t> start_nnz;
-    std::vector<uint64_t> end_nnz;
-    std::vector<double>   checksum;
-    std::vector<uint64_t> checkcount;
-    std::vector<uint64_t> checknnz;
-    std::vector<bool>     checkconv;
-    
+    double io_time;
+    double end_to_end_time;
     std::vector<double> spmm_symb_time;
     std::vector<double> spmm_real_time;
     std::vector<double> memory_allocation_time;
@@ -87,37 +49,22 @@ namespace Env {
     
     pthread_barrier_t thread_barrier;
     std::vector<pthread_barrier_t> thread_barriers;
-    std::vector<pthread_barrier_t> thread_barriers1;
     pthread_cond_t thread_cond; 
     pthread_mutex_t thread_mutex;
     std::vector<pthread_cond_t> thread_conds; 
     std::vector<pthread_mutex_t> thread_mutexes;
-    std::vector<pthread_cond_t> thread_conds1; 
-    std::vector<pthread_mutex_t> thread_mutexes1;
-    std::vector<pthread_cond_t> thread_conds2; 
-    std::vector<pthread_mutex_t> thread_mutexes2;
-    std::vector<uint32_t> thread_counters;
-    std::vector<uint32_t> num_threads;
+    
     std::vector<int32_t> follower_threads;
-    std::vector<std::vector<struct helper_thread_info>> follower_threads_info;
-    bool done;
-    std::vector<int32_t> follower_to_leader;
     
     int init();
     void barrier();
     int finalize();
     
-    //void assign_row(uint32_t nrows, int32_t tid);
-    void assign_col(uint32_t ncols, int32_t tid);
-    uint64_t assign_nnz();
-    void assign_cols();
     double clock();
     double tic();
     double toc(double start_time);
     template<typename Type>
     std::tuple<Type, Type, Type, Type, Type> statistics(const Type value);
-    template<typename Type>
-    std::tuple<Type, Type, Type, Type, Type> statistics_t(const std::vector<Type> values_t);
     template<typename Type>
     void stats(const std::vector<Type> vec, Type& sum, Type& mean, Type& std_dev, Type& min, Type& max);
     int get_nsockets();
@@ -128,29 +75,17 @@ namespace Env {
         thread_struct(){};
         ~thread_struct(){};
         int32_t thread_id;
+        int32_t leader;
         uint32_t rowgroup;
         uint32_t start_layer;
         uint32_t start_col;
         uint32_t end_col;
         uint32_t off_col; 
-        uint64_t idx_nnz; // Index
-        uint64_t off_nnz; // Offset 
-        uint64_t dis_nnz; // Displacement 
+        uint64_t idx_nnz; /* Current index of thread pointing to where the new data will be inserted */
+        uint64_t off_nnz; /* Thread Offset from the beginning of the compressed format data */ 
+        uint64_t dis_nnz; /* The part that a thread may skip cuasing some internal fragmentation */
     };
-    
-    struct helper_thread_info {
-            helper_thread_info(){};
-            helper_thread_info(int32_t thread_, uint32_t rowgroup_, uint32_t layer_, uint32_t start_col_, uint32_t end_col_) :
-            thread(thread_), rowgroup(rowgroup_), layer(layer_), start_col(start_col_), end_col(end_col_) {};
-           ~helper_thread_info(){};
-            uint32_t thread;
-            uint32_t rowgroup;
-            uint32_t layer;
-            uint32_t start_col;
-            uint32_t end_col;
-            uint64_t nnz;
-    };
-    
+
     struct counter_struct {
         double   checksum;
         uint64_t checkcount;
@@ -158,16 +93,16 @@ namespace Env {
         bool     checkconv;
     };
     
-
-    void adjust_nnz(uint64_t& nnz, const int32_t leader_tid, const int32_t tid);
-    void adjust_nnz(const std::vector<int32_t> my_threads, uint64_t& nnz, const int32_t leader_tid, const int32_t tid);
+    uint64_t adjust_nnz(const int32_t leader_tid, const int32_t tid);
+    uint64_t adjust_nnz(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
     void adjust_displacement(const int32_t tid);
     void adjust_displacement(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
     
-    void init_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
+    std::vector<struct thread_struct> threads;
+    std::vector<uint32_t> num_threads;
+    void     init_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
     void increase_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
     void decrease_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
-    
 }
 
 int Env::init() {
@@ -195,82 +130,33 @@ int Env::init() {
         Env::NUMA_ALLOC = false;
     }
     
-    pthread_barrier_init(&thread_barrier, NULL, Env::nthreads);
-
-    offset_nnz.resize(Env::nthreads);
-    index_nnz.resize(Env::nthreads);
-    displacement_nnz.resize(Env::nthreads);
-    start_col.resize(Env::nthreads);
-    end_col.resize(Env::nthreads);
-    start_nnz.resize(Env::nthreads);
-    end_nnz.resize(Env::nthreads);
-    checksum.resize(Env::nthreads);
-    checkcount.resize(Env::nthreads);
-    checknnz.resize(Env::nthreads);
-    checkconv.resize(Env::nthreads);
-    count_nnz.resize(Env::nthreads);
-    count_nnz_i.resize(Env::nthreads);
-    tile_index.resize(Env::nthreads);
-    
+    counters.resize(Env::nthreads); 
+    thread_rowgroup.resize(Env::nthreads);
     
     spmm_symb_time.resize(Env::nthreads);
     spmm_real_time.resize(Env::nthreads);
     memory_allocation_time.resize(Env::nthreads);
     execution_time.resize(Env::nthreads);
     hybrid_probe_time.resize(Env::nthreads);
-    nnz_threads.resize(Env::nthreads);
     
+    pthread_barrier_init(&thread_barrier, NULL, Env::nthreads);
     thread_mutex = PTHREAD_MUTEX_INITIALIZER;
     thread_cond = PTHREAD_COND_INITIALIZER;
+    
     thread_mutexes.resize(Env::nthreads);
     thread_conds.resize(Env::nthreads);
-    thread_mutexes1.resize(Env::nthreads);
-    thread_conds1.resize(Env::nthreads);
-    thread_mutexes2.resize(Env::nthreads);
-    thread_conds2.resize(Env::nthreads);
-    thread_counters.resize(Env::nthreads);
     thread_barriers.resize(Env::nthreads);
-    thread_barriers1.resize(Env::nthreads);
-    follower_to_leader.resize(Env::nthreads, -1);
-    //follower_to_leader.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++) {
         thread_mutexes[i] = PTHREAD_MUTEX_INITIALIZER;
         thread_conds[i] = PTHREAD_COND_INITIALIZER;
-        thread_mutexes1[i] = PTHREAD_MUTEX_INITIALIZER;
-        thread_conds1[i] = PTHREAD_COND_INITIALIZER;
-        thread_mutexes2[i] = PTHREAD_MUTEX_INITIALIZER;
-        thread_conds2[i] = PTHREAD_COND_INITIALIZER;
-        thread_counters[i] = 0;
-        //pthread_barrier_init(&thread_barriers1[i], NULL, Env::nthreads);
-        //follower_to_leader[i] = i;
     }
     
-    //done = false;
-    //init_num_threads();
+    threads.resize(Env::nthreads);
     num_threads.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++) {
         init_num_threads(0, i, i);
     }
-        
     
-    
-    follower_threads_info.resize(Env::nthreads);
-    for(int32_t i = 0; i < Env::nthreads; i++)
-        follower_threads_info[i].resize(Env::nthreads);
-    
-    threads.resize(Env::nthreads);
-    counters.resize(Env::nthreads);
-    
-    
-    //for(uint32_t i = 0; i < Env::nthreads; i++) {
-    //    threads[i].thread_id = i;
-    //}
-    //std::iota(threads.begin(),threads.end(),0);
-
-    
-    //pthread_mutex_lock(&mutex);
-    //pthread_mutex_unlock(&mutex);
-
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
 }
@@ -349,38 +235,14 @@ bool Env::numa_configure() {
     return(status);
 }
 
-void Env::assign_col(uint32_t ncols, int32_t tid) {
-    //if(refine)
-      //  Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  )+1;
-    //else 
-    Env::start_col[tid] = ((ncols/Env::nthreads) *  tid  );
-    Env::end_col[tid]   =  (ncols/Env::nthreads) * (tid+1);
-}
-
-uint64_t Env::assign_nnz() {
-    uint64_t nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
-    
-    uint64_t sum = 0;
-    for(int32_t i = Env::nthreads - 1; i > 0; i--) {
-        sum += Env::offset_nnz[i];
-        Env::offset_nnz[i] = nnz - sum;
-        Env::index_nnz[i] = Env::offset_nnz[i];
-    }
-    Env::offset_nnz[0] = 0;                               
-    Env::index_nnz[0] = 0;
-    return(nnz);
-}
-
-void Env::adjust_nnz(uint64_t& nnz, const int32_t leader_tid, const int32_t tid) {
+uint64_t Env::adjust_nnz(const int32_t leader_tid, const int32_t tid) {
+    uint64_t nnz = 0;
     if(tid == leader_tid) {
-        nnz = 0;
-        //std::vector<struct Env::thread_struct>::iterator it;
         for(auto it = Env::threads.begin(); it != Env::threads.end(); it++) {
             nnz += (*it).off_nnz;
         }
         
         uint64_t sum = 0;
-        //std::vector<struct Env::thread_struct>::reverse_iterator rit;
         for (auto rit = Env::threads.rbegin(); rit != Env::threads.rend()-1; rit++) {
             sum += (*rit).off_nnz;
             (*rit).off_nnz = nnz - sum;
@@ -389,11 +251,12 @@ void Env::adjust_nnz(uint64_t& nnz, const int32_t leader_tid, const int32_t tid)
         Env::threads[0].idx_nnz = 0;
         Env::threads[0].off_nnz = 0;
     }
+    return(nnz);
 }
 
-void Env::adjust_nnz(const std::vector<int32_t> my_threads, uint64_t& nnz, const int32_t leader_tid, const int32_t tid) {
+uint64_t Env::adjust_nnz(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {
+    uint64_t nnz = 0;
     if(tid == leader_tid) {
-        nnz = 0;
         for(auto t: my_threads) {
             nnz += Env::threads[t].off_nnz;
         }
@@ -408,6 +271,7 @@ void Env::adjust_nnz(const std::vector<int32_t> my_threads, uint64_t& nnz, const
         Env::threads[tid].off_nnz = 0;                               
         Env::threads[tid].idx_nnz = 0;
     }
+    return(nnz);
 }
 
 void Env::adjust_displacement(const int32_t tid) {
@@ -451,50 +315,11 @@ void Env::decrease_num_threads(const uint32_t value, const int32_t leader_tid, c
     pthread_mutex_unlock(&Env::thread_mutexes[leader_tid]);
 }
 
-
-/*
-void Env::assign_row(uint32_t nrows, int32_t tid) {
-    Env::start_row[tid] = (nrows/Env::nthreads) *  tid;
-    Env::end_row[tid]   = (tid == (Env::nthreads - 1)) ? nrows : (nrows/Env::nthreads) * (tid + 1);
-}
-
-
-
-void Env::assign_col(uint32_t ncols, int32_t tid) {
-    Env::start_col[tid] = 0;
-    Env::end_col[tid]   =  ncols;
-}
-
-uint64_t Env::assign_nnz() {
-    uint64_t nnz = std::accumulate(Env::offset_nnz.begin(), Env::offset_nnz.end(), 0);
-
-    uint64_t sum = 0;
-    for(int32_t i = Env::nthreads - 1; i > 0; i--) {
-        sum += Env::offset_nnz[i];
-        Env::offset_nnz[i] = nnz - sum;
-        Env::index_nnz[i] = Env::offset_nnz[i];
-    }
-    Env::offset_nnz[0] = 0;                               
-    Env::index_nnz[0] = 0;
-
-    return(nnz);
-}
-*/
 template<typename Type>
 std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type value) {
     std::vector<Type> values(Env::nranks);
     MPI_Datatype MPI_TYPE = MPI_Types::get_mpi_data_type<Type>();
     MPI_Allgather(&value, 1, MPI_TYPE, values.data(), 1, MPI_TYPE, MPI_COMM_WORLD); 
-    Type sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
-    stats(values, sum, mean, std_dev, min, max);    
-    return(std::make_tuple(sum, mean, std_dev, min, max));
-}
-
-template<typename Type>
-std::tuple<Type, Type, Type, Type, Type> Env::statistics_t(const std::vector<Type> values_t) {
-    std::vector<Type> values(Env::nranks * Env::nthreads);
-    MPI_Datatype MPI_TYPE = MPI_Types::get_mpi_data_type<Type>();
-    MPI_Allgather(values_t.data(), Env::nthreads, MPI_TYPE, values.data(), Env::nthreads, MPI_TYPE, MPI_COMM_WORLD); 
     Type sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
     stats(values, sum, mean, std_dev, min, max);    
     return(std::make_tuple(sum, mean, std_dev, min, max));
