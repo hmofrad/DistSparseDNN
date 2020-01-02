@@ -1,7 +1,7 @@
 /*
  * spops.hpp: Sparse Matrix operations implementation
  * Sparse Matrix - Sparse Matrix (SpMM)
- * (c) Mohammad Hasanzadeh Mofrad, 2019
+ * (c) Mohammad Hasanzadeh Mofrad, 2020
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
  
@@ -12,13 +12,12 @@
 #include "spmat.hpp"
 
 template<typename Weight>
-inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct CSC<Weight>> A_CSC,
+inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct CSC<Weight>> A_CSC,
                                                          std::shared_ptr<struct CSC<Weight>> B_CSC,
                                                          std::shared_ptr<struct Data_Block<Weight>> s,
                                                          const uint32_t start_col,
                                                          const uint32_t end_col,
                                                          const int32_t tid) {
-
     uint64_t nnzmax = 0;
     uint32_t nrows = 0;
     uint32_t ncols = 0; 
@@ -65,7 +64,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_sym(std::shared_ptr<struct 
 }
 
 template<typename Weight>
-inline void spmm(std::shared_ptr<struct CSC<Weight>> A_CSC,
+inline void spmm_real(std::shared_ptr<struct CSC<Weight>> A_CSC,
                  std::shared_ptr<struct CSC<Weight>> B_CSC,
                  std::shared_ptr<struct CSC<Weight>> C_CSC,
                  std::shared_ptr<struct Data_Block<Weight>> s,
@@ -75,7 +74,7 @@ inline void spmm(std::shared_ptr<struct CSC<Weight>> A_CSC,
                  const uint32_t off_col,
                  uint64_t& idx_nnz,
                  const int32_t tid) {
-
+                     
     const uint64_t A_nnz   = A_CSC->nnz;
     const uint32_t A_nrows = A_CSC->nrows;
     const uint32_t A_ncols = A_CSC->ncols;
@@ -104,9 +103,6 @@ inline void spmm(std::shared_ptr<struct CSC<Weight>> A_CSC,
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols);
         std::exit(Env::finalize()); 
     }
-
-    ///uint64_t& index = Env::index_nnz[tid];
-    //uint64_t& index = Env::threads[tid].idx_nnz;
         
     for(uint32_t j = start_col; j < end_col; j++) {
         for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
@@ -117,53 +113,6 @@ inline void spmm(std::shared_ptr<struct CSC<Weight>> A_CSC,
         }
         C_CSC->populate_spa(&s_A, b_A, off_col + j, idx_nnz, tid);
     }
-}
-
-template<typename Weight>
-inline void adjust(std::shared_ptr<struct CSC<Weight>> C_CSC,
-                   const int32_t tid) {
-                       
-    double start_time = Env::tic();                       
-    C_CSC->adjust(tid);
-    if(!tid) Env::memory_time += Env::toc(start_time);
-    Env::memory_allocation_time[tid] += Env::toc(start_time);
-}
-
-template<typename Weight>
-inline void walk_by_tid(std::shared_ptr<struct CSC<Weight>> C_CSC,
-                        const int32_t tid) {
-     C_CSC->walk(false, tid);
-}
-
-template<typename Weight>
-inline void walk_by_rank(std::shared_ptr<struct CSC<Weight>> A_CSC) {
-    A_CSC->walk(false);
-}
-
-template<typename Weight>
-inline void repopulate(std::shared_ptr<struct CSC<Weight>> A_CSC,
-                       std::shared_ptr<struct CSC<Weight>> C_CSC,
-                       const uint32_t start_col,
-                       const uint32_t end_col,
-                       const uint32_t dis_nnz,
-                       const int32_t tid) {
-    double start_time = Env::tic();
-    //A_CSC->repopulate(C_CSC, start_col, end_col, dis_nnz, tid);
-    if(!tid) Env::memory_time += Env::toc(start_time);
-    Env::memory_allocation_time[tid] += Env::toc(start_time);
-}
-
-template<typename Weight>
-inline void repopulate(std::shared_ptr<struct CSC<Weight>> A_CSC,
-                       std::shared_ptr<struct CSC<Weight>> C_CSC,
-                      const int32_t leader,
-                       const int32_t tid,
-                       const std::vector<int32_t> my_follower_threads) {
-                           
-    double start_time = Env::tic();
-    //A_CSC->repopulate(C_CSC, tid, leader, my_follower_threads);
-    if(tid == leader) Env::memory_time += Env::toc(start_time);
-    Env::memory_allocation_time[tid] += Env::toc(start_time);
 }
 
 template<typename Weight>
@@ -192,14 +141,17 @@ inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
             break;
         }
     }
-    
-    Env::checkconv[tid] = me;
 
+    Env::counters[tid].checkconv = me;
     pthread_barrier_wait(&Env::thread_barrier);
-    int32_t us = std::accumulate(Env::checkconv.begin(), Env::checkconv.end(), 0);
-    int32_t all = 0;
+    
+    int32_t us = 0;
+    for(auto counter: Env::counters) {
+        us += counter.checkconv;
+    }
+    
     bool converged = false;
-
+    int32_t all = 0;
     if(!tid) {
         MPI_Allreduce(&us, &all, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
         converged = (all == (Env::nranks * Env::nthreads));
