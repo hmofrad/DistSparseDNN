@@ -391,7 +391,8 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         JA[1] = 0;
         for(uint32_t i = 0; i < my_threads.size(); i++) {
             int32_t t = my_threads[i];
-            uint32_t start_col = Env::follower_threads_info[leader_tid][t].start_col;
+            uint32_t start_col = Env::threads[t].start_col;
+            //uint32_t start_col = Env::follower_threads_info[leader_tid][t].start_col;
             for(uint32_t j = 0; j < i; j++) {
                 int32_t tt = my_threads[j];
                 //JA[start_col+1] += (Env::index_nnz[tt] - Env::offset_nnz[tt]);
@@ -411,8 +412,8 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     //}
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
     
-    const uint32_t start_col = Env::follower_threads_info[leader_tid][tid].start_col;
-    const uint32_t end_col   = Env::follower_threads_info[leader_tid][tid].end_col;
+    const uint32_t start_col = Env::threads[tid].start_col;// Env::follower_threads_info[leader_tid][tid].start_col;
+    const uint32_t end_col   = Env::threads[tid].end_col; //Env::follower_threads_info[leader_tid][tid].end_col;
 
     for(uint32_t j = start_col; j < end_col; j++) {
         JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
