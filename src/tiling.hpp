@@ -1480,6 +1480,17 @@ void Tiling<Weight>::test() {
     
     auto tile = tiles[0][0];
     std::shared_ptr<struct CSC<Weight>> CSC = tile.spmat;
+    uint32_t nlocals = 2;
+    uint32_t nremotes = 3;
+    std::vector<std::shared_ptr<struct CSC<Weight>>> CSCs;
+    CSC->split(CSCs, nlocals, nremotes);
+    printf("DONE %lu\n", CSCs.size());
+    for(auto csc: CSCs) {
+        printf("%d\n", csc->ncols);
+    }
+    
+    Env::barrier();
+    std::exit(0);
     
     
     const uint64_t  nnz   = CSC->nnz;
@@ -1499,18 +1510,7 @@ void Tiling<Weight>::test() {
             rows[IA[i]]++;
         }
     }
-    
-    /*
-    uint64_t max_nnz = 0;
-    uint32_t row = 0;
-    for(uint32_t i = 0; i < nrows; i++) {
-        max_nnz += rows[i];
-        if(max_nnz >= balanced_nnz) {
-            row = i-1;
-            break;
-        }
-    }
-    */
+
     
     
     uint32_t i = 0;
@@ -1616,8 +1616,6 @@ void Tiling<Weight>::test() {
     
     
     
-    Env::barrier();
-    std::exit(0);
 }
 
 #endif
