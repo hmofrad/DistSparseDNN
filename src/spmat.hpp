@@ -30,7 +30,7 @@ struct CSC {
         void adjust(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
         void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid);
         void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
-
+        void split(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, const uint32_t nparts_local, const uint32_t nparts_remote);
         uint64_t nnz   = 0;
         uint64_t nnz_i = 0;
         uint32_t nrows = 0;
@@ -45,6 +45,7 @@ struct CSC {
 template<typename Weight>
 CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {
     CSC::nnz = nnz_;
+    CSC::nnz_i = nnz_;
     CSC::nrows = nrows_; 
     CSC::ncols = ncols_;
     
@@ -81,7 +82,7 @@ void CSC<Weight>::populate(const std::vector<struct Triple<Weight>> triples, con
         j++;
         JA[j] = JA[j - 1];
     }
-    CSC::nnz_i = CSC::nnz;
+    //CSC::nnz_i = CSC::nnz;
 }
 
 /* Tile height and width are not necessarily 
@@ -112,7 +113,7 @@ void CSC<Weight>::populate(const std::vector<struct Triple<Weight>> triples, con
         j++;
         JA[j] = JA[j - 1];
     }
-    CSC::nnz_i = CSC::nnz;    
+    //CSC::nnz_i = CSC::nnz;    
 }
 
 template<typename Weight>
@@ -427,6 +428,301 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         }
     }
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+}
+
+template<typename Weight>
+void CSC<Weight>::split(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, const uint32_t nparts_local, const uint32_t nparts_remote) {
+
+    uint64_t&  nnz   = CSC::nnz;
+    uint64_t&  nnz_i = CSC::nnz_i;
+    uint32_t&  nrows = CSC::nrows;
+    uint32_t   ncols = CSC::ncols;
+    uint32_t*     IA = CSC::IA_blk->ptr;
+    uint32_t*     JA = CSC::JA_blk->ptr;
+    Weight*        A = CSC::A_blk->ptr;    
+    
+    std::vector<uint32_t> rows(nrows);
+    for(uint32_t j = 0; j < ncols; j++) {
+        for(uint32_t i = JA[j]; i < JA[j+1]; i++) {
+            rows[IA[i]]++;
+        }
+    }
+    uint32_t nparts = 1+nparts_remote;
+    uint64_t balanced_nnz = nnz/(nparts_local + nparts_remote);
+    std::vector<uint64_t> bounds_nnz(nparts, balanced_nnz);
+    bounds_nnz[0] = balanced_nnz * nparts_local;
+    
+    std::vector<uint64_t> new_nnzs(nparts);
+    std::vector<uint32_t> new_rows(nparts);
+    uint32_t i = 0;
+    for(uint32_t k = 0; k < nparts; k++) {
+        while((new_nnzs[k] < bounds_nnz[k]) and (i < nrows)) {
+            new_nnzs[k] += rows[i];
+            i++;
+        }
+        new_rows[k] = i;
+    }
+    
+    /*
+    uint64_t s = 0;
+    uint32_t t = 0;
+    for(uint32_t k = 0; k < bounds_nnz.size(); k++) {
+        s += new_nnzs[k];
+        t += new_rows[k];
+        printf("%lu %d\n", new_nnzs[k], new_rows[k]);
+    }
+    printf("%lu %lu %d\n", s, nnz, t);
+    */
+    
+    std::vector<uint32_t> new_heights(nparts);
+    new_heights[0] = new_rows[0];
+    for(uint32_t k = 1; k < nparts; k++) {
+        new_heights[k] = new_rows[k] - new_rows[k-1];
+    }
+    uint32_t new_width = ncols;
+    /*
+    std::vector<uint32_t> new_offsets(nparts);
+    new_offsets[0]
+    for(uint32_t k = 1; k < new_offsets.size(); k++) {
+        
+        new_heights[k] = new_rows[k] - new_rows[k-1];
+    }
+    */
+    
+    /*
+    uint32_t s = 0;
+    for(uint32_t k = 0; k < new_heights.size(); k++) {
+        s += new_heights[k];
+        printf("%d %d\n", k, new_heights[k]);
+    }
+    printf("%d\n", s);
+    */
+    //std::vector<std::shared_ptr<struct CSC<Weight>>> new_CSC = std::make_shared<struct CSC<Weight>>(new_nnzs[0], new_heights[0], new_width);
+    for(uint32_t k = 0; k < nparts; k++) {
+        ///printf("%d %lu %d %d\n", k, new_nnzs[k], new_heights[k], new_rows[k]);
+        CSCs.push_back(std::make_shared<struct CSC<Weight>>(new_nnzs[k], new_heights[k], new_width));
+    }
+
+    for(uint32_t k = 0; k < nparts; k++) {
+        uint32_t* JA_ = CSCs[k]->JA_blk->ptr;
+        JA_[0] = 0;
+    }
+
+    for(uint32_t j = 0; j < ncols; j++) {
+        for(uint32_t k = 0; k < nparts; k++) {
+            uint32_t* JA_ = CSCs[k]->JA_blk->ptr;
+            JA_[j+1] = JA_[j];
+        }
+        for(uint32_t i = JA[j]; i < JA[j+1]; i++) {
+            uint32_t k = 0;
+            for(k = 0; k < nparts; k++) {
+                if(IA[i] < new_rows[k]) {
+                    break;
+                }
+            }
+            
+            uint32_t* IA_ = CSCs[k]->IA_blk->ptr;
+            uint32_t* JA_ = CSCs[k]->JA_blk->ptr;
+            double*  A_ = CSCs[k]->A_blk->ptr;
+            uint32_t& k_ = JA_[j+1];
+            IA_[k_] = IA[i] - new_rows[k];
+            A_[k_] = A[i];
+            k_++;
+        }
+    }
+    
+    nnz   = CSCs[0]->nnz;
+    nnz_i = CSCs[0]->nnz_i;
+    nrows = CSCs[0]->nrows;
+    ncols = CSCs[0]->ncols;
+    CSC::JA_blk->clear();
+    CSC::JA_blk->copy(CSCs[0]->JA_blk->ptr);
+    CSC::IA_blk->reallocate(CSC::nnz_i);
+    CSC::IA_blk->clear();
+    CSC::IA_blk->copy(CSCs[0]->IA_blk->ptr);
+    CSC::A_blk->reallocate(CSC::nnz_i);
+    CSC::A_blk->clear(); 
+    CSC::A_blk->copy(CSCs[0]->A_blk->ptr);
+    
+    
+    
+    
+    
+    
+/*
+    double checksum   = 0;
+    uint64_t checkcount = 0;  
+
+    for(uint32_t j = 0; j < ncols; j++) {
+        for(uint32_t i = JA[j]; i < JA[j+1]; i++) {
+            checkcount++;
+            checksum += A[i];
+        }
+    }
+    printf(">> %f %lu\n", checksum, checkcount);
+    
+    //uint32_t*     IA = CSC::IA_blk->ptr;
+    //uint32_t*     JA = CSC::JA_blk->ptr;
+    //Weight*        A = CSC::A_blk->ptr;
+    
+ 
+    
+    
+  
+     checksum   = 0;
+     checkcount = 0;  
+
+for(auto csc: CSCs) {
+    uint64_t checkcount1 = 0;
+    uint32_t ncols1 = csc->ncols;
+    uint32_t*   IA1 = csc->IA_blk->ptr;
+    uint32_t*   JA1 = csc->JA_blk->ptr;
+    double*      A1 = csc->A_blk->ptr;
+    for(uint32_t j = 0; j < ncols1; j++) {
+        for(uint32_t i = JA1[j]; i < JA1[j+1]; i++) {
+            checkcount1++;
+            checksum += A[i];
+        }
+    }
+    printf("%lu\n", checkcount1);
+    checkcount += checkcount1;
+}    
+
+printf("%f %lu\nn", checksum, checkcount);
+       */
+        
+        /*
+        //JA1[j+1] = 
+        uint32_t& k1 = JA1[j+1];
+        k1 = JA1[j];
+
+        uint32_t& k2 = JA2[j+1];
+        k2 = JA2[j];
+        //uint32_t j1_old = JA1[j+1];
+        //uint32_t j2_old = JA2[j+1];
+        //if(JA[j+1] - JA[j]) {
+        for(uint32_t i = JA[j]; i < JA[j+1]; i++) {
+            if(IA[i] < new_height1) {
+                //JA1[j+1]++
+                IA1[k1] = IA[i];
+                A1[k1] = A[i];
+                k1++;
+            }
+            else {
+                //JA1[j+1]++;
+                IA2[k2] = IA[i] - new_height1;
+                A2[k2] = A[i];
+                k2++;
+            }
+        }
+    }
+*/
+    
+    
+    
+    /*
+    const uint64_t  nnz   = CSC->nnz;
+    const uint32_t  nrows = CSC->nrows;
+    const uint32_t  ncols = CSC->ncols;
+    const uint32_t*    IA = CSC->IA_blk->ptr;
+    const uint32_t*    JA = CSC->JA_blk->ptr;
+    const Weight*       A = CSC->A_blk->ptr;
+    
+    uint64_t balanced_nnz = CSC->nnz/2;
+    
+    printf("%d %lu %d %lu\n", Env::rank, CSC->nnz, CSC->nrows, balanced_nnz);
+    
+    
+
+    
+    
+    uint32_t i = 0;
+    uint64_t new_nnz1 = 0;
+    while(new_nnz1 < balanced_nnz) {
+        new_nnz1 += rows[i];
+        i++;
+    }
+    uint32_t nrows1 = i;
+    
+    //uint64_t s = 0;
+    //for(i = 0; i < row; i++) {
+      //  s += rows[i];
+    //}
+    //printf("%d <%lu %lu %lu>\n", row, max_nnz, balanced_nnz, s);
+    
+    
+    uint32_t new_height1 = nrows1;
+    uint32_t new_height2 = tile.height - nrows1;
+    uint32_t new_width = tile.width;
+    uint64_t new_nnz2 = nnz - new_nnz1; 
+    
+    printf("[%d %d %d] [%lu %lu %lu]\n", new_height1, new_height2, new_height1 + new_height2, new_nnz1, new_nnz2, new_nnz1 + new_nnz2);
+    std::shared_ptr<struct CSC<Weight>> CSC1 = std::make_shared<struct CSC<Weight>>(new_nnz1, new_height1, new_width);
+    std::shared_ptr<struct CSC<Weight>> CSC2 = std::make_unique<struct CSC<Weight>>(new_nnz2, new_height2, new_width);
+    
+    uint32_t* IA1 = CSC1->IA_blk->ptr;
+    uint32_t* JA1 = CSC1->JA_blk->ptr;
+    Weight*    A1 = CSC1->A_blk->ptr;
+    
+    uint32_t* IA2 = CSC2->IA_blk->ptr;
+    uint32_t* JA2 = CSC2->JA_blk->ptr;
+    Weight*    A2 = CSC2->A_blk->ptr;
+    
+    
+    //uint32_t i1 = 0;
+    //uint32_t i2 = 0;
+    //uint32_t j1 = 1;
+    //uint32_t j2 = 1;
+    JA1[0] = 0;
+    JA2[0] = 0;
+    for(uint32_t j = 0; j < ncols; j++) {
+        //JA1[j+1] = 
+        uint32_t& k1 = JA1[j+1];
+        k1 = JA1[j];
+
+        uint32_t& k2 = JA2[j+1];
+        k2 = JA2[j];
+        //uint32_t j1_old = JA1[j+1];
+        //uint32_t j2_old = JA2[j+1];
+        //if(JA[j+1] - JA[j]) {
+        for(uint32_t i = JA[j]; i < JA[j+1]; i++) {
+            if(IA[i] < new_height1) {
+                //JA1[j+1]++
+                IA1[k1] = IA[i];
+                A1[k1] = A[i];
+                k1++;
+            }
+            else {
+                //JA1[j+1]++;
+                IA2[k2] = IA[i] - new_height1;
+                A2[k2] = A[i];
+                k2++;
+            }
+        }
+    }
+    
+    double checksum1   = 0;
+    uint64_t checkcount1 = 0;    
+    double checksum2   = 0;
+    uint64_t checkcount2 = 0;    
+    for(uint32_t j = 0; j < ncols; j++) {
+        for(uint32_t i = JA1[j]; i < JA1[j+1]; i++) {
+            checksum1 += A1[i];
+            checkcount1++;
+        }
+    }
+    
+    for(uint32_t j = 0; j < ncols; j++) {
+        for(uint32_t i = JA2[j]; i < JA2[j+1]; i++) {
+            checksum2 += A2[i];
+            checkcount2++;
+        }
+    }
+    
+    printf("[%f %lu %lu] [%f %lu %lu]\n", checksum1, checkcount1, new_nnz1, checksum2, checkcount2, new_nnz2);
+    
+    */
+    
 }
 
 
