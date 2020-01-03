@@ -30,6 +30,9 @@ struct Tile{
         uint32_t end_col = 0;
         uint32_t height = 0;
         uint32_t width = 0;
+        
+        bool partitioned = false;
+        std::vector<struct Tile<Weight>> subtiles;
 };
 
 template<typename Weight>
