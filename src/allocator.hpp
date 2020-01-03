@@ -25,7 +25,7 @@ struct Data_Block {
         void deallocate();
         void reallocate(const uint64_t nitems_);
         void clear(const uint64_t start = 0, const uint64_t end = 0);
-        
+        void copy(Data_Type* data, const uint64_t start = 0, const uint64_t end = 0);
         uint64_t nitems;
         uint64_t nbytes;
         int32_t socket_id;
@@ -118,16 +118,23 @@ void Data_Block<Data_Type>::reallocate(const uint64_t nitems_) {
 template<typename Data_Type>
 void Data_Block<Data_Type>::clear(const uint64_t start, const uint64_t end) {
     if(start or end) {
-        
         uint64_t nb = (end - start) * sizeof(Data_Type);
-        //printf("%lu %lu %lu %lu\n", start, end, nb, nitems * sizeof(Data_Type));
         memset(ptr+start, 0,  nb);   
     }
     else {
         memset(ptr, 0,  nbytes);        
-        
-        //uint64_t 
-        //memset(ptr+start, 0,  nbytes); 
     }
 }
+
+template<typename Data_Type>
+void Data_Block<Data_Type>::copy(Data_Type* data, const uint64_t start, const uint64_t end) {
+    if(start or end) {
+        uint64_t nb = (end - start) * sizeof(Data_Type);
+        memcpy(ptr+start, data+start,  nb);   
+    }
+    else {
+        memcpy(ptr, data,  nbytes);          
+    }
+}
+
 #endif
