@@ -103,6 +103,14 @@ namespace Env {
     void     init_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
     void increase_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
     void decrease_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
+    
+    template<typename Type>
+    void create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_shared_data_size, MPI_Win* window);
+    
+    void destroy_mpi_asynch_shared_mem(MPI_Win* window);
+    
+    int32_t* idle_ranks;
+    MPI_Win window;
 }
 
 int Env::init() {
@@ -235,6 +243,50 @@ bool Env::numa_configure() {
     return(status);
 }
 
+
+template<typename Type>
+std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type value) {
+    std::vector<Type> values(Env::nranks);
+    MPI_Datatype MPI_TYPE = MPI_Types::get_mpi_data_type<Type>();
+    MPI_Allgather(&value, 1, MPI_TYPE, values.data(), 1, MPI_TYPE, MPI_COMM_WORLD); 
+    Type sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+    stats(values, sum, mean, std_dev, min, max);    
+    return(std::make_tuple(sum, mean, std_dev, min, max));
+}
+
+template<typename Type>
+void Env::stats(const std::vector<Type> vec, Type& sum, Type& mean, Type& std_dev, Type& min, Type& max) {
+    sum = std::accumulate(vec.begin(), vec.end(), 0.0);
+    mean = sum / vec.size();
+    Type sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
+    std_dev = std::sqrt(sq_sum / vec.size() - mean * mean);
+    std::pair bounds = std::minmax_element(vec.begin(), vec.end());
+    min = *bounds.first;
+    max = *bounds.second;
+}
+
+double Env::clock() {
+    return(MPI_Wtime());
+}
+
+double Env::tic() {
+    return(Env::clock());
+}
+
+double Env::toc(double start_time) {
+    return(Env::clock() - start_time);
+}
+
+void Env::barrier() {
+    MPI_Barrier(MPI_COMM_WORLD);
+}
+
+int Env::finalize() {
+    MPI_Barrier(MPI_COMM_WORLD);
+    int ret = MPI_Finalize();
+    return((ret == MPI_SUCCESS) ? 0 : 1);
+}
+
 uint64_t Env::adjust_nnz(const int32_t leader_tid, const int32_t tid) {
     uint64_t nnz = 0;
     if(tid == leader_tid) {
@@ -316,46 +368,20 @@ void Env::decrease_num_threads(const uint32_t value, const int32_t leader_tid, c
 }
 
 template<typename Type>
-std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type value) {
-    std::vector<Type> values(Env::nranks);
-    MPI_Datatype MPI_TYPE = MPI_Types::get_mpi_data_type<Type>();
-    MPI_Allgather(&value, 1, MPI_TYPE, values.data(), 1, MPI_TYPE, MPI_COMM_WORLD); 
-    Type sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
-    stats(values, sum, mean, std_dev, min, max);    
-    return(std::make_tuple(sum, mean, std_dev, min, max));
+void Env::create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_shared_data_size, MPI_Win* window) {
+    uint32_t window_size = mpi_shared_data_size * sizeof(Type);
+    MPI_Alloc_mem(window_size, MPI_INFO_NULL, mpi_shared_data);
+    memset(*mpi_shared_data, 0, window_size);
+    
+    MPI_Win_create(*mpi_shared_data, window_size, sizeof(Type), MPI_INFO_NULL, MPI_COMM_WORLD, window);
 }
 
-template<typename Type>
-void Env::stats(const std::vector<Type> vec, Type& sum, Type& mean, Type& std_dev, Type& min, Type& max) {
-    sum = std::accumulate(vec.begin(), vec.end(), 0.0);
-    mean = sum / vec.size();
-    Type sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
-    std_dev = std::sqrt(sq_sum / vec.size() - mean * mean);
-    std::pair bounds = std::minmax_element(vec.begin(), vec.end());
-    min = *bounds.first;
-    max = *bounds.second;
-}
-
-double Env::clock() {
-    return(MPI_Wtime());
-}
-
-double Env::tic() {
-    return(Env::clock());
-}
-
-double Env::toc(double start_time) {
-    return(Env::clock() - start_time);
-}
-
-void Env::barrier() {
-    MPI_Barrier(MPI_COMM_WORLD);
-}
-
-int Env::finalize() {
-    MPI_Barrier(MPI_COMM_WORLD);
-    int ret = MPI_Finalize();
-    return((ret == MPI_SUCCESS) ? 0 : 1);
+void Env::destroy_mpi_asynch_shared_mem(MPI_Win* window) {
+    MPI_Win_free(window); 
+    //mpi_shared_data = ;
+///    Env::idle_ranks.clear();
+   // Env::idle_ranks.shrink_to_fit();
+    
 }
 
 #endif
