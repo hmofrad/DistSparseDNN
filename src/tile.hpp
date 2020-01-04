@@ -43,7 +43,7 @@ void Tile<Weight>::compress(const bool one_rank) {
         std::sort(triples.begin(), triples.end(), f_col);   
         spmat = std::make_shared<struct CSC<Weight>>(triples.size(), height, width);
         spmat->populate(triples, start_row, end_row, start_col, end_col);
-        spmat->walk_dxm(one_rank, 0, 0);
+        //spmat->walk_dxm(one_rank, 0, 0);
         triples.clear();
         triples.shrink_to_fit();
     }
