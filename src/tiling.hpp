@@ -70,6 +70,7 @@ class Tiling {
         uint32_t get_tile_info(const std::string field, const int32_t tid);
         void     set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles); 
         void test();
+        void test1();
 
     private:
         void integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b);
@@ -432,6 +433,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 
     compress_triples();
     //test();    
+    test1();
 }
 
 
@@ -1474,6 +1476,159 @@ void Tiling<Weight>::compress_triples(){//(const REFINE_TYPE refine_type) {
     Env::barrier();      
 }
 
+template<typename Weight>
+void Tiling<Weight>::test1() {
+    Env::barrier();
+    printf("Rank=%d\n", Env::rank);
+    //std::vector<int32_t> idle_ranks;
+    Env::create_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, Env::nranks+1, &Env::window);
+    Env::barrier();
+    //char* has_changed;
+    //int* num_idle_ranks;
+    
+    //if (Env::rank == 0) {
+        //window_size = Env::nranks * sizeof(int32_t);
+    
+    /*
+    std::vector<int32_t> idle_ranks;
+    uint32_t window_size = (Env::nranks + 1) * sizeof(int32_t);
+    MPI_Alloc_mem(window_size, MPI_INFO_NULL, &idle_ranks);
+    memset(idle_ranks.data(), -1, window_size);
+    //std::fill(idle_ranks.begin(), idle_ranks.end(), -1);
+
+    idle_ranks[Env::nranks] = 0;
+        //addr = 1; // initialised to 1 since MPI_Fetch_and_op returns value *before* increment
+    //}
+    Env::barrier();
+    MPI_Win window;
+    MPI_Win_create(idle_ranks.data(), window_size, sizeof(int32_t), MPI_INFO_NULL, MPI_COMM_WORLD, &window);
+    */
+        
+    int counter;
+    int idle_status = 1;
+    int idle_rank = Env::rank+1;
+    for(int i = 1; i < Env::nranks; i++) {
+        int target_rank = (Env::rank+i)%Env::nranks;
+        int target_disp = Env::rank;
+        MPI_Win_lock(MPI_LOCK_EXCLUSIVE, target_rank, 0, Env::window);
+        MPI_Fetch_and_op(&idle_status, &counter, MPI_INT, target_rank, Env::nranks, MPI_SUM, Env::window);
+        MPI_Fetch_and_op(&idle_rank, &counter, MPI_INT, target_rank, target_disp, MPI_REPLACE, Env::window);
+        MPI_Win_unlock(target_rank, Env::window);    
+    }
+    
+    Env::barrier();  
+    if (Env::rank == 0) {
+        printf("%d: ", Env::rank);
+        //for(auto i: Env::idle_ranks) {printf("%d ", i);}
+        for(int i = 0;i < Env::nranks+1; i++) {
+            printf("%d ", *(Env::idle_ranks + i));
+            //printf("%d ", Env::idle_ranks[i]);
+            
+        }
+        printf("\n");
+    }
+    Env::barrier();  
+    if (Env::rank == 1) {
+        printf("%d: ", Env::rank);
+        for(int i =0;i < Env::nranks+1; i++) {
+            printf("%d ", *(Env::idle_ranks + i));
+            //printf("%d ", Env::idle_ranks[i]);
+        }
+        printf("\n");
+    }
+    Env::barrier();  
+    if (Env::rank == 2) {
+        printf("%d: ", Env::rank);
+        for(int i =0;i < Env::nranks+1; i++) {
+            printf("%d ", *(Env::idle_ranks + i));
+            //printf("%d ", Env::idle_ranks[i]);
+        }
+        printf("\n");
+    }
+    Env::barrier();  
+    if (Env::rank == 3) {
+        printf("%d: ", Env::rank);
+        for(int i =0;i < Env::nranks+1; i++) {
+            printf("%d ", *(Env::idle_ranks + i));
+            //printf("%d ", Env::idle_ranks[i]);
+        }
+        printf("\n");
+    }
+    //Env::barrier();  
+    Env::destroy_mpi_asynch_shared_mem(&Env::window);
+    //MPI_Win_free(&window);   
+    
+    //if (Env::rank == 0) {
+        //idle_ranks.clear();
+        //idle_ranks.shrink_to_fit();
+        //MPI_Free_mem(idle_ranks);
+    //}
+    
+    Env::barrier();    
+    //printf("%d %d\n", Env::rank, counter);    
+
+    /*
+    int *addr = 0;
+    int winSz = 0;
+    if (Env::rank == 0) {
+        winSz = sizeof(int);
+        MPI_Alloc_mem(winSz, MPI_INFO_NULL, &addr);
+        *addr = 1; // initialised to 1 since MPI_Fetch_and_op returns value *before* increment
+    }
+    MPI_Win win;
+    MPI_Win_create(addr, winSz, sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
+    
+    int counter;
+    one = 1;
+    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, win);
+    MPI_Fetch_and_op(&one, &counter, MPI_INT, 0, 0, MPI_SUM, win);
+    MPI_Win_unlock(0, win);
+
+    // checking the value of the counter and printing by last in time process
+    if (counter == Env::nranks) {
+        std::cout << "Process #" << Env::rank << " did the last update" << std::endl;
+    }
+
+    // cleaning up
+    MPI_Win_free(&win);
+    if (Env::rank == 0) {
+        MPI_Free_mem(addr);
+    }    
+    */
+    
+    /*
+    if(Env::rank == 0) {
+        for(int32_t i = 1; i < Env::nranks; i++) {
+            int32_t r = (Env::rank + i) % Env::nranks;
+            printf("%d %d\n", i, r);
+        }
+    }
+    Env::barrier();
+    if(Env::rank == 1) {
+        for(int32_t i = 1; i < Env::nranks; i++) {
+            int32_t r = (Env::rank + i) % Env::nranks;
+            printf("%d %d\n", i, r);
+        }
+    }
+    Env::barrier();
+    if(Env::rank == 2) {
+        for(int32_t i = 1; i < Env::nranks; i++) {
+            int32_t r = (Env::rank + i) % Env::nranks;
+            printf("%d %d\n", i, r);
+        }
+    }
+    Env::barrier();
+    if(Env::rank == 3) {
+        for(int32_t i = 1; i < Env::nranks; i++) {
+            int32_t r = (Env::rank + i) % Env::nranks;
+            printf("%d %d\n", i, r);
+        }
+    }
+    */
+    Env::barrier();
+    std::exit(0);
+    
+}
 
 template<typename Weight>
 void Tiling<Weight>::test() {
