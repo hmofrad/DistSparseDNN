@@ -433,7 +433,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 
     compress_triples();
     //test();    
-    test1();
+    //test1();
 }
 
 
@@ -1503,7 +1503,7 @@ void Tiling<Weight>::test1() {
     MPI_Win window;
     MPI_Win_create(idle_ranks.data(), window_size, sizeof(int32_t), MPI_INFO_NULL, MPI_COMM_WORLD, &window);
     */
-        
+    /*    
     int counter;
     int idle_status = 1;
     int idle_rank = Env::rank+1;
@@ -1554,6 +1554,7 @@ void Tiling<Weight>::test1() {
         }
         printf("\n");
     }
+    */
     //Env::barrier();  
     //Env::destroy_mpi_asynch_shared_mem(&Env::window);
     //MPI_Win_free(&window);   
