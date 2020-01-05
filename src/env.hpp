@@ -106,11 +106,38 @@ namespace Env {
     
     template<typename Type>
     void create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_shared_data_size, MPI_Win* window);
-    
     void destroy_mpi_asynch_shared_mem(MPI_Win* window);
     
-    int32_t* idle_ranks;
-    MPI_Win window;
+    //int32_t* idle_ranks;
+    //MPI_Win window;
+    
+    std::vector<int32_t*> idle_threads;
+    std::vector<MPI_Win> thread_windows;
+    std::vector<MPI_Group> thread_groups_;
+    std::vector<MPI_Group> thread_groups;
+    std::vector<MPI_Comm> thread_communicators;
+    std::vector<int32_t> threads_rank;
+    std::vector<int32_t> threads_nranks;
+    /*
+    void create_thread_communicators(std::vector<MPI_Group>& thread_groups_, 
+                                     std::vector<MPI_Group>& thread_groups,
+                                     std::vector<MPI_Comm>&  thread_communicators,
+                                     int32_t ngroups,
+                                     std::vector<int32_t>& groups_rank,
+                                     std::vector<int32_t>& groups_nranks,
+                                     int32_t nranks);
+    */ 
+    void create_thread_communicators(MPI_Group* thread_groups_, 
+                                     MPI_Group* thread_groups,
+                                     MPI_Comm*  thread_communicators,
+                                     int32_t* groups_rank,
+                                     int32_t* groups_nranks,
+                                     std::vector<int32_t> ranks,
+                                     int32_t nranks);
+     
+    void destroy_thread_communicators(MPI_Group* thread_groups_, 
+                                      MPI_Group* thread_groups,
+                                      MPI_Comm*  thread_communicators);
 }
 
 int Env::init() {
@@ -164,6 +191,51 @@ int Env::init() {
     for(int32_t i = 0; i < Env::nthreads; i++) {
         init_num_threads(0, i, i);
     }
+    
+    //create_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, Env::nranks+1, &Env::window);
+    
+    printf("%d\n", Env::rank);
+    //threads_rank.resize(Env::nthreads);
+    //threads_nranks.resize(Env::nthreads);
+    //std::vector<int32_t> ranks(Env::nranks);
+    //std::iota(ranks.begin(), ranks.end(), 0);
+    
+    Env::thread_groups_.resize(Env::nthreads);
+    Env::thread_groups.resize(Env::nthreads);
+    Env::thread_communicators.resize(Env::nthreads);
+    
+    Env::threads_rank.resize(Env::nthreads);
+    Env::threads_nranks.resize(Env::nthreads);
+    
+    std::vector<int32_t> ranks(nranks);
+    std::iota(ranks.begin(), ranks.end(), 0);
+    for(int32_t i = 0; i < Env::nthreads; i++) {
+        Env::create_thread_communicators(&Env::thread_groups_[i], &Env::thread_groups[i], &Env::thread_communicators[i],
+                                         &Env::threads_rank[i], &Env::threads_nranks[i], ranks, Env::nranks);
+    }
+    
+    
+    idle_threads.resize(Env::nthreads);
+    thread_windows.resize(Env::nthreads);
+    for(int32_t i = 0; i < Env::nthreads; i++) {
+        create_mpi_asynch_shared_mem<int32_t>(&Env::idle_threads[i], Env::nranks+1, &Env::thread_windows[i]);
+    }        
+    
+    /*
+    if(Env::rank == 3) {
+        for(auto t : threads_rank) {
+            printf("%d ", t);
+        }
+        printf("\n");
+        for(auto t : threads_nranks) {
+            printf("%d ", t);
+        }
+        printf("\n");
+    }
+    
+    Env::barrier();
+    std::exit(0);
+    */
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
@@ -282,7 +354,18 @@ void Env::barrier() {
 }
 
 int Env::finalize() {
+    //destroy_mpi_asynch_shared_mem(&Env::window);
+    
+    for(int32_t i = 0; i < Env::nthreads; i++) {
+        destroy_mpi_asynch_shared_mem(&Env::thread_windows[i]);
+    }
+    
+    for(int32_t i = 0; i < Env::nthreads; i++) {
+        destroy_thread_communicators(&Env::thread_groups_[i], &Env::thread_groups[i], &Env::thread_communicators[i]);
+    }
+    
     MPI_Barrier(MPI_COMM_WORLD);
+    
     int ret = MPI_Finalize();
     return((ret == MPI_SUCCESS) ? 0 : 1);
 }
@@ -377,11 +460,65 @@ void Env::create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_share
 }
 
 void Env::destroy_mpi_asynch_shared_mem(MPI_Win* window) {
-    MPI_Win_free(window); 
-    //mpi_shared_data = ;
-///    Env::idle_ranks.clear();
-   // Env::idle_ranks.shrink_to_fit();
+    MPI_Win_free(window);     
+}
+
+void Env::create_thread_communicators(MPI_Group* thread_groups_, 
+                                      MPI_Group* thread_groups,
+                                      MPI_Comm*  thread_communicators,
+                                      int32_t* groups_rank,
+                                      int32_t* groups_nranks,
+                                      std::vector<int32_t> ranks,
+                                      int32_t nranks) {
+                                          
+    MPI_Comm_group(MPI_COMM_WORLD, thread_groups_);
+    MPI_Group_incl(*thread_groups_, nranks, ranks.data(), thread_groups);
+    MPI_Comm_create(MPI_COMM_WORLD, *thread_groups, thread_communicators);
     
+    if (MPI_COMM_NULL != *thread_communicators) {
+        MPI_Comm_rank(*thread_communicators, groups_rank);
+        MPI_Comm_size(*thread_communicators, groups_nranks);
+    }
+}
+
+/*
+void Env::create_thread_communicators(std::vector<MPI_Group>& thread_groups_, 
+                                      std::vector<MPI_Group>& thread_groups,
+                                      std::vector<MPI_Comm>&  thread_communicators,
+                                      int32_t ngroups,
+                                      std::vector<int32_t>& groups_rank,
+                                      std::vector<int32_t>& groups_nranks,
+                                      int32_t nranks) {
+                                          
+    thread_groups_.resize(ngroups);
+    thread_groups.resize(ngroups);
+    thread_communicators.resize(ngroups);
+    
+    groups_rank.resize(ngroups);
+    groups_nranks.resize(ngroups);
+    
+    std::vector<int32_t> ranks(nranks);
+    std::iota(ranks.begin(), ranks.end(), 0);
+    
+    for(int32_t k = 0; k < ngroups; k++) {
+        MPI_Comm_group(MPI_COMM_WORLD, &thread_groups_[k]);
+        MPI_Group_incl(thread_groups_[k], nranks, ranks.data(), &thread_groups[k]);
+        MPI_Comm_create(MPI_COMM_WORLD, thread_groups[k], &thread_communicators[k]);
+        
+        if (MPI_COMM_NULL != thread_communicators[k]) {
+            MPI_Comm_rank(thread_communicators[k], &groups_rank[k]);
+            MPI_Comm_size(thread_communicators[k], &groups_nranks[k]);
+        }
+    }
+}
+*/
+
+void Env::destroy_thread_communicators(MPI_Group* thread_groups_, 
+                                       MPI_Group* thread_groups,
+                                       MPI_Comm*  thread_communicators) {
+    MPI_Group_free(thread_groups_);
+    MPI_Group_free(thread_groups);
+    MPI_Comm_free (thread_communicators);
 }
 
 #endif
