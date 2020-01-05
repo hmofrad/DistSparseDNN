@@ -428,6 +428,9 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     std::vector<int32_t> my_threads;
     my_threads.push_back(tid);
     auto start = std::chrono::high_resolution_clock::now();  
+    if(Env::rank == 1) {
+        sleep(10);
+    }
     for (uint32_t l = 0; l < maxLayers; l++) {
         if(add_to_my_followers(my_threads, l, ncols, tid) == 1) {
             start_time = Env::tic(); 
@@ -486,6 +489,36 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         }
     }
     
+    /*
+    printf("Rank=%d, tid=%d I'm done, ask for something? \n", Env::rank, tid);
+    
+    if(!tid) {
+        int counter;
+        int idle_status = 1;
+        int idle_rank = Env::rank+1;
+        for(int i = 1; i < Env::nranks; i++) {
+            int target_rank = (Env::rank + i) % Env::nranks;
+            int target_disp = Env::rank;
+            MPI_Win_lock(MPI_LOCK_EXCLUSIVE, target_rank, 0, Env::window);
+            MPI_Fetch_and_op(&idle_status, &counter, MPI_INT, target_rank, Env::nranks, MPI_SUM, Env::window);
+            MPI_Fetch_and_op(&idle_rank, &counter, MPI_INT, target_rank, target_disp, MPI_REPLACE, Env::window);
+            MPI_Win_unlock(target_rank, Env::window);    
+        }
+    }
+    Env::barrier();
+    */
+    
+    
+    /*
+    for(uint32_t i = 0; i < Env::nranks-1; i++) {
+        int32_t r = (Env::rank + 1 + i) % Env::nranks;
+        if(r != Env::rank) {
+            char req = 1;
+            MPI_Send(req, 1, MPI_CHAR, r, Env::rank, MPI_COMM_WORLD);
+        }
+    }
+    */
+    
     auto finish = std::chrono::high_resolution_clock::now();
     //if(!tid) Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
@@ -501,6 +534,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     }
     
     pthread_barrier_wait(&Env::thread_barrier);        
+    Env::barrier();
 }
 
 template<typename Weight>
