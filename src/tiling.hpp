@@ -1481,8 +1481,8 @@ void Tiling<Weight>::test1() {
     Env::barrier();
     printf("Rank=%d\n", Env::rank);
     //std::vector<int32_t> idle_ranks;
-    Env::create_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, Env::nranks+1, &Env::window);
-    Env::barrier();
+    //Env::create_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, Env::nranks+1, &Env::window);
+    //Env::barrier();
     //char* has_changed;
     //int* num_idle_ranks;
     
@@ -1555,7 +1555,7 @@ void Tiling<Weight>::test1() {
         printf("\n");
     }
     //Env::barrier();  
-    Env::destroy_mpi_asynch_shared_mem(&Env::window);
+    //Env::destroy_mpi_asynch_shared_mem(&Env::window);
     //MPI_Win_free(&window);   
     
     //if (Env::rank == 0) {
