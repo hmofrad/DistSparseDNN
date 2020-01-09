@@ -105,7 +105,7 @@ namespace Env {
     void decrease_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid);
     
     template<typename Type>
-    void create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_shared_data_size, MPI_Win* window);
+    void create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_shared_data_size, MPI_Win* window, MPI_Comm communicator);
     void destroy_mpi_asynch_shared_mem(MPI_Win* window);
     
     //int32_t* idle_ranks;
@@ -218,7 +218,7 @@ int Env::init() {
     idle_threads.resize(Env::nthreads);
     thread_windows.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++) {
-        create_mpi_asynch_shared_mem<int32_t>(&Env::idle_threads[i], Env::nranks+1, &Env::thread_windows[i]);
+        create_mpi_asynch_shared_mem<int32_t>(&Env::idle_threads[i], Env::nranks+1, &Env::thread_windows[i], Env::thread_communicators[i]);
     }        
     
     /*
@@ -451,7 +451,7 @@ void Env::decrease_num_threads(const uint32_t value, const int32_t leader_tid, c
 }
 
 template<typename Type>
-void Env::create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_shared_data_size, MPI_Win* window) {
+void Env::create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_shared_data_size, MPI_Win* window, MPI_Comm communicator) {
     uint32_t window_size = 0;
     if(Env::rank == 0) {
         window_size = mpi_shared_data_size * sizeof(Type);
@@ -459,7 +459,7 @@ void Env::create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_share
         memset(*mpi_shared_data, 0, window_size);
     }
     
-    MPI_Win_create(*mpi_shared_data, window_size, sizeof(Type), MPI_INFO_NULL, MPI_COMM_WORLD, window);
+    MPI_Win_create(*mpi_shared_data, window_size, sizeof(Type), MPI_INFO_NULL, communicator, window);
 }
 
 void Env::destroy_mpi_asynch_shared_mem(MPI_Win* window) {
