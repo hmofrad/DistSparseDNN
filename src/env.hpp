@@ -452,9 +452,12 @@ void Env::decrease_num_threads(const uint32_t value, const int32_t leader_tid, c
 
 template<typename Type>
 void Env::create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_shared_data_size, MPI_Win* window) {
-    uint32_t window_size = mpi_shared_data_size * sizeof(Type);
-    MPI_Alloc_mem(window_size, MPI_INFO_NULL, mpi_shared_data);
-    memset(*mpi_shared_data, 0, window_size);
+    uint32_t window_size = 0;
+    if(Env::rank == 0) {
+        window_size = mpi_shared_data_size * sizeof(Type);
+        MPI_Alloc_mem(window_size, MPI_INFO_NULL, mpi_shared_data);
+        memset(*mpi_shared_data, 0, window_size);
+    }
     
     MPI_Win_create(*mpi_shared_data, window_size, sizeof(Type), MPI_INFO_NULL, MPI_COMM_WORLD, window);
 }
