@@ -54,6 +54,7 @@ class Net {
         void hybrid(std::vector<int32_t>& my_threads, const uint32_t rowgroup, const uint32_t layer, const int32_t leader, const int32_t tid);
         int32_t add_to_my_followers(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid);
         void add_to_my_followers(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid);
+        bool check_for_idle_ranks(int32_t tid);
         bool add_to_idle_threads(std::vector<int32_t>& my_threads, const int32_t tid);
         
 };
@@ -123,7 +124,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    //maxLayers = 10;
+    maxLayers = 5;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -203,10 +204,11 @@ void Net<Weight>::printTimesExcel() {
     Env::barrier();
     
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+    /*
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::io_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "i/o time: mean, std_dev, min, max\n");
     Logging::print(Logging::LOG_LEVEL::VOID, "          %.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
-    
+    */
     int index = std::distance(Env::execution_time.begin(), std::max_element(Env::execution_time.begin(), Env::execution_time.end()));
     double exec_time = Env::execution_time[index];
     double spmm_sym_time = Env::spmm_symb_time[index];
@@ -214,6 +216,7 @@ void Net<Weight>::printTimesExcel() {
     double memory_time = Env::memory_allocation_time[index];
     double hybrid_time = Env::hybrid_probe_time[index];
     
+    /*
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "exe time: mean, std_dev, min, max\n");
     Logging::print(Logging::LOG_LEVEL::VOID, "          %.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
@@ -230,6 +233,20 @@ void Net<Weight>::printTimesExcel() {
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::end_to_end_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "run time: mean, std_dev, min, max\n");
     Logging::print(Logging::LOG_LEVEL::VOID, "          %.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
+    */
+    
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "exec time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_sym_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(memory_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(hybrid_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", mean);
+    
+    
 }
 
 template<typename Weight>
@@ -428,12 +445,14 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     std::vector<int32_t> my_threads;
     my_threads.push_back(tid);
     auto start = std::chrono::high_resolution_clock::now();  
-    //if(Env::rank == 1) {
-      //  sleep(5);
-    //}
+    if(Env::rank == 1) {
+        sleep(15);
+    }
     for (uint32_t l = 0; l < maxLayers; l++) {
-        //printf("rank=%d tid=%d layer=%d", Env::rank, tid, layer);
+        printf("rank=%d tid=%d layer=%d\n", Env::rank, tid, l);
+        (void)check_for_idle_ranks(tid);
         if(add_to_my_followers(my_threads, l, ncols, tid) == 1) {
+            
             start_time = Env::tic(); 
                 if(not(l%2)) {
                     A_tile = inputFeatures->tiles[Env::thread_rowgroup[tid]][0];
@@ -490,57 +509,189 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         }
     }
     
+    
+    
+    while(true) {
+        int window_host_rank = 0;
+        int num_follower_ranks = 0;
+        int some_val = 1;
+        int some_res = 0;
+        int some_cmp = 0;
+        
+        //MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::thread_windows[tid]);    
+        MPI_Win_lock_all(0, Env::thread_windows[tid]);
+        //MPI_Win_sync(Env::thread_windows[tid]);
+        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+        MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_SUM, Env::thread_windows[tid]);
+        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+        MPI_Win_flush_all(Env::thread_windows[tid]);
+        num_follower_ranks = some_res;
+        //printf("rank=%d tid=%d: outsi: num_follower_ranks=%d\n", Env::rank, tid, some_res);
+        //some_val = num_follower_ranks;
+        //MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_REPLACE, Env::thread_windows[tid]);
+        some_val = 1;
+        MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::rank, MPI_REPLACE, Env::thread_windows[tid]);
+        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+        MPI_Win_flush_all(Env::thread_windows[tid]);
+        //MPI_Win_sync(Env::thread_windows[tid]);
+        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+        //MPI_Win_flush_all(Env::thread_windows[tid]);
+        //MPI_Win_sync(Env::thread_windows[tid]);
+        //MPI_Win_flush(Env::rank, Env::thread_windows[tid]);
+        //MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
+        MPI_Win_unlock_all(Env::thread_windows[tid]);
+        printf("rank=%d tid=%d: Added me to the queue (num_follower_ranks=%d)\n", Env::rank, tid, num_follower_ranks);
+        
+        if(num_follower_ranks == Env::nranks) {
+            printf("LAST rank %d\n", Env::rank);
+            for(int i = 0; i < Env::nranks; i++) {
+                if(i != Env::rank) {
+                    int follower_rank = i;
+                    int th_csc_handshake = -1;
+                    
+                    MPI_Send(&th_csc_handshake, 1, MPI_INT, follower_rank, tid, Env::thread_communicators[tid]);   
+                    printf("rank=%d tid=%d --> %d: MP_Send handshake is done (%d)\n", Env::rank, tid, follower_rank, th_csc_handshake);
+                }
+            }
+            break;
+        }
+        else {
+            MPI_Status status;
+            MPI_Request request;
+            std::vector<MPI_Request> requests;
+            
+            int flag = 0;
+            
+            while(!flag) {
+                MPI_Iprobe(MPI_ANY_SOURCE, tid, Env::thread_communicators[tid], &flag, &status);
+            }
+            printf("source=%d tag=%d\n", status.MPI_SOURCE, status.MPI_TAG);
+            int source_rank = status.MPI_SOURCE;
+            int source_tag = status.MPI_TAG;
+            int th_csc_handshake;
+            MPI_Recv(&th_csc_handshake, 1, MPI_INT, source_rank , tid, Env::thread_communicators[tid], &status);
+            printf("rank=%d tid=%d <--- %d: MPI_Recv handshake is done (%d)\n", Env::rank, tid, source_rank, th_csc_handshake);
+            if(th_csc_handshake == -1) break;
+        }
+    
+    }
+    
+    
+    
     /*
+    
     //printf("Rank=%d, tid=%d I'm done, ask for something? \n", Env::rank, tid);
     
     //if(!tid) {
         printf("-1.Rank=%d, tid=%d waiting\n", Env::rank, tid);
-        MPI_Win_lock(MPI_LOCK_EXCLUSIVE, Env::rank, 0, Env::thread_windows[tid]);
-            int origin_value = -1;
-            int compare_value = 0;
-            int result_value;
-            MPI_Compare_and_swap(&origin_value, &compare_value, &result_value, MPI_INT, Env::rank, Env::nranks, Env::thread_windows[tid]);
+        int origin_value = -1;
+        int result_value = 0;
+        int compare_value = 0;
+        MPI_Status status;
+        MPI_Request request;
+        std::vector<MPI_Request> requests;
+        int target_rank = 0;
+        MPI_Win_lock(MPI_LOCK_EXCLUSIVE, Env::rank, 0, Env::thread_windows[tid]);    
+        MPI_Compare_and_swap(&origin_value, &compare_value, &result_value, MPI_INT, Env::rank, Env::nranks, Env::thread_windows[tid]);
+        printf("rank=%d tid=%d result_value=%d %d\n", Env::rank, tid, result_value, *(Env::idle_threads[tid] + Env::nranks));
+        MPI_Win_sync(Env::thread_windows[tid]);
+        MPI_Win_flush(Env::rank, Env::thread_windows[tid]);
+        MPI_Win_unlock(Env::rank, Env::thread_windows[tid]);
             //MPI_Fetch_and_op(&idle_status, &counter, MPI_INT, Env::rank, Env::nranks, MPI_REPLACE, Env::thread_windows[tid]);
             //MPI_Put();
             //int value 
             //MPI_Fetch_and_op(&idle_status, &counter, MPI_INT, Env::rank, Env::nranks, MPI_REPLACE, Env::thread_windows[tid]);
             //int& k = *(Env::idle_threads[tid] + Env::nranks);
-        if(result_value == 0) {
-            //k = -1;
-            printf("Should not communicate rank=%d, tid=%d, %d %d\n", Env::rank, tid, result_value, *(Env::idle_threads[tid] + Env::nranks));
-        }
-        else {
-            printf("Should communicate rank=%d, tid=%d, %d %d\n", Env::rank, tid, result_value, *(Env::idle_threads[tid] + Env::nranks));
-        }
-        //MPI_Win_sync(Env::thread_windows[tid]);
-        MPI_Win_unlock(Env::rank, Env::thread_windows[tid]);
-          
-        printf("0.Rank=%d, tid=%d waiting\n", Env::rank, tid);
-        int counter;
-        int idle_status = 1;
-        int idle_rank = Env::rank+1;
-        for(int i = 1; i < Env::nranks; i++) {
-            int target_rank = (Env::rank + i) % Env::nranks;
-            int target_disp = Env::rank;
-            MPI_Win_lock(MPI_LOCK_EXCLUSIVE, target_rank, 0, Env::thread_windows[tid]);
-            
-            //if(*(Env::idle_threads[tid] + i) == 0) {
-                
-            //}
-            
-            MPI_Fetch_and_op(&idle_status, &counter, MPI_INT, target_rank, Env::nranks, MPI_NO_OP, Env::thread_windows[tid]);
-            if(counter != -1) {
-                MPI_Fetch_and_op(&idle_status, &counter, MPI_INT, target_rank, Env::nranks, MPI_SUM, Env::thread_windows[tid]);    
-                MPI_Fetch_and_op(&idle_rank,   &counter, MPI_INT, target_rank, target_disp, MPI_REPLACE, Env::thread_windows[tid]);
+    
+        if(result_value != 0) {
+            for(int i = 1; i < Env::nranks; i++) {
+                int target_rank_index = (Env::rank - i + Env::nranks) % Env::nranks;
+                int target_rank_public = *(Env::idle_threads[tid] + target_rank_index) - 1;
+                int target_rank_private = (Env::rank - i + Env::nranks) % Env::nranks;
+                if(target_rank_public == target_rank_private) {
+                    printf("Should communicate rank=%d, tid=%d, %d %d %d\n", Env::rank, tid, result_value, target_rank_public, target_rank_private);
+                    int thread_no_op = -1;
+                    target_rank = target_rank_private;
+                    MPI_Isend(&thread_no_op, 1, MPI_INT, target_rank, tid, Env::thread_communicators[tid], &request);
+                    requests.push_back(request);
+                }
             }
-            printf("%d %d %d\n", Env::rank, tid, counter);
-            MPI_Win_unlock(target_rank, Env::thread_windows[tid]);    
+            MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+            requests.clear();
+            requests.shrink_to_fit();
         }
+
+        
+       
+        
+      //  printf("Should not communicate rank=%d, tid=%d, %d %d\n", Env::rank, tid, result_value, *(Env::idle_threads[tid] + Env::nranks));
+
+        
+
     //}
     
+    //printf("0.Rank=%d, tid=%d waiting\n", Env::rank, tid);
+    origin_value = 0;
+    result_value = 0;
     
     
-    //printf("1.Rank=%d, tid=%d waiting\n", Env::rank, tid);
+    for(int i = 1; i < Env::nranks; i++) {
+        int target_rank = (Env::rank + i) % Env::nranks;
+        printf("0.Rank=%d tid=%d target_rank=%d i = %d\n", Env::rank, tid,  target_rank, i);
+        int target_disp = Env::rank;
+        MPI_Win_lock(MPI_LOCK_EXCLUSIVE, target_rank, 0, Env::thread_windows[tid]);
+        MPI_Win_sync(Env::thread_windows[tid]);
+        MPI_Fetch_and_op(&origin_value, &result_value, MPI_INT, target_rank, Env::nranks, MPI_NO_OP, Env::thread_windows[tid]);
+        MPI_Win_sync(Env::thread_windows[tid]);
+        MPI_Win_unlock(target_rank, Env::thread_windows[tid]);  
+        printf("0.Rank=%d tid=%d ret=%d target_rank=%d\n", Env::rank, tid, result_value, target_rank);
+        if(result_value != -1) {
+            int plus_one_rank = 1;
+            int my_rank_plus_one = Env::rank+1;
+            MPI_Win_lock(MPI_LOCK_EXCLUSIVE, target_rank, 0, Env::thread_windows[tid]);
+            MPI_Fetch_and_op(&plus_one_rank, &result_value, MPI_INT, target_rank, Env::nranks, MPI_SUM, Env::thread_windows[tid]);    
+            printf("1.Rank=%d tid=%d ret=%d\n", Env::rank, tid, result_value);
+            MPI_Fetch_and_op(&my_rank_plus_one,   &result_value, MPI_INT, target_rank, target_disp, MPI_REPLACE, Env::thread_windows[tid]);
+            printf("2.Rank=%d tid=%d ret=%d\n", Env::rank, tid, result_value);
+            MPI_Win_flush(target_rank, Env::thread_windows[tid]);
+            MPI_Win_sync(Env::thread_windows[tid]);
+            MPI_Win_unlock(target_rank, Env::thread_windows[tid]);    
+            
+            MPI_Win_lock(MPI_LOCK_EXCLUSIVE, target_rank, 0, Env::thread_windows[tid]);
+            //MPI_Win_fence((MPI_MODE_NOPUT | MPI_MODE_NOPRECEDE), Env::thread_windows[tid]);
+            MPI_Get(&origin_value, 1, MPI_INT, target_rank, Env::nranks, 1, MPI_INT, Env::thread_windows[tid]);
+            printf("3.Rank=%d tid=%d ret=%d\n", Env::rank, tid, result_value);
+            //MPI_Win_fence(MPI_MODE_NOSUCCEED, Env::thread_windows[tid]);
+            MPI_Win_unlock(target_rank, Env::thread_windows[tid]);    
+            
+            int flag = 0;
+            int source_rank = target_rank;
+            while(!flag) {
+                MPI_Iprobe(source_rank, tid, Env::thread_communicators[tid], &flag, &status);
+            }
+            int th_csc_handshake;
+            MPI_Recv(&th_csc_handshake, 1, MPI_INT, source_rank , tid, Env::thread_communicators[tid], &status);
+
+            printf("rank=%d tid=%d <--- %d: MPI_Recv handshake is done (%d)\n", Env::rank, tid, source_rank, th_csc_handshake);
+            
+            //MPI_Get_count( &status, MPI_INT, &count );
+            //if(count != 1)
+            //{
+            //    errs++;
+            //}
+            
+        }
+        //else {
+          //  MPI_Win_unlock(target_rank, Env::thread_windows[tid]);    
+        //}
+        //MPI_Win_sync(Env::thread_windows[tid]);
+        
+        
+    }
+    */
+    
+    
+    printf("X.Rank=%d, tid=%d waiting\n", Env::rank, tid);
     pthread_barrier_wait(&Env::thread_barrier);
     Env::barrier();
     
@@ -558,7 +709,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     }
     pthread_barrier_wait(&Env::thread_barrier);
     Env::barrier();
-    
+    /*
     if (Env::rank==1 and !tid) {
         printf("%d:\n", Env::rank);
         for(int j = 0; j < Env::nthreads; j++) {
@@ -634,6 +785,124 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
 }
 
 template<typename Weight>
+bool Net<Weight>::check_for_idle_ranks(int32_t tid) {
+    //int ranks_sum = *(Env::idle_threads[tid] + Env::nranks);
+    //if(ranks_sum) {
+        
+        int window_host_rank = 0;
+        int num_follower_ranks = 0;
+        int some_val = 0;
+        int some_res = 0;
+        int some_cmp = 0;
+        /*
+        if(window_host_rank == Env::rank) {
+            MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::thread_windows[tid]);
+            MPI_Win_sync(Env::thread_windows[tid]);
+            MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
+        }
+        */
+        //MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::thread_windows[tid]);
+        MPI_Win_lock_all(0, Env::thread_windows[tid]);
+        //MPI_Win_sync(Env::thread_windows[tid]);
+        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+        MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_NO_OP, Env::thread_windows[tid]);
+        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+        MPI_Win_flush_all(Env::thread_windows[tid]);
+        num_follower_ranks = some_res;
+        //printf("rank=%d tid=%d: queue: num_follower_ranks=%d\n", Env::rank, tid, num_follower_ranks);
+        if(num_follower_ranks) {
+            printf("rank=%d tid=%d: Looking for idle threads (%d)\n", Env::rank, tid, num_follower_ranks);
+            for(int i = 0; i < Env::nranks; i++) {
+                if(i != Env::rank) {
+                    some_val = 0;
+                    some_res = 0;
+                    some_cmp = 1;
+                    MPI_Compare_and_swap(&some_val, &some_cmp, &some_res, MPI_INT, window_host_rank, i, Env::thread_windows[tid]);
+                    MPI_Win_flush_all(Env::thread_windows[tid]);
+                    //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+                    //printf("i=%d %d\n", i, some_res);
+                    if(some_res){
+                        some_val = num_follower_ranks - 1;
+                        MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_REPLACE, Env::thread_windows[tid]);
+                        MPI_Win_flush_all(Env::thread_windows[tid]);
+                        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+                        some_val = 0;
+                        MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, i, MPI_REPLACE, Env::thread_windows[tid]);
+                        MPI_Win_flush_all(Env::thread_windows[tid]);
+                        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+                        int follower_rank = i;
+                        int th_csc_handshake = 1;
+                        //printf("rank=%d tid=%d --> %d: MP_Send handshake started\n", Env::rank, tid, follower_rank);
+                        MPI_Send(&th_csc_handshake, 1, MPI_INT, follower_rank, tid, Env::thread_communicators[tid]);   
+                        printf("rank=%d tid=%d --> %d: MP_Send handshake is done\n", Env::rank, tid, follower_rank);
+                        //break;
+                    }
+                }   
+            }
+        }
+        //MPI_Win_flush_all(Env::thread_windows[tid]);
+        //MPI_Win_sync(Env::thread_windows[tid]);
+
+        //MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
+        MPI_Win_unlock_all(Env::thread_windows[tid]);
+        /*
+        //MPI_Win_flush(Env::rank, Env::thread_windows[tid]);
+        //MPI_Win_sync(Env::thread_windows[tid]);
+        //printf(">>Rank=%d tid=%d ret=%d\n", Env::rank, tid, return_value);
+        int target_rank = -1;
+       //return_value = *(Env::idle_threads[tid] + Env::nranks);
+       //int* thread_window = Env::idle_threads[tid];
+       //int& idle_rank_is_waiting = thread_window[Env::nranks];
+       //if(return_value) {
+       if(idle_rank_is_waiting) {
+           printf("Rank=%d, waitingN=%d\n", Env::rank, idle_rank_is_waiting);
+            for(int i = 1; i < Env::nranks; i++) {
+                int target_rank_index = (Env::rank - i + Env::nranks) % Env::nranks;
+                //int target_rank_public = *(Env::idle_threads[tid] + target_rank_index) - 1;
+                int& target_rank_public = thread_window[target_rank_index];
+                //
+                int target_rank_private = (Env::rank - i + Env::nranks) % Env::nranks;
+                printf("Rank=%d tid=%d i=%d pub=%d priv=%d\n", Env::rank, tid, i, target_rank_public, target_rank_private);
+                if((target_rank_public-1) == target_rank_private) {
+                    
+                    target_rank = target_rank_private;
+                    printf("Target rank = %d\n", target_rank);
+                    
+                    // *(Env::idle_threads[tid] + target_rank_index) = 0;
+                    // *(Env::idle_threads[tid] + Env::nranks) = *(Env::idle_threads[tid] + Env::nranks) - 1;
+                    int minus_one_rank = idle_rank_is_waiting - 1;
+                    int no_rank = 0;
+                    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, Env::rank, 0, Env::thread_windows[tid]);
+                    
+                    MPI_Fetch_and_op(&minus_one_rank, &return_value, MPI_INT, Env::rank, Env::nranks, MPI_REPLACE, Env::thread_windows[tid]);
+                    
+                    MPI_Fetch_and_op(&no_rank, &return_value, MPI_INT, Env::rank, target_rank_index, MPI_REPLACE, Env::thread_windows[tid]);
+                    MPI_Win_flush(Env::rank, Env::thread_windows[tid]);
+                    MPI_Win_sync(Env::thread_windows[tid]);
+                    //target_rank_public = 0;
+                    //idle_rank_is_waiting--; 
+                    MPI_Win_unlock(Env::rank, Env::thread_windows[tid]);            
+                    break;
+                }
+            }
+            if(target_rank >= 0) {
+                
+                int th_csc_handshake = 1;
+                MPI_Send(&th_csc_handshake, 1, MPI_INT, target_rank, tid, Env::thread_communicators[tid]);
+                printf("rank=%d tid=%d --> %d: MPI_Send handshake is done\n", Env::rank, tid, target_rank);
+                //MPI_Send(&data, 1, MPI_INT, target_rank, tid, thread_communicators[tid]);
+            }
+
+            
+            
+        }
+        */
+        
+    //}
+    return(false);
+}
+
+template<typename Weight>
 int32_t Net<Weight>::add_to_my_followers(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid) {
     uint32_t num_threads = my_threads.size();
     if(!Env::follower_threads.empty()) {
@@ -650,14 +919,6 @@ int32_t Net<Weight>::add_to_my_followers(std::vector<int32_t>& my_threads, const
                 Env::threads[t].start_layer = start_layer;
                 Env::threads[t].start_col = ((ncols/num_threads) * i);
                 Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
-                
-                //uint32_t rowgroup = Env::thread_rowgroup[tid];
-                //uint32_t layer = start_layer;
-                //uint32_t start_col = ((ncols/num_threads) * i);
-                //uint32_t end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
-                //Env::follower_threads_info[tid][t] = std::move(Env::helper_thread_info(t, rowgroup, layer, start_col, end_col));                
-                //Env::follower_to_leader[t] = tid;
-                
             }
             Env::init_num_threads(num_threads, tid, tid);
         }
@@ -691,13 +952,6 @@ void Net<Weight>::add_to_my_followers(std::vector<int32_t>& my_threads, const ui
                     Env::threads[t].start_layer = start_layer;
                     Env::threads[t].start_col = ((ncols/num_threads) * i);
                     Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
-                    
-                    //uint32_t rowgroup = Env::thread_rowgroup[tid];
-                    //uint32_t layer = start_layer;
-                    //uint32_t start_col = ((ncols/num_threads) * i);
-                    //uint32_t end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
-                    //Env::follower_threads_info[tid][t] = std::move(Env::helper_thread_info(t, rowgroup, layer, start_col, end_col));                
-                    //Env::follower_to_leader[t] = tid;
                 }
                 pthread_barrier_destroy(&Env::thread_barriers[tid]);
                 pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
