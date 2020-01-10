@@ -518,13 +518,15 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         int some_res = 0;
         int some_cmp = 0;
         
-        //MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::thread_windows[tid]);    
-        MPI_Win_lock_all(0, Env::thread_windows[tid]);
+        //MPI_Win_fence(0, Env::thread_windows[tid]);
+        MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::thread_windows[tid]);    
+        //MPI_Win_lock_all(0, Env::thread_windows[tid]);
         //MPI_Win_sync(Env::thread_windows[tid]);
         //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
         MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_SUM, Env::thread_windows[tid]);
-        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
-        MPI_Win_flush_all(Env::thread_windows[tid]);
+        MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+        //MPI_Win_flush_all(Env::thread_windows[tid]);
+        //MPI_Win_sync(Env::thread_windows[tid]);
         num_follower_ranks = some_res+1;
         //printf("rank=%d tid=%d: outsi: num_follower_ranks=%d\n", Env::rank, tid, some_res);
         //some_val = num_follower_ranks;
@@ -534,12 +536,15 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
         //MPI_Win_flush_all(Env::thread_windows[tid]);
         //MPI_Win_sync(Env::thread_windows[tid]);
+        //MPI_Win_flush_all(Env::thread_windows[tid]);
+        //MPI_Win_sync(Env::thread_windows[tid]);
         //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
         //MPI_Win_flush_all(Env::thread_windows[tid]);
         //MPI_Win_sync(Env::thread_windows[tid]);
         //MPI_Win_flush(Env::rank, Env::thread_windows[tid]);
-        //MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
-        MPI_Win_unlock_all(Env::thread_windows[tid]);
+        MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
+        //MPI_Win_unlock_all(Env::thread_windows[tid]);
+        //MPI_Win_fence(0, Env::thread_windows[tid]);
         printf("rank=%d tid=%d While: num=%d\n", Env::rank, tid, num_follower_ranks);
         
         if(num_follower_ranks == Env::nranks) {
@@ -803,11 +808,15 @@ bool Net<Weight>::check_for_idle_ranks(int32_t tid) {
     //int ranks_sum = *(Env::idle_threads[tid] + Env::nranks);
     //if(ranks_sum) {
         
+        MPI_Request request;
+        std::vector<MPI_Request> requests;
+        
         int window_host_rank = 0;
         int num_follower_ranks = 0;
         int some_val = 0;
         int some_res = 0;
         int some_cmp = 0;
+        std::vector<int32_t> follower_ranks;
         /*
         if(window_host_rank == Env::rank) {
             MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::thread_windows[tid]);
@@ -815,17 +824,19 @@ bool Net<Weight>::check_for_idle_ranks(int32_t tid) {
             MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
         }
         */
-        //MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::thread_windows[tid]);
-        MPI_Win_lock_all(0, Env::thread_windows[tid]);
+        //MPI_Win_fence(0, Env::thread_windows[tid]);
+        MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::thread_windows[tid]);
+        //MPI_Win_lock_all(0, Env::thread_windows[tid]);
         //MPI_Win_sync(Env::thread_windows[tid]);
         //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
         MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_NO_OP, Env::thread_windows[tid]);
-        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
-        MPI_Win_flush_all(Env::thread_windows[tid]);
+        MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+        //MPI_Win_flush_all(Env::thread_windows[tid]);
+        //MPI_Win_sync(Env::thread_windows[tid]);
         num_follower_ranks = some_res;
         //printf("rank=%d tid=%d: queue: num_follower_ranks=%d\n", Env::rank, tid, num_follower_ranks);
         if(num_follower_ranks) {
-            printf("rank=%d tid=%d check_for_idle_ranks: num=%d\n", Env::rank, tid, num_follower_ranks);
+            printf("rank=%d tid=%d  check num=%d\n", Env::rank, tid, num_follower_ranks);
             for(int i = 0; i < Env::nranks; i++) {
                 if(i != Env::rank) {
                     some_val = 0;
@@ -837,33 +848,60 @@ bool Net<Weight>::check_for_idle_ranks(int32_t tid) {
                     
                     //printf("i=%d %d\n", i, some_res);
                     if(some_res){
-                        some_val = num_follower_ranks - 1;
-                        MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_REPLACE, Env::thread_windows[tid]);
-                        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
-                        MPI_Win_flush_all(Env::thread_windows[tid]);
+                        some_val = - 1;
+                        MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_SUM, Env::thread_windows[tid]);
+                        
+                        MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+                        //MPI_Win_flush_all(Env::thread_windows[tid]);
+                        //MPI_Win_sync(Env::thread_windows[tid]);
                         
                         some_val = 0;
                         MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, i, MPI_REPLACE, Env::thread_windows[tid]);
-                        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
-                        MPI_Win_flush_all(Env::thread_windows[tid]);
+                        MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+                        //MPI_Win_flush_all(Env::thread_windows[tid]);
+                        //MPI_Win_sync(Env::thread_windows[tid]);
                         
                         int follower_rank = i;
+                        follower_ranks.push_back(follower_rank);
+                        /*
                         int th_csc_handshake = 1;
-                        //printf("rank=%d tid=%d --> %d: MP_Send handshake started\n", Env::rank, tid, follower_rank);
-                        MPI_Send(&th_csc_handshake, 1, MPI_INT, follower_rank, follower_rank, Env::thread_communicators[tid]);   
-                        MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_NO_OP, Env::thread_windows[tid]);
-                        MPI_Win_flush_all(Env::thread_windows[tid]);
+                        MPI_Isend(&th_csc_handshake, 1, MPI_INT, follower_rank, follower_rank, Env::thread_communicators[tid], &request);   
+                        requests.push_back(request);
                         printf("rank=%d tid=%d check_for_idle_ranks: --> rank=%d MP_Send handshake (%d/%d)\n", Env::rank, tid, follower_rank, th_csc_handshake, some_res);
+                        */
+                        //MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_NO_OP, Env::thread_windows[tid]);
+                        //MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+                        //MPI_Win_flush_all(Env::thread_windows[tid]);
+                        //MPI_Win_sync(Env::thread_windows[tid]);
+                        
                         //break;
                     }
                 }   
             }
+            /*
+            MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+            requests.clear();
+            requests.shrink_to_fit();
+            */
         }
         //MPI_Win_flush_all(Env::thread_windows[tid]);
         //MPI_Win_sync(Env::thread_windows[tid]);
 
-        //MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
-        MPI_Win_unlock_all(Env::thread_windows[tid]);
+        MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
+        
+        if(not follower_ranks.empty()) {
+            int th_csc_handshake = 1;
+            for(int32_t follower_rank: follower_ranks) {
+                MPI_Isend(&th_csc_handshake, 1, MPI_INT, follower_rank, follower_rank, Env::thread_communicators[tid], &request);   
+                requests.push_back(request);
+                printf("rank=%d tid=%d check_for_idle_ranks: --> rank=%d MP_Send handshake (%d/%d)\n", Env::rank, tid, follower_rank, th_csc_handshake, some_res);
+            }
+            MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+            requests.clear();
+            requests.shrink_to_fit();
+        }
+        //MPI_Win_unlock_all(Env::thread_windows[tid]);
+        //MPI_Win_fence(0, Env::thread_windows[tid]);
         /*
         //MPI_Win_flush(Env::rank, Env::thread_windows[tid]);
         //MPI_Win_sync(Env::thread_windows[tid]);
