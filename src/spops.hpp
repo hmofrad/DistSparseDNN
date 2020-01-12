@@ -44,8 +44,9 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
     }
     nrows = A_nrows;
     ncols = B_ncols;
-
+    //printf("flip %d %d\n", nrows, ncols);
     for(uint32_t j = start_col; j < end_col; j++) {
+        //printf("Rank=%d tid=%d j=%d\n", Env::rank, tid, j);
         for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
             uint32_t l = B_IA[k];
             for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
@@ -59,7 +60,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
             }
         }
     }
-
+    //printf("flop\n");
     return std::make_tuple(nnzmax, nrows, ncols);
 }
 
