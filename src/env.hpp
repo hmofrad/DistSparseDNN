@@ -194,7 +194,7 @@ int Env::init() {
     
     //create_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, Env::nranks+1, &Env::window);
     
-    printf("%d\n", Env::rank);
+    //printf("%d\n", Env::rank);
     //threads_rank.resize(Env::nthreads);
     //threads_nranks.resize(Env::nthreads);
     //std::vector<int32_t> ranks(Env::nranks);
