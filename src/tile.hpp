@@ -23,16 +23,18 @@ struct Tile{
         
         int32_t rank;
         int32_t thread;
-        uint64_t nedges = 0;
+        uint64_t nedges    = 0;
         uint32_t start_row = 0;
-        uint32_t end_row = 0;
+        uint32_t end_row   = 0;
         uint32_t start_col = 0;
-        uint32_t end_col = 0;
-        uint32_t height = 0;
-        uint32_t width = 0;
+        uint32_t end_col   = 0;
+        uint32_t height    = 0;
+        uint32_t width     = 0;
         
         bool partitioned = false;
         std::vector<struct Tile<Weight>> subtiles;
+        std::vector<struct Tile<Weight>> out_subtiles;
+        std::vector<struct Tile<Weight>> in_subtiles;
 };
 
 template<typename Weight>
