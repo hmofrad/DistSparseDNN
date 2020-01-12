@@ -1485,13 +1485,13 @@ void Tiling<Weight>::compress_triples(){//(const REFINE_TYPE refine_type) {
     Env::barrier();      
 }
 
-
 template<typename Weight>
 void Tiling<Weight>::update_in_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
                      std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
                      const uint64_t csc_nedges, const uint32_t csc_start_row, 
                      const uint32_t csc_height, const uint32_t csc_width, 
                      const int32_t tid) {
+                         
     MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
     
     struct Tile<Weight>& this_tile = tiles[leader_rowgroup][0];
@@ -1505,7 +1505,7 @@ void Tiling<Weight>::update_in_subtiles(const uint32_t leader_rowgroup, const ui
     subtile.end_col = csc_width;
     subtile.height = csc_height;
     subtile.width = csc_width; 
-    
+    /*
     this_tile.nedges = other_tile.nedges = subtile.nedges;
     this_tile.start_row =  other_tile.start_row = subtile.start_row;
     this_tile.end_row = other_tile.end_row = subtile.end_row;
@@ -1513,12 +1513,20 @@ void Tiling<Weight>::update_in_subtiles(const uint32_t leader_rowgroup, const ui
     this_tile.end_col = other_tile.end_col = subtile.end_col;
     this_tile.height = other_tile.height = subtile.height;
     this_tile.width = other_tile.width = subtile.width;
-    
+    */
     this_tile.in_subtiles.push_back(subtile);  
     other_tile.in_subtiles.push_back(subtile); 
     
-    std::shared_ptr<struct CSC<Weight>>& csc = this_tile.spmat;
-    csc = std::move(std::make_shared<struct CSC<Weight>>(this_tile.nedges, this_tile.height, this_tile.width));
+    //std::shared_ptr<struct CSC<Weight>>& csc = this_tile.spmat;
+    //this_tile.spmat = std::move(std::make_shared<struct CSC<Weight>>(this_tile.nedges, this_tile.height, this_tile.width));
+    //other_tile.spmat = std::move(std::make_shared<struct CSC<Weight>>(0, this_tile.height, this_tile.width));
+    
+    
+    //subtile.spmat = std::move(std::make_shared<struct CSC<Weight>>(nedges, height, width));
+     
+    this_tile.in_subtiles.back().spmat = std::move(std::make_shared<struct CSC<Weight>>(csc_nedges, csc_height, csc_width));
+    other_tile.in_subtiles.back().spmat = std::move(std::make_shared<struct CSC<Weight>>(0, csc_height, csc_width)); 
+
 }
 
 template<typename Weight>
@@ -1528,6 +1536,7 @@ void Tiling<Weight>::update_out_subtiles(const uint32_t leader_rowgroup, const u
                 std::vector<std::shared_ptr<struct CSC<Weight>>>& subcscs,
                 std::vector<int32_t>& follower_ranks,
                 const uint32_t nthreads_local, const int32_t tid) {
+                    
     MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
     
     struct Tile<Weight>& this_tile = tiles[leader_rowgroup][0];
@@ -1539,7 +1548,6 @@ void Tiling<Weight>::update_out_subtiles(const uint32_t leader_rowgroup, const u
     csc->split_and_overwrite(subcscs, nparts_local, nparts_remote);
     
     uint32_t nparts = 1 + nparts_remote;
-    //std::vector<struct Tile<Weight>> subtiles(nparts);
     subtiles.resize(nparts);
     uint32_t my_start_row = this_tile.start_row;
     for(uint32_t k = 0; k < nparts; k++) {
@@ -1569,7 +1577,6 @@ void Tiling<Weight>::update_out_subtiles(const uint32_t leader_rowgroup, const u
     
     this_tile.out_subtiles.insert(this_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
     other_tile.out_subtiles.insert(other_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());    
-
 }
 
 #endif
