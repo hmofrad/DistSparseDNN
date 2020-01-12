@@ -69,17 +69,15 @@ class Tiling {
         void set_threads_indices();
         uint32_t get_tile_info(const std::string field, const int32_t tid);
         void     set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles); 
-        void test();
-        void test1();
         
-        void update_and_send_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
+        void update_out_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
                                       std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
                                       std::vector<struct Tile<Weight>>& subtiles,
                                       std::vector<std::shared_ptr<struct CSC<Weight>>>& subcscs,
                                       std::vector<int32_t>& follower_ranks,
                                       const uint32_t nthreads_local, const int32_t tid);
         
-        void update_and_receive_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
+        void update_in_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
                                          std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
                                          const uint64_t csc_nedges, const uint32_t csc_start_row, 
                                          const uint32_t csc_height, const uint32_t csc_width, 
@@ -103,154 +101,6 @@ class Tiling {
         void tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type);
 };
 
-
-template<typename Weight>
-void Tiling<Weight>::update_and_receive_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
-                     std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
-                     const uint64_t csc_nedges, const uint32_t csc_start_row, 
-                     const uint32_t csc_height, const uint32_t csc_width, 
-                     const int32_t tid) {
-    MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
-    
-    struct Tile<Weight>& this_tile = tiles[leader_rowgroup][0];
-    struct Tile<Weight>& other_tile = other_tiles[leader_rowgroup][0];
-
-    std::shared_ptr<struct CSC<Weight>>& csc = this_tile.spmat;
-
-    
-
-
-    struct Tile<Weight> subtile;
-    subtile.nedges = (uint64_t) csc_nedges;
-    subtile.start_row = csc_start_row;
-    subtile.end_row = csc_start_row + csc_height;
-    subtile.start_col = 0;
-    subtile.end_col = csc_width;
-    subtile.height = csc_height;
-    subtile.width = csc_width;
-    this_tile.in_subtiles.push_back(subtile);  
-    other_tile.in_subtiles.push_back(subtile);  
-    
-    //subtile.spmat = std::make_shared<struct CSC<Weight>>(subtile.nedges, subtile.height, subtile.width);
-    
-    this_tile.nedges = other_tile.nedges = subtile.nedges;
-    this_tile.start_row =  other_tile.start_row = subtile.start_row;
-    this_tile.end_row = other_tile.end_row = subtile.end_row;
-    this_tile.start_col = other_tile.start_col = subtile.start_col;
-    this_tile.end_col = other_tile.end_col = subtile.end_col;
-    this_tile.height = other_tile.height = subtile.height;
-    this_tile.width = other_tile.width = subtile.width;
-    csc = std::move(std::make_shared<struct CSC<Weight>>(this_tile.nedges, this_tile.height, this_tile.width));
-    
-    //printf("%lu %d %d %lu\n", A_tile.nedges, A_tile.height, A_tile.width, subtile.nedges);
-    //printf("%lu %lu %lu\n", A_CSC->JA_blk->nitems, A_CSC->IA_blk->nitems, A_CSC->A_blk->nitems);
-    /*
-    MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();            
-    uint32_t* JA = A_CSC->JA_blk->ptr;
-    uint32_t* IA = A_CSC->IA_blk->ptr;
-    Weight*    A = A_CSC->A_blk->ptr;
-    MPI_Irecv(JA, A_CSC->JA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+0, Env::thread_communicators[tid], &request);
-    requests.push_back(request);
-    MPI_Irecv(IA, A_CSC->IA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+1, Env::thread_communicators[tid], &request);
-    requests.push_back(request);
-    MPI_Irecv(A, A_CSC->A_blk->nitems,    WEIGHT_TYPE, source_rank, (Env::rank*3)+2, Env::thread_communicators[tid], &request);
-    requests.push_back(request);
-    //printf("Recv\n" );  
-    MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-    requests.clear();
-    requests.shrink_to_fit();
-    
-    spaWeightVec[tid]->reallocate(A_tile.height);
-    
-    */
-}
-
-template<typename Weight>
-void Tiling<Weight>::update_and_send_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
-                std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
-                std::vector<struct Tile<Weight>>& subtiles,
-                std::vector<std::shared_ptr<struct CSC<Weight>>>& subcscs,
-                std::vector<int32_t>& follower_ranks,
-                const uint32_t nthreads_local, const int32_t tid) {
-    MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
-    
-    struct Tile<Weight>& this_tile = tiles[leader_rowgroup][0];
-    struct Tile<Weight>& other_tile = other_tiles[leader_rowgroup][0];
-    
-    uint32_t nparts_local  = nthreads_local;
-    uint32_t nparts_remote = follower_ranks.size();   
-    std::shared_ptr<struct CSC<Weight>>& csc = this_tile.spmat;
-    csc->split_and_overwrite(subcscs, nparts_local, nparts_remote);
-    
-    uint32_t nparts = 1 + nparts_remote;
-    //std::vector<struct Tile<Weight>> subtiles(nparts);
-    subtiles.resize(nparts);
-    uint32_t my_start_row = this_tile.start_row;
-    for(uint32_t k = 0; k < nparts; k++) {
-        struct Tile<Weight>& subtile = subtiles[k];
-        std::shared_ptr<struct CSC<Weight>>& subcsc = subcscs[k];  
-        subtile.rank = (k == 0) ? Env::rank : follower_ranks[k-1]; 
-        subtile.thread = tid;
-        subtile.nedges = subcsc->nnz;
-        subtile.start_row = my_start_row;
-        subtile.end_row = my_start_row + subcsc->nrows;
-        subtile.start_col = 0;
-        subtile.end_col = subcsc->ncols;
-        subtile.height = subcsc->nrows;
-        subtile.width = subcsc->ncols;
-        my_start_row += subcsc->nrows;
-    }
-    
-    struct Tile<Weight> subtile = subtiles[0];
-    
-    this_tile.nedges = other_tile.nedges = subtile.nedges;
-    this_tile.start_row =  other_tile.start_row = subtile.start_row;
-    this_tile.end_row = other_tile.end_row = subtile.end_row;
-    this_tile.start_col = other_tile.start_col = subtile.start_col;
-    this_tile.end_col = other_tile.end_col = subtile.end_col;
-    this_tile.height = other_tile.height = subtile.height;
-    this_tile.width = other_tile.width = subtile.width;
-    
-    this_tile.out_subtiles.insert(this_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
-    other_tile.out_subtiles.insert(other_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
-
-    
-    /*
-            MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
-        for(uint32_t k = 1; k < nparts; k++) {
-            struct Tile<Weight> subtile = subtiles[k];
-            std::shared_ptr<struct CSC<Weight>>& subcsc = CSCs[k];
-            uint32_t* JA = subcsc->JA_blk->ptr;
-            uint32_t* IA = subcsc->IA_blk->ptr;
-            Weight*    A = subcsc->A_blk->ptr;
-            
-            MPI_Isend(JA, subcsc->JA_blk->nitems, MPI_UNSIGNED, subtile.rank, (subtile.rank*3)+0, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-            MPI_Isend(IA, subcsc->IA_blk->nitems, MPI_UNSIGNED, subtile.rank, (subtile.rank*3)+1, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-            MPI_Isend(A, subcsc->A_blk->nitems,    WEIGHT_TYPE, subtile.rank, (subtile.rank*3)+2, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-        }
-        //printf("send>>>>\n");
-        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-        requests.clear();
-        requests.shrink_to_fit();
-        
-        CSCs.clear();
-        CSCs.shrink_to_fit();
-        
-        
-        A_tile.out_subtiles.insert(A_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
-        C_tile.out_subtiles.insert(C_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
-        subtiles.clear();
-        subtiles.shrink_to_fit();
-        */
-    
-    
-    
-
-    
-}
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
@@ -594,10 +444,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     }
 
     compress_triples();
-    //test();    
-    //test1();
 }
-
 
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
@@ -1638,512 +1485,91 @@ void Tiling<Weight>::compress_triples(){//(const REFINE_TYPE refine_type) {
     Env::barrier();      
 }
 
+
 template<typename Weight>
-void Tiling<Weight>::test1() {
-    Env::barrier();
-    printf("Rank=%d\n", Env::rank);
-    //std::vector<int32_t> idle_ranks;
-    //Env::create_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, Env::nranks+1, &Env::window);
-    //Env::barrier();
-    //char* has_changed;
-    //int* num_idle_ranks;
+void Tiling<Weight>::update_in_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
+                     std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
+                     const uint64_t csc_nedges, const uint32_t csc_start_row, 
+                     const uint32_t csc_height, const uint32_t csc_width, 
+                     const int32_t tid) {
+    MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
     
-    //if (Env::rank == 0) {
-        //window_size = Env::nranks * sizeof(int32_t);
-    
-    /*
-    std::vector<int32_t> idle_ranks;
-    uint32_t window_size = (Env::nranks + 1) * sizeof(int32_t);
-    MPI_Alloc_mem(window_size, MPI_INFO_NULL, &idle_ranks);
-    memset(idle_ranks.data(), -1, window_size);
-    //std::fill(idle_ranks.begin(), idle_ranks.end(), -1);
+    struct Tile<Weight>& this_tile = tiles[leader_rowgroup][0];
+    struct Tile<Weight>& other_tile = other_tiles[leader_rowgroup][0];
 
-    idle_ranks[Env::nranks] = 0;
-        //addr = 1; // initialised to 1 since MPI_Fetch_and_op returns value *before* increment
-    //}
-    Env::barrier();
-    MPI_Win window;
-    MPI_Win_create(idle_ranks.data(), window_size, sizeof(int32_t), MPI_INFO_NULL, MPI_COMM_WORLD, &window);
-    */
-    /*    
-    int counter;
-    int idle_status = 1;
-    int idle_rank = Env::rank+1;
-    for(int i = 1; i < Env::nranks; i++) {
-        int target_rank = (Env::rank+i)%Env::nranks;
-        int target_disp = Env::rank;
-        MPI_Win_lock(MPI_LOCK_EXCLUSIVE, target_rank, 0, Env::window);
-        MPI_Fetch_and_op(&idle_status, &counter, MPI_INT, target_rank, Env::nranks, MPI_SUM, Env::window);
-        MPI_Fetch_and_op(&idle_rank, &counter, MPI_INT, target_rank, target_disp, MPI_REPLACE, Env::window);
-        MPI_Win_unlock(target_rank, Env::window);    
-    }
+    struct Tile<Weight> subtile;
+    subtile.nedges = (uint64_t) csc_nedges;
+    subtile.start_row = csc_start_row;
+    subtile.end_row = csc_start_row + csc_height;
+    subtile.start_col = 0;
+    subtile.end_col = csc_width;
+    subtile.height = csc_height;
+    subtile.width = csc_width; 
     
-    Env::barrier();  
-    if (Env::rank == 0) {
-        printf("%d: ", Env::rank);
-        //for(auto i: Env::idle_ranks) {printf("%d ", i);}
-        for(int i = 0;i < Env::nranks+1; i++) {
-            printf("%d ", *(Env::idle_ranks + i));
-            //printf("%d ", Env::idle_ranks[i]);
-            
-        }
-        printf("\n");
-    }
-    Env::barrier();  
-    if (Env::rank == 1) {
-        printf("%d: ", Env::rank);
-        for(int i =0;i < Env::nranks+1; i++) {
-            printf("%d ", *(Env::idle_ranks + i));
-            //printf("%d ", Env::idle_ranks[i]);
-        }
-        printf("\n");
-    }
-    Env::barrier();  
-    if (Env::rank == 2) {
-        printf("%d: ", Env::rank);
-        for(int i =0;i < Env::nranks+1; i++) {
-            printf("%d ", *(Env::idle_ranks + i));
-            //printf("%d ", Env::idle_ranks[i]);
-        }
-        printf("\n");
-    }
-    Env::barrier();  
-    if (Env::rank == 3) {
-        printf("%d: ", Env::rank);
-        for(int i =0;i < Env::nranks+1; i++) {
-            printf("%d ", *(Env::idle_ranks + i));
-            //printf("%d ", Env::idle_ranks[i]);
-        }
-        printf("\n");
-    }
-    */
-    //Env::barrier();  
-    //Env::destroy_mpi_asynch_shared_mem(&Env::window);
-    //MPI_Win_free(&window);   
+    this_tile.nedges = other_tile.nedges = subtile.nedges;
+    this_tile.start_row =  other_tile.start_row = subtile.start_row;
+    this_tile.end_row = other_tile.end_row = subtile.end_row;
+    this_tile.start_col = other_tile.start_col = subtile.start_col;
+    this_tile.end_col = other_tile.end_col = subtile.end_col;
+    this_tile.height = other_tile.height = subtile.height;
+    this_tile.width = other_tile.width = subtile.width;
     
-    //if (Env::rank == 0) {
-        //idle_ranks.clear();
-        //idle_ranks.shrink_to_fit();
-        //MPI_Free_mem(idle_ranks);
-    //}
+    this_tile.in_subtiles.push_back(subtile);  
+    other_tile.in_subtiles.push_back(subtile); 
     
-    Env::barrier();    
-    //printf("%d %d\n", Env::rank, counter);    
-
-    /*
-    int *addr = 0;
-    int winSz = 0;
-    if (Env::rank == 0) {
-        winSz = sizeof(int);
-        MPI_Alloc_mem(winSz, MPI_INFO_NULL, &addr);
-        *addr = 1; // initialised to 1 since MPI_Fetch_and_op returns value *before* increment
-    }
-    MPI_Win win;
-    MPI_Win_create(addr, winSz, sizeof(int), MPI_INFO_NULL, MPI_COMM_WORLD, &win);
-    
-    int counter;
-    one = 1;
-    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, 0, 0, win);
-    MPI_Fetch_and_op(&one, &counter, MPI_INT, 0, 0, MPI_SUM, win);
-    MPI_Win_unlock(0, win);
-
-    // checking the value of the counter and printing by last in time process
-    if (counter == Env::nranks) {
-        std::cout << "Process #" << Env::rank << " did the last update" << std::endl;
-    }
-
-    // cleaning up
-    MPI_Win_free(&win);
-    if (Env::rank == 0) {
-        MPI_Free_mem(addr);
-    }    
-    */
-    
-    /*
-    if(Env::rank == 0) {
-        for(int32_t i = 1; i < Env::nranks; i++) {
-            int32_t r = (Env::rank + i) % Env::nranks;
-            printf("%d %d\n", i, r);
-        }
-    }
-    Env::barrier();
-    if(Env::rank == 1) {
-        for(int32_t i = 1; i < Env::nranks; i++) {
-            int32_t r = (Env::rank + i) % Env::nranks;
-            printf("%d %d\n", i, r);
-        }
-    }
-    Env::barrier();
-    if(Env::rank == 2) {
-        for(int32_t i = 1; i < Env::nranks; i++) {
-            int32_t r = (Env::rank + i) % Env::nranks;
-            printf("%d %d\n", i, r);
-        }
-    }
-    Env::barrier();
-    if(Env::rank == 3) {
-        for(int32_t i = 1; i < Env::nranks; i++) {
-            int32_t r = (Env::rank + i) % Env::nranks;
-            printf("%d %d\n", i, r);
-        }
-    }
-    */
-    Env::barrier();
-    std::exit(0);
-    
+    std::shared_ptr<struct CSC<Weight>>& csc = this_tile.spmat;
+    csc = std::move(std::make_shared<struct CSC<Weight>>(this_tile.nedges, this_tile.height, this_tile.width));
 }
 
 template<typename Weight>
-void Tiling<Weight>::test() {
-    
-    MPI_Request request;
-    std::vector<MPI_Request> requests;
+void Tiling<Weight>::update_out_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
+                std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
+                std::vector<struct Tile<Weight>>& subtiles,
+                std::vector<std::shared_ptr<struct CSC<Weight>>>& subcscs,
+                std::vector<int32_t>& follower_ranks,
+                const uint32_t nthreads_local, const int32_t tid) {
     MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
     
-    if(Env::rank == 0) {
-        auto& tile = tiles[0][0];
-        std::shared_ptr<struct CSC<Weight>> CSC = tile.spmat;
-        uint32_t nlocals = 2;
-        uint32_t nremotes = 3;
-        std::vector<std::shared_ptr<struct CSC<Weight>>> CSCs;
-        CSC->split_and_overwrite(CSCs, nlocals, nremotes);
-
-        
-        uint32_t nparts = 1 + nremotes;
-        tile.subtiles.resize(nparts);
-        uint32_t my_start_row = tile.start_row;
-        for(uint32_t k = 0; k < nparts; k++) {
-            struct Tile<Weight>& subtile = tile.subtiles[k];
-            std::shared_ptr<struct CSC<Weight>>& subcsc = CSCs[k];
-            
-            //subtile.rank = ?;
-            //subtile.thread = ?;
-            subtile.nedges = subcsc->nnz;
-            subtile.start_row = my_start_row;
-            subtile.end_row = my_start_row + subcsc->nrows;
-            subtile.start_col = 0;
-            subtile.end_col = subcsc->ncols;
-            subtile.height = subcsc->nrows;
-            subtile.width = subcsc->ncols;
-            my_start_row += subcsc->nrows;
-            
-            //subtile.spmat  = std::move(subcsc);
-            
-            
-            
-            
-            
-            //printf("%d:\n",k);
-            //printf("%d %lu\n", subtile.rank, subtile.nedges);
-            //printf("[%d %d] [%d %d][%d %d]\n", subtile.start_row, subtile.end_row, subtile.start_col, subtile.end_col, subtile.height, subtile.width);
-        }
-        
-        //printf("DONE %lu\n", CSCs.size());
-        //for(auto subtile: tile.subtiles) {
-        //    printf("%d\n", subtile.height);
-        //}
-        
-        
-        //tile.subtiles[0].spmat  = std::move(CSCs[0]);
-        //printf("%d: sending to 1\n", Env::rank);
-        
-        //std::vector<uint32_t> csc_metadata(5);
-        //csc_metadata.resize(5);
-        for(uint32_t k = 0; k < nparts; k++) {
-            printf("%d %d\n", k, Env::rank);
-            struct Tile<Weight>& subtile = tile.subtiles[k];
-            
-            uint32_t layer = 0;
-            uint32_t local_rowgroup = 0;
-            std::vector<uint32_t> csc_metadata = {layer, local_rowgroup, (uint32_t)subtile.nedges, subtile.start_row, subtile.height, subtile.width};
-            MPI_Send(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, 1, k, MPI_COMM_WORLD);
-        
-        }
-        
-
-        for(uint32_t k = 1; k < nparts; k++) {
-            std::shared_ptr<struct CSC<Weight>>& subcsc = CSCs[k];
-            uint32_t* JA = subcsc->JA_blk->ptr;
-            uint32_t* IA = subcsc->IA_blk->ptr;
-            Weight*    A = subcsc->A_blk->ptr;
-            
-            MPI_Isend(JA, subcsc->JA_blk->nitems, MPI_UNSIGNED, 1, (k*3)+0, MPI_COMM_WORLD, &request);
-            requests.push_back(request);
-            MPI_Isend(IA, subcsc->IA_blk->nitems, MPI_UNSIGNED, 1, (k*3)+1, MPI_COMM_WORLD, &request);
-            requests.push_back(request);
-            MPI_Isend(A, subcsc->A_blk->nitems,    WEIGHT_TYPE, 1, (k*3)+2, MPI_COMM_WORLD, &request);
-            requests.push_back(request);
-        }
-        
-        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-        requests.clear();
-        requests.shrink_to_fit();
-        
-        CSCs.clear();
-        CSCs.shrink_to_fit();
+    struct Tile<Weight>& this_tile = tiles[leader_rowgroup][0];
+    struct Tile<Weight>& other_tile = other_tiles[leader_rowgroup][0];
     
-    } else {
-        
-        printf("%d: receiving from 0\n", Env::rank);
-        uint32_t nremotes = 3;
-        uint32_t nparts = 1 + nremotes;
-        //MPI_Status status;
-        //MPI_Request request;
-        //std::vector<MPI_Request> requests;
-        std::vector<std::vector<uint32_t>> cscs_metadata(nparts);
-        for(uint32_t k = 0; k < cscs_metadata.size(); k++) {
-            cscs_metadata[k].resize(6);
-        }
-        
-        for(uint32_t k = 0; k < nparts; k++) {
-            printf("%d: %d\n", k, Env::rank);
-            //std::vector<uint32_t> csc_metadata(6);
-            auto& csc_metadata = cscs_metadata[k];
-            MPI_Irecv(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, 0, k, MPI_COMM_WORLD, &request);
-            requests.push_back(request);
-            //printf("%d: %d %d %d %d %d\n", k, csc_metadata[0], csc_metadata[1], csc_metadata[2], csc_metadata[3], csc_metadata[4]);
-        }
-        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-        requests.clear();
-        requests.shrink_to_fit();
-        uint32_t layer = cscs_metadata[0][0];
-        uint32_t remote_rowgrop = cscs_metadata[0][1];
-        auto& tile = tiles[remote_rowgrop][0];
-        tile.subtiles.resize(nparts);
-        //uint32_t my_start_row = csc_metadatas;
-        for(uint32_t k = 0; k < nparts; k++) {
-            auto& csc_metadata = cscs_metadata[k];
-            uint64_t csc_nedges = (uint64_t) csc_metadata[2];
-            uint32_t csc_start_row = csc_metadata[3];
-            uint32_t csc_height = csc_metadata[4];
-            uint32_t csc_width = csc_metadata[5];
-            
-            struct Tile<Weight>& subtile = tile.subtiles[k];
-            subtile.nedges = csc_nedges;
-            subtile.start_row = csc_start_row;
-            subtile.end_row = csc_start_row + csc_height;
-            subtile.start_col = 0;
-            subtile.end_col = csc_width;
-            subtile.height = csc_height;
-            subtile.width = csc_width;
-        }
-        
-        for(uint32_t k = 1; k < nparts; k++) {
-            struct Tile<Weight>& subtile = tile.subtiles[k];
-            subtile.spmat = std::make_shared<struct CSC<Weight>>(subtile.nedges, subtile.height, subtile.width);
-            
-            uint32_t* JA = subtile.spmat->JA_blk->ptr;
-            uint32_t* IA = subtile.spmat->IA_blk->ptr;
-            Weight*    A = subtile.spmat->A_blk->ptr;
-            MPI_Irecv(JA, subtile.spmat->JA_blk->nitems, MPI_UNSIGNED, 0, (k*3)+0, MPI_COMM_WORLD, &request);
-            requests.push_back(request);
-            MPI_Irecv(IA, subtile.spmat->IA_blk->nitems, MPI_UNSIGNED, 0, (k*3)+1, MPI_COMM_WORLD, &request);
-            requests.push_back(request);
-            MPI_Irecv(A, subtile.spmat->A_blk->nitems,    WEIGHT_TYPE, 0, (k*3)+2, MPI_COMM_WORLD, &request);
-            requests.push_back(request);
-        }
-        
-        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-        requests.clear();
-        requests.shrink_to_fit();
-        
-        
-        for(uint32_t k = 0; k < cscs_metadata.size(); k++) {
-            cscs_metadata[k].clear();
-            cscs_metadata[k].shrink_to_fit();
-        }
-        cscs_metadata.clear();
-        cscs_metadata.shrink_to_fit();
-        
-        /*
-        uint64_t checkcount = 0;
-        double checksum = 0;
-        for(uint32_t k = 1; k < nparts; k++) {
-            struct Tile<Weight>& subtile = tile.subtiles[k];
-            
-
-        uint64_t checkcount1 = 0;
-        uint32_t ncols1 = subtile.spmat->ncols;
-        uint32_t*   IA1 = subtile.spmat->IA_blk->ptr;
-        uint32_t*   JA1 = subtile.spmat->JA_blk->ptr;
-        double*      A1 = subtile.spmat->A_blk->ptr;
-        for(uint32_t j = 0; j < ncols1; j++) {
-            for(uint32_t i = JA1[j]; i < JA1[j+1]; i++) {
-                checkcount1++;
-                checksum += A1[i];
-            }
-        }
-        printf("%lu\n", checkcount1);
-        checkcount += checkcount1;
-    }    
-
-    printf("%f %lu\nn", checksum, checkcount);
-        */
-        
-        //
-        //csc_metadata.clear();
-        //csc_metadata.shrink_to_fit();
-        
-    }
-    /*
-    //Env::barrier();
-    if(Env::rank == 0) {
-        uint32_t value = 10;
-        MPI_Send(&value, 1, MPI_UNSIGNED, 1, 0, MPI_COMM_WORLD);
-    }
-    else {
-        MPI_Status status;
-        uint32_t value = 0;
-        MPI_Recv(&value, 1, MPI_UNSIGNED, 0, 0, MPI_COMM_WORLD, &status);
-        printf("value = %d\n", value);
-    }
-    */
+    uint32_t nparts_local  = nthreads_local;
+    uint32_t nparts_remote = follower_ranks.size();   
+    std::shared_ptr<struct CSC<Weight>>& csc = this_tile.spmat;
+    csc->split_and_overwrite(subcscs, nparts_local, nparts_remote);
     
-    
-    /*
-    for(i
-        subtile.rank = 
-        subtile.nedges
+    uint32_t nparts = 1 + nparts_remote;
+    //std::vector<struct Tile<Weight>> subtiles(nparts);
+    subtiles.resize(nparts);
+    uint32_t my_start_row = this_tile.start_row;
+    for(uint32_t k = 0; k < nparts; k++) {
+        struct Tile<Weight>& subtile = subtiles[k];
+        std::shared_ptr<struct CSC<Weight>>& subcsc = subcscs[k];  
+        subtile.rank = (k == 0) ? Env::rank : follower_ranks[k-1]; 
+        subtile.thread = tid;
+        subtile.nedges = subcsc->nnz;
+        subtile.start_row = my_start_row;
+        subtile.end_row = my_start_row + subcsc->nrows;
+        subtile.start_col = 0;
+        subtile.end_col = subcsc->ncols;
+        subtile.height = subcsc->nrows;
+        subtile.width = subcsc->ncols;
+        my_start_row += subcsc->nrows;
     }
     
+    struct Tile<Weight> subtile = subtiles[0];
     
-            int32_t rank;
-        int32_t thread;
-        uint64_t nedges = 0;
-        uint32_t start_row = 0;
-        uint32_t end_row = 0;
-        uint32_t start_col = 0;
-        uint32_t end_col = 0;
-        uint32_t height = 0;
-        uint32_t width = 0;
-    */
-    Env::barrier();
-    std::exit(0);
+    this_tile.nedges = other_tile.nedges = subtile.nedges;
+    this_tile.start_row =  other_tile.start_row = subtile.start_row;
+    this_tile.end_row = other_tile.end_row = subtile.end_row;
+    this_tile.start_col = other_tile.start_col = subtile.start_col;
+    this_tile.end_col = other_tile.end_col = subtile.end_col;
+    this_tile.height = other_tile.height = subtile.height;
+    this_tile.width = other_tile.width = subtile.width;
     
-    /*
-    const uint64_t  nnz   = CSC->nnz;
-    const uint32_t  nrows = CSC->nrows;
-    const uint32_t  ncols = CSC->ncols;
-    const uint32_t*    IA = CSC->IA_blk->ptr;
-    const uint32_t*    JA = CSC->JA_blk->ptr;
-    const Weight*       A = CSC->A_blk->ptr;
-    
-    uint64_t balanced_nnz = CSC->nnz/2;
-    
-    printf("%d %lu %d %lu\n", Env::rank, CSC->nnz, CSC->nrows, balanced_nnz);
-    
-    std::vector<uint32_t> rows(nrows);
-    for(uint32_t j = 0; j < ncols; j++) {
-        for(uint32_t i = JA[j]; i < JA[j+1]; i++) {
-            rows[IA[i]]++;
-        }
-    }
+    this_tile.out_subtiles.insert(this_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
+    other_tile.out_subtiles.insert(other_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());    
 
-    
-    
-    uint32_t i = 0;
-    uint64_t new_nnz1 = 0;
-    while(new_nnz1 < balanced_nnz) {
-        new_nnz1 += rows[i];
-        i++;
-    }
-    uint32_t nrows1 = i;
-    
-    //uint64_t s = 0;
-    //for(i = 0; i < row; i++) {
-      //  s += rows[i];
-    //}
-    //printf("%d <%lu %lu %lu>\n", row, max_nnz, balanced_nnz, s);
-    
-    
-    uint32_t new_height1 = nrows1;
-    uint32_t new_height2 = tile.height - nrows1;
-    uint32_t new_width = tile.width;
-    uint64_t new_nnz2 = nnz - new_nnz1; 
-    
-    printf("[%d %d %d] [%lu %lu %lu]\n", new_height1, new_height2, new_height1 + new_height2, new_nnz1, new_nnz2, new_nnz1 + new_nnz2);
-    std::shared_ptr<struct CSC<Weight>> CSC1 = std::make_shared<struct CSC<Weight>>(new_nnz1, new_height1, new_width);
-    std::shared_ptr<struct CSC<Weight>> CSC2 = std::make_unique<struct CSC<Weight>>(new_nnz2, new_height2, new_width);
-    
-    uint32_t* IA1 = CSC1->IA_blk->ptr;
-    uint32_t* JA1 = CSC1->JA_blk->ptr;
-    Weight*    A1 = CSC1->A_blk->ptr;
-    
-    uint32_t* IA2 = CSC2->IA_blk->ptr;
-    uint32_t* JA2 = CSC2->JA_blk->ptr;
-    Weight*    A2 = CSC2->A_blk->ptr;
-    
-    
-    //uint32_t i1 = 0;
-    //uint32_t i2 = 0;
-    //uint32_t j1 = 1;
-    //uint32_t j2 = 1;
-    JA1[0] = 0;
-    JA2[0] = 0;
-    for(uint32_t j = 0; j < ncols; j++) {
-        //JA1[j+1] = 
-        uint32_t& k1 = JA1[j+1];
-        k1 = JA1[j];
-
-        uint32_t& k2 = JA2[j+1];
-        k2 = JA2[j];
-        //uint32_t j1_old = JA1[j+1];
-        //uint32_t j2_old = JA2[j+1];
-        //if(JA[j+1] - JA[j]) {
-        for(uint32_t i = JA[j]; i < JA[j+1]; i++) {
-            if(IA[i] < new_height1) {
-                //JA1[j+1]++
-                IA1[k1] = IA[i];
-                A1[k1] = A[i];
-                k1++;
-            }
-            else {
-                //JA1[j+1]++;
-                IA2[k2] = IA[i] - new_height1;
-                A2[k2] = A[i];
-                k2++;
-            }
-        }
-    }
-    
-    double checksum1   = 0;
-    uint64_t checkcount1 = 0;    
-    double checksum2   = 0;
-    uint64_t checkcount2 = 0;    
-    for(uint32_t j = 0; j < ncols; j++) {
-        for(uint32_t i = JA1[j]; i < JA1[j+1]; i++) {
-            checksum1 += A1[i];
-            checkcount1++;
-        }
-    }
-    
-    for(uint32_t j = 0; j < ncols; j++) {
-        for(uint32_t i = JA2[j]; i < JA2[j+1]; i++) {
-            checksum2 += A2[i];
-            checkcount2++;
-        }
-    }
-    
-    printf("[%f %lu %lu] [%f %lu %lu]\n", checksum1, checkcount1, new_nnz1, checksum2, checkcount2, new_nnz2);
-    */
-    
-
-        
-        //else {
-        //    JA1[j+1] = JA[j];
-        //    JA2[j+1] = JA[j];
-        //}
-    //}
-    
-
-
-    
-    
-    
-    
-    
-    
-    
 }
 
 #endif
