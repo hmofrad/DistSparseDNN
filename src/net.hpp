@@ -468,6 +468,9 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
                     C_tile = inputFeatures->tiles[Env::thread_rowgroup[tid]][0];
                 }
 
+                printf("%d %d: %lu %d %d\n", Env::rank, tid, A_tile.nedges, A_tile.width, A_tile.height);
+                printf("%d %d: %lu %d %d\n", Env::rank, tid, C_tile.nedges, C_tile.width, C_tile.height);
+
                 std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
                 std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
                 B_tile = layers[l]->tiles[0][0];
@@ -534,8 +537,8 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
                 std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
                 std::shared_ptr<struct Data_Block<Weight>> b_bias = biasWeightVecs[l];
                 
-                printf("%lu %d %d\n", A_tile.nedges, A_tile.width, A_tile.height);
-                printf("%lu %d %d\n", C_tile.nedges, C_tile.width, C_tile.height);
+                printf("%d %d: %lu %d %d\n", Env::rank, tid, A_tile.nedges, A_tile.width, A_tile.height);
+                printf("%d %d: %lu %d %d\n", Env::rank, tid, C_tile.nedges, C_tile.width, C_tile.height);
                 
                 
                 
@@ -710,26 +713,18 @@ bool Net<Weight>::add_to_idle_ranks(const int32_t tid, uint32_t& leader_rowgroup
             uint32_t csc_height = csc_metadata[5];
             uint32_t csc_width = csc_metadata[6];
             if(not(start_layer%2)) {
-                inputFeatures->update_and_receive_subtiles(leader_rowgroup, start_layer, output->tiles, csc_nedges, csc_start_row, csc_height, csc_width, tid);
+                inputFeatures->update_in_subtiles(leader_rowgroup, start_layer, output->tiles, csc_nedges, csc_start_row, csc_height, csc_width, tid);
             }
             else {
-                output->update_and_receive_subtiles(leader_rowgroup, start_layer, inputFeatures->tiles, csc_nedges, csc_start_row, csc_height, csc_width, tid);
+                output->update_in_subtiles(leader_rowgroup, start_layer, inputFeatures->tiles, csc_nedges, csc_start_row, csc_height, csc_width, tid);
             }
             
             struct Tile<Weight>& A_tile = (not(start_layer%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                                : output->tiles[leader_rowgroup][0];
             
             std::shared_ptr<struct CSC<Weight>>& A_CSC = A_tile.spmat;
-                     
-            uint32_t* JA = A_CSC->JA_blk->ptr;
-            uint32_t* IA = A_CSC->IA_blk->ptr;
-            Weight*    A = A_CSC->A_blk->ptr;
-            MPI_Irecv(JA, A_CSC->JA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+0, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-            MPI_Irecv(IA, A_CSC->IA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+1, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-            MPI_Irecv(A, A_CSC->A_blk->nitems,    WEIGHT_TYPE, source_rank, (Env::rank*3)+2, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
+            A_CSC->Irecv(requests,source_rank, tid);
+
             //printf("Recv\n" );  
             MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
             requests.clear();
@@ -878,15 +873,14 @@ void Net<Weight>::add_to_my_follower_ranks(const uint32_t leader_rowgroup, const
     if(not follower_ranks.empty()) {
         MPI_Request request;
         std::vector<MPI_Request> requests;
-        MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
         
         std::vector<struct Tile<Weight>> subtiles;
         std::vector<std::shared_ptr<struct CSC<Weight>>> subcscs;
         if(not(start_layer%2)) {
-            inputFeatures->update_and_send_subtiles(leader_rowgroup, start_layer, output->tiles, subtiles, subcscs, follower_ranks, nthreads_local, tid);
+            inputFeatures->update_out_subtiles(leader_rowgroup, start_layer, output->tiles, subtiles, subcscs, follower_ranks, nthreads_local, tid);
         }
         else {
-            output->update_and_send_subtiles(leader_rowgroup, start_layer, inputFeatures->tiles, subtiles, subcscs, follower_ranks, nthreads_local, tid);
+            output->update_out_subtiles(leader_rowgroup, start_layer, inputFeatures->tiles, subtiles, subcscs, follower_ranks, nthreads_local, tid);
         }
         
         for(uint32_t k = 1; k < subtiles.size(); k++) {
@@ -899,6 +893,8 @@ void Net<Weight>::add_to_my_follower_ranks(const uint32_t leader_rowgroup, const
         MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
         requests.clear();
         requests.shrink_to_fit();
+        
+        
         
         
         
@@ -984,6 +980,8 @@ void Net<Weight>::add_to_my_follower_ranks(const uint32_t leader_rowgroup, const
         for(uint32_t k = 1; k < subtiles.size(); k++) {
             struct Tile<Weight> subtile = subtiles[k];
             std::shared_ptr<struct CSC<Weight>>& subcsc = subcscs[k];
+            subcsc->Isend(requests, subtile.rank, tid);
+            /*
             uint32_t* JA = subcsc->JA_blk->ptr;
             uint32_t* IA = subcsc->IA_blk->ptr;
             Weight*    A = subcsc->A_blk->ptr;
@@ -994,6 +992,7 @@ void Net<Weight>::add_to_my_follower_ranks(const uint32_t leader_rowgroup, const
             requests.push_back(request);
             MPI_Isend(A, subcsc->A_blk->nitems,    WEIGHT_TYPE, subtile.rank, (subtile.rank*3)+2, Env::thread_communicators[tid], &request);
             requests.push_back(request);
+            */
         }
         //printf("send>>>>\n");
         MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
@@ -1015,7 +1014,7 @@ void Net<Weight>::add_to_my_follower_ranks(const uint32_t leader_rowgroup, const
         
         struct Tile<Weight>& A_tile = (not(start_layer%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                            : output->tiles[leader_rowgroup][0];
-        spaWeightVec[tid]->reallocate(A_tile.height);
+        spaWeightVec[tid]->reallocate(A_tile.height);   
     }
 }
 
