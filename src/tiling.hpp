@@ -71,6 +71,19 @@ class Tiling {
         void     set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles); 
         void test();
         void test1();
+        
+        void update_and_send_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
+                                      std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
+                                      std::vector<struct Tile<Weight>>& subtiles,
+                                      std::vector<std::shared_ptr<struct CSC<Weight>>>& subcscs,
+                                      std::vector<int32_t>& follower_ranks,
+                                      const uint32_t nthreads_local, const int32_t tid);
+        
+        void update_and_receive_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
+                                         std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
+                                         const uint64_t csc_nedges, const uint32_t csc_start_row, 
+                                         const uint32_t csc_height, const uint32_t csc_width, 
+                                         const int32_t tid);
 
     private:
         void integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b);
@@ -85,10 +98,159 @@ class Tiling {
         
         void repartition_tiles(const std::string input_file, const INPUT_TYPE input_type);
         
+        
         void tile_load();
         void tile_load_print(const std::vector<uint64_t> nedges_vec, const uint64_t nedges, const uint32_t nedges_divisor, const std::string nedges_type);
 };
 
+
+template<typename Weight>
+void Tiling<Weight>::update_and_receive_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
+                     std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
+                     const uint64_t csc_nedges, const uint32_t csc_start_row, 
+                     const uint32_t csc_height, const uint32_t csc_width, 
+                     const int32_t tid) {
+    MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
+    
+    struct Tile<Weight>& this_tile = tiles[leader_rowgroup][0];
+    struct Tile<Weight>& other_tile = other_tiles[leader_rowgroup][0];
+
+    std::shared_ptr<struct CSC<Weight>>& csc = this_tile.spmat;
+
+    
+
+
+    struct Tile<Weight> subtile;
+    subtile.nedges = (uint64_t) csc_nedges;
+    subtile.start_row = csc_start_row;
+    subtile.end_row = csc_start_row + csc_height;
+    subtile.start_col = 0;
+    subtile.end_col = csc_width;
+    subtile.height = csc_height;
+    subtile.width = csc_width;
+    this_tile.in_subtiles.push_back(subtile);  
+    other_tile.in_subtiles.push_back(subtile);  
+    
+    //subtile.spmat = std::make_shared<struct CSC<Weight>>(subtile.nedges, subtile.height, subtile.width);
+    
+    this_tile.nedges = other_tile.nedges = subtile.nedges;
+    this_tile.start_row =  other_tile.start_row = subtile.start_row;
+    this_tile.end_row = other_tile.end_row = subtile.end_row;
+    this_tile.start_col = other_tile.start_col = subtile.start_col;
+    this_tile.end_col = other_tile.end_col = subtile.end_col;
+    this_tile.height = other_tile.height = subtile.height;
+    this_tile.width = other_tile.width = subtile.width;
+    csc = std::move(std::make_shared<struct CSC<Weight>>(this_tile.nedges, this_tile.height, this_tile.width));
+    
+    //printf("%lu %d %d %lu\n", A_tile.nedges, A_tile.height, A_tile.width, subtile.nedges);
+    //printf("%lu %lu %lu\n", A_CSC->JA_blk->nitems, A_CSC->IA_blk->nitems, A_CSC->A_blk->nitems);
+    /*
+    MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();            
+    uint32_t* JA = A_CSC->JA_blk->ptr;
+    uint32_t* IA = A_CSC->IA_blk->ptr;
+    Weight*    A = A_CSC->A_blk->ptr;
+    MPI_Irecv(JA, A_CSC->JA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+0, Env::thread_communicators[tid], &request);
+    requests.push_back(request);
+    MPI_Irecv(IA, A_CSC->IA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+1, Env::thread_communicators[tid], &request);
+    requests.push_back(request);
+    MPI_Irecv(A, A_CSC->A_blk->nitems,    WEIGHT_TYPE, source_rank, (Env::rank*3)+2, Env::thread_communicators[tid], &request);
+    requests.push_back(request);
+    //printf("Recv\n" );  
+    MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+    requests.clear();
+    requests.shrink_to_fit();
+    
+    spaWeightVec[tid]->reallocate(A_tile.height);
+    
+    */
+}
+
+template<typename Weight>
+void Tiling<Weight>::update_and_send_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
+                std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
+                std::vector<struct Tile<Weight>>& subtiles,
+                std::vector<std::shared_ptr<struct CSC<Weight>>>& subcscs,
+                std::vector<int32_t>& follower_ranks,
+                const uint32_t nthreads_local, const int32_t tid) {
+    MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
+    
+    struct Tile<Weight>& this_tile = tiles[leader_rowgroup][0];
+    struct Tile<Weight>& other_tile = other_tiles[leader_rowgroup][0];
+    
+    uint32_t nparts_local  = nthreads_local;
+    uint32_t nparts_remote = follower_ranks.size();   
+    std::shared_ptr<struct CSC<Weight>>& csc = this_tile.spmat;
+    csc->split_and_overwrite(subcscs, nparts_local, nparts_remote);
+    
+    uint32_t nparts = 1 + nparts_remote;
+    //std::vector<struct Tile<Weight>> subtiles(nparts);
+    subtiles.resize(nparts);
+    uint32_t my_start_row = this_tile.start_row;
+    for(uint32_t k = 0; k < nparts; k++) {
+        struct Tile<Weight>& subtile = subtiles[k];
+        std::shared_ptr<struct CSC<Weight>>& subcsc = subcscs[k];  
+        subtile.rank = (k == 0) ? Env::rank : follower_ranks[k-1]; 
+        subtile.thread = tid;
+        subtile.nedges = subcsc->nnz;
+        subtile.start_row = my_start_row;
+        subtile.end_row = my_start_row + subcsc->nrows;
+        subtile.start_col = 0;
+        subtile.end_col = subcsc->ncols;
+        subtile.height = subcsc->nrows;
+        subtile.width = subcsc->ncols;
+        my_start_row += subcsc->nrows;
+    }
+    
+    struct Tile<Weight> subtile = subtiles[0];
+    
+    this_tile.nedges = other_tile.nedges = subtile.nedges;
+    this_tile.start_row =  other_tile.start_row = subtile.start_row;
+    this_tile.end_row = other_tile.end_row = subtile.end_row;
+    this_tile.start_col = other_tile.start_col = subtile.start_col;
+    this_tile.end_col = other_tile.end_col = subtile.end_col;
+    this_tile.height = other_tile.height = subtile.height;
+    this_tile.width = other_tile.width = subtile.width;
+    
+    this_tile.out_subtiles.insert(this_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
+    other_tile.out_subtiles.insert(other_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
+
+    
+    /*
+            MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
+        for(uint32_t k = 1; k < nparts; k++) {
+            struct Tile<Weight> subtile = subtiles[k];
+            std::shared_ptr<struct CSC<Weight>>& subcsc = CSCs[k];
+            uint32_t* JA = subcsc->JA_blk->ptr;
+            uint32_t* IA = subcsc->IA_blk->ptr;
+            Weight*    A = subcsc->A_blk->ptr;
+            
+            MPI_Isend(JA, subcsc->JA_blk->nitems, MPI_UNSIGNED, subtile.rank, (subtile.rank*3)+0, Env::thread_communicators[tid], &request);
+            requests.push_back(request);
+            MPI_Isend(IA, subcsc->IA_blk->nitems, MPI_UNSIGNED, subtile.rank, (subtile.rank*3)+1, Env::thread_communicators[tid], &request);
+            requests.push_back(request);
+            MPI_Isend(A, subcsc->A_blk->nitems,    WEIGHT_TYPE, subtile.rank, (subtile.rank*3)+2, Env::thread_communicators[tid], &request);
+            requests.push_back(request);
+        }
+        //printf("send>>>>\n");
+        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+        requests.clear();
+        requests.shrink_to_fit();
+        
+        CSCs.clear();
+        CSCs.shrink_to_fit();
+        
+        
+        A_tile.out_subtiles.insert(A_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
+        C_tile.out_subtiles.insert(C_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
+        subtiles.clear();
+        subtiles.shrink_to_fit();
+        */
+    
+    
+    
+
+    
+}
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
@@ -1644,7 +1806,7 @@ void Tiling<Weight>::test() {
         uint32_t nlocals = 2;
         uint32_t nremotes = 3;
         std::vector<std::shared_ptr<struct CSC<Weight>>> CSCs;
-        CSC->split(CSCs, nlocals, nremotes);
+        CSC->split_and_overwrite(CSCs, nlocals, nremotes);
 
         
         uint32_t nparts = 1 + nremotes;
