@@ -30,7 +30,8 @@ struct CSC {
         void adjust(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
         void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid);
         void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
-        void split(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, const uint32_t nparts_local, const uint32_t nparts_remote);
+        void split_and_overwrite(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, const uint32_t nparts_local, const uint32_t nparts_remote);
+        
         uint64_t nnz   = 0;
         uint64_t nnz_i = 0;
         uint32_t nrows = 0;
@@ -82,7 +83,7 @@ void CSC<Weight>::populate(const std::vector<struct Triple<Weight>> triples, con
         j++;
         JA[j] = JA[j - 1];
     }
-    //CSC::nnz_i = CSC::nnz;
+    CSC::nnz_i = CSC::nnz;
 }
 
 /* Tile height and width are not necessarily 
@@ -113,7 +114,7 @@ void CSC<Weight>::populate(const std::vector<struct Triple<Weight>> triples, con
         j++;
         JA[j] = JA[j - 1];
     }
-    //CSC::nnz_i = CSC::nnz;    
+    CSC::nnz_i = CSC::nnz;    
 }
 
 template<typename Weight>
@@ -162,7 +163,7 @@ void CSC<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const 
         uint64_t checkcount = 0;
         for(uint32_t j = 0; j < CSC::ncols; j++) {
             //if(!Env::rank)
-            //    std::cout << "j=" << j << "," << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl
+                std::cout << "j=" << j << "," << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
             for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
                 (void) IA[i];
                 (void) A[i];
@@ -431,7 +432,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
 }
 
 template<typename Weight>
-void CSC<Weight>::split(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, const uint32_t nparts_local, const uint32_t nparts_remote) {
+void CSC<Weight>::split_and_overwrite(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, const uint32_t nparts_local, const uint32_t nparts_remote) {
 
     uint64_t&  nnz   = CSC::nnz;
     uint64_t&  nnz_i = CSC::nnz_i;
@@ -448,9 +449,13 @@ void CSC<Weight>::split(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, 
         }
     }
     uint32_t nparts = 1+nparts_remote;
-    uint64_t balanced_nnz = nnz/(nparts_local + nparts_remote);
+    uint64_t balanced_nnz = nnz_i/(nparts_local + nparts_remote);
     std::vector<uint64_t> bounds_nnz(nparts, balanced_nnz);
     bounds_nnz[0] = balanced_nnz * nparts_local;
+    
+    //printf("nnz=%lu nnz_i=%lu\n", nnz, nnz_i);
+    //for(auto b: bounds_nnz) {printf("%lu ", b);} printf("\n");
+    
     
     std::vector<uint64_t> new_nnzs(nparts);
     std::vector<uint32_t> new_rows(nparts);
@@ -475,9 +480,11 @@ void CSC<Weight>::split(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, 
     */
     
     std::vector<uint32_t> new_heights(nparts);
+    std::vector<uint32_t> new_offsets(nparts);
     new_heights[0] = new_rows[0];
     for(uint32_t k = 1; k < nparts; k++) {
         new_heights[k] = new_rows[k] - new_rows[k-1];
+        new_offsets[k]= new_rows[k-1];
     }
     uint32_t new_width = ncols;
     /*
@@ -499,10 +506,10 @@ void CSC<Weight>::split(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, 
     */
     //std::vector<std::shared_ptr<struct CSC<Weight>>> new_CSC = std::make_shared<struct CSC<Weight>>(new_nnzs[0], new_heights[0], new_width);
     for(uint32_t k = 0; k < nparts; k++) {
-        ///printf("%d %lu %d %d\n", k, new_nnzs[k], new_heights[k], new_rows[k]);
+        //printf("%d %lu %d %d %d\n", k, new_nnzs[k], new_heights[k], new_rows[k], new_offsets[k]);
         CSCs.push_back(std::make_shared<struct CSC<Weight>>(new_nnzs[k], new_heights[k], new_width));
     }
-
+//std::exit(0);
     for(uint32_t k = 0; k < nparts; k++) {
         uint32_t* JA_ = CSCs[k]->JA_blk->ptr;
         JA_[0] = 0;
@@ -525,7 +532,7 @@ void CSC<Weight>::split(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, 
             uint32_t* JA_ = CSCs[k]->JA_blk->ptr;
             double*  A_ = CSCs[k]->A_blk->ptr;
             uint32_t& k_ = JA_[j+1];
-            IA_[k_] = IA[i] - new_rows[k];
+            IA_[k_] = IA[i] - new_offsets[k];
             A_[k_] = A[i];
             k_++;
         }
