@@ -450,7 +450,7 @@ void CSC<Weight>::split_and_overwrite(std::vector<std::shared_ptr<struct CSC<Wei
             rows[IA[i]]++;
         }
     }
-    uint32_t nparts = 1+nparts_remote;
+    uint32_t nparts = 1 + nparts_remote;
     uint64_t balanced_nnz = nnz_i/(nparts_local + nparts_remote);
     std::vector<uint64_t> bounds_nnz(nparts, balanced_nnz);
     bounds_nnz[0] = balanced_nnz * nparts_local;
