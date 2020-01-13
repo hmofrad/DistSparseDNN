@@ -38,10 +38,13 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
         
     Weight*          s_A   = s->ptr;
 
-    if(A_ncols != B_nrows) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols);
-        std::exit(Env::finalize()); 
+    if((A_ncols != B_nrows) or (s->nitems != A_nrows)) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d], SPA[%lu]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
+        std::exit(1); 
     }
+    
+    
+    
     nrows = A_nrows;
     ncols = B_ncols;
     //printf("flip %d %d\n", nrows, ncols);
@@ -100,9 +103,9 @@ inline void spmm_real(std::shared_ptr<struct CSC<Weight>> A_CSC,
     Weight*          s_A   = s->ptr;
     const Weight*    b_A   = b->ptr;
         
-    if(A_ncols != B_nrows) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols);
-        std::exit(Env::finalize()); 
+    if((A_ncols != B_nrows) or (s->nitems != A_nrows)) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
+        std::exit(1); 
     }
         
     for(uint32_t j = start_col; j < end_col; j++) {
@@ -184,7 +187,6 @@ inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
     }
     
     char me = 1;
-    uint32_t j = 0;
     for(uint32_t i = 0; i < A_nrows; i++) {
         if(trueCategories[start_row + i] != allCategories[i]) {
             me = 0;
