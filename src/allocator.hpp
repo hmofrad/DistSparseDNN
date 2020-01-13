@@ -88,7 +88,7 @@ void Data_Block<Data_Type>::reallocate(const uint64_t nitems_) {
         uint64_t new_nbytes = nitems_ * sizeof(Data_Type);
         new_nbytes += (new_nbytes % Env::PAGE_SIZE) ? (Env::PAGE_SIZE - (new_nbytes % Env::PAGE_SIZE)) : 0;
 
-        if(old_nbytes != new_nbytes) {
+        if((old_nbytes != new_nbytes) and new_nbytes) {
             if(Env::NUMA_ALLOC) {
                 if((ptr = (Data_Type*) numa_realloc(ptr, old_nbytes, new_nbytes)) == (void*) 0) { 
                     Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot numa realloc memory\n");
@@ -106,6 +106,9 @@ void Data_Block<Data_Type>::reallocate(const uint64_t nitems_) {
             }
             nitems = nitems_;
             nbytes = new_nbytes;
+        }
+        else {
+            nitems = nitems_;
         }
     }
     else {
