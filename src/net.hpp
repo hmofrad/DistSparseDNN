@@ -698,6 +698,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         }
         //printf("%d %d\n", tid, counts);
         int32_t countss = 0;
+        Env::barrier();
         MPI_Allreduce(&counts, &countss, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
         Env::barrier();
         bool passed = (countss == nCategories);
@@ -1032,9 +1033,9 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
     uint32_t nrows = inputFeatures->tile_height;
     uint32_t ncols = layers[0]->ncols;
     
-    struct Tile<Weight> A_tile;
-    struct Tile<Weight> B_tile;
-    struct Tile<Weight> C_tile;
+    //struct Tile<Weight> A_tile;
+    //struct Tile<Weight> B_tile;
+    //struct Tile<Weight> C_tile;
     
     if(tid != leader) {
         spaWeightVec[tid]->reallocate(inputFeatures->tiles[leader_rowgroup][0].height);   
@@ -1045,6 +1046,7 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
     
     struct Env::thread_struct& thread_st = Env::threads[tid];
     bool old_thread = false;
+    bool has_data_to_share = true;
     for(uint32_t l = start_layer; l < maxLayers; l++) {
         //if(tid == leader) 
         //printf("1.hybrid: rank=%d tid=%d layer=%d nthreads=%lu\n", Env::rank, tid, l, my_threads.size());
@@ -1055,6 +1057,15 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
         Env::hybrid_probe_time[tid] += Env::toc(start_time);     
             
         start_time = Env::tic();
+        
+            struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
+                                                     : output->tiles[leader_rowgroup][0];
+                                                         
+            struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
+                                                     : inputFeatures->tiles[leader_rowgroup][0];                
+        
+        
+            /*
             if(not(l%2)) {
                 A_tile = inputFeatures->tiles[leader_rowgroup][0];
                 C_tile = output->tiles[leader_rowgroup][0];
@@ -1063,12 +1074,31 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
                 A_tile = output->tiles[leader_rowgroup][0];
                 C_tile = inputFeatures->tiles[leader_rowgroup][0];
             }
+            */
 
             std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
             std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-            B_tile = layers[l]->tiles[0][0];
+            struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
             std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
             std::shared_ptr<struct Data_Block<Weight>> b_bias = biasWeightVecs[l];  
+            
+            if(has_data_to_share) {
+                if(tid == leader) {
+                    has_data_to_share = add_to_my_follower_ranks(leader_rowgroup, l, my_threads.size(), tid);
+                    if(has_data_to_share) {
+                        for(auto t: my_threads) {
+                            if(t != tid) {
+                                spaWeightVec[t]->reallocate(A_tile.height);   
+                            }
+                        }
+                    }
+                }
+                
+                //printf("%d %d %d\n", Env::rank, tid, A_tile.height);
+                
+            }
+            pthread_barrier_wait(&Env::thread_barriers[leader]);
+            
             //printf("Rank=%d tid=%d [%lu]SYMB\n", Env::rank, tid, my_threads.size());
             const uint32_t start_col = Env::threads[tid].start_col;// Env::follower_threads_info[leader][tid].start_col;
             const uint32_t end_col   = Env::threads[tid].end_col; //Env::follower_threads_info[leader][tid].end_col;
