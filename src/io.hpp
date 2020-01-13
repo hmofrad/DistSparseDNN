@@ -22,13 +22,13 @@ namespace IO {
     std::tuple<uint64_t, uint32_t, uint32_t> text_file_stat(const std::string inputFile);
     template<typename Weight>
     std::vector<struct Triple<Weight>> text_file_read(const std::string inputFile, bool one_rank);
-    void text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
+    int32_t text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
     
     template<typename Weight>
     std::tuple<uint64_t, uint32_t, uint32_t> binary_file_stat(const std::string inputFile);
     template<typename Weight>
     std::vector<struct Triple<Weight>> binary_file_read(const std::string inputFile, bool one_rank);
-    void binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
+    int32_t binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
 }
 
 template<typename Weight>
@@ -146,7 +146,7 @@ std::vector<struct Triple<Weight>> IO::text_file_read(const std::string inputFil
     return(triples);
 }
 
-void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
+int32_t IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Start reading the category file %s\n", inputFile.c_str());
     
     std::ifstream fin(inputFile.c_str(), std::ios_base::in);
@@ -184,6 +184,7 @@ void IO::text_file_categories(const std::string inputFile, std::vector<uint32_t>
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read text: Done  reading the category file %s\n", inputFile.c_str());
     Env::barrier();
+    return(nCategories);
 } 
  
  
@@ -300,7 +301,7 @@ std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputF
     return(triples);
 }
 
-void IO::binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
+int32_t IO::binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the category file %s\n", inputFile.c_str());
     
     std::ifstream fin(inputFile.c_str(), std::ios_base::binary);
@@ -338,5 +339,6 @@ void IO::binary_file_categories(const std::string inputFile, std::vector<uint32_
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done  reading the category file %s\n", inputFile.c_str());
     Env::barrier();
+    return(nCategories);
 }  
 #endif
