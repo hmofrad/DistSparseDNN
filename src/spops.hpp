@@ -198,4 +198,37 @@ inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
 
     return((all == Env::nranks));
 }
+
+template<typename Weight>
+inline int32_t validate_prediction1(const std::shared_ptr<struct CSC<Weight>> A_CSC,
+                                const std::vector<uint32_t> trueCategories,
+                                const uint32_t start_row) {
+    const uint64_t A_nnz   = A_CSC->nnz;
+    const uint32_t A_nrows = A_CSC->nrows;
+    const uint32_t A_ncols = A_CSC->ncols;
+    const uint32_t* A_IA   = A_CSC->IA_blk->ptr;
+    const uint32_t* A_JA   = A_CSC->JA_blk->ptr;
+    const Weight*    A_A   = A_CSC->A_blk->ptr;
+    
+    std::vector<uint32_t> allCategories(A_nrows);
+
+    for(uint32_t j = 0; j < A_ncols; j++) {
+        for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
+            allCategories[A_IA[i]] = 1;
+        }
+    }
+    
+    int32_t count = 0;
+    for(uint32_t i = 0; i < A_nrows; i++) {
+        if(trueCategories[start_row + i] != allCategories[i]) {
+            count = -1;
+            break;
+        }
+        if(allCategories[i]) {
+            count++;
+        }
+    }
+    return(count);
+}
+
 #endif
