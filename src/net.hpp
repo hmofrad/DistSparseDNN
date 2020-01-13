@@ -57,8 +57,8 @@ class Net {
         int32_t add_to_my_follower_threads(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid);
         void    add_to_my_follower_threads(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid);
         
-        bool add_to_idle_ranks(const int32_t tid, uint32_t& leader_rowgroup, uint32_t& start_layer);
-        void add_to_my_follower_ranks(const uint32_t leader_rowgroup, const uint32_t start_layer, const uint32_t nthreads_local, const int32_t tid);
+        int32_t add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& start_layer, const int32_t tid);
+        bool add_to_my_follower_ranks(const uint32_t leader_rowgroup, const uint32_t start_layer, const uint32_t nthreads_local, const int32_t tid);
         
         
 };
@@ -128,7 +128,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    maxLayers = 3;
+    //maxLayers = 3;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -441,24 +441,32 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     uint32_t nrows = inputFeatures->tile_height;
     uint32_t ncols = layers[0]->ncols;
     
-    struct Tile<Weight> A_tile;
-    struct Tile<Weight> B_tile;
-    struct Tile<Weight> C_tile;
+    //struct Tile<Weight> A_tile;
+    //struct Tile<Weight> B_tile;
+    //struct Tile<Weight> C_tile;
     std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
     struct Env::thread_struct& thread_st = Env::threads[tid];
     std::vector<int32_t> my_threads;
     my_threads.push_back(tid);
+    std::vector<int32_t> my_rowgrps;
+    bool has_data_to_share = true;
     auto start = std::chrono::high_resolution_clock::now();  
     if(Env::rank == 1) {
         sleep(5);
     }
     for (uint32_t l = 0; l < maxLayers; l++) {
-        printf("rank=%d tid=%d layer=%d\n", Env::rank, tid, l);
+        //printf("hybrid_x_hybrid: rank=%d tid=%d layer=%d nthreads=%lu\n", Env::rank, tid, l, my_threads.size());
         if(add_to_my_follower_threads(my_threads, l, ncols, tid) == 1) {
-            
-            add_to_my_follower_ranks(Env::thread_rowgroup[tid], l, my_threads.size(), tid);
-
+            //printf("rank=%d tid=%d layer=%d Adding\n", Env::rank, tid, l);    
+            //printf("rank=%d tid=%d layer=%d Done\n", Env::rank, tid, l);
             start_time = Env::tic(); 
+                struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[Env::thread_rowgroup[tid]][0]
+                                                         : output->tiles[Env::thread_rowgroup[tid]][0];
+                                                         
+                struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[Env::thread_rowgroup[tid]][0]
+                                                         : inputFeatures->tiles[Env::thread_rowgroup[tid]][0];                
+                
+                /*
                 if(not(l%2)) {
                     A_tile = inputFeatures->tiles[Env::thread_rowgroup[tid]][0];
                     C_tile = output->tiles[Env::thread_rowgroup[tid]][0];
@@ -467,17 +475,27 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
                     A_tile = output->tiles[Env::thread_rowgroup[tid]][0];
                     C_tile = inputFeatures->tiles[Env::thread_rowgroup[tid]][0];
                 }
-
-                printf("%d %d: %lu %d %d\n", Env::rank, tid, A_tile.nedges, A_tile.width, A_tile.height);
-                printf("%d %d: %lu %d %d\n", Env::rank, tid, C_tile.nedges, C_tile.width, C_tile.height);
+                */
+                //printf("%d %d: %lu %d %d\n", Env::rank, tid, A_tile.nedges, A_tile.width, A_tile.height);
+                //printf("%d %d: %lu %d %d\n", Env::rank, tid, C_tile.nedges, C_tile.width, C_tile.height);
 
                 std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
                 std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-                B_tile = layers[l]->tiles[0][0];
+                struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
                 std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
                 std::shared_ptr<struct Data_Block<Weight>> b_bias = biasWeightVecs[l];  
 
             Env::spmm_symb_time[tid] += Env::toc(start_time);      
+        
+            //if(A_tile.nedges) {
+                //printf("rank=%d tid=%d layer=%d nnz=%lu =%lu =%lu [%d %d]\n", Env::rank, tid, l, A_tile.nedges, C_tile.nedges, thread_st.off_nnz, A_tile.height, C_tile.height);
+                if(has_data_to_share) {
+                    has_data_to_share = add_to_my_follower_ranks(Env::thread_rowgroup[tid], l, my_threads.size(), tid);
+                }
+            //}
+            //else {
+              //  printf("######## rank=%d tid=%d layer=%d\n", Env::rank, tid, l);
+            //}
         
             start_time = Env::tic(); 
                 const uint32_t start_col = 0;
@@ -496,16 +514,19 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
                 spmm_real(A_CSC, B_CSC, C_CSC, s_spa, b_bias, start_col, end_col, off_col, thread_st.idx_nnz, tid);
                 Env::adjust_displacement(tid);
                 C_CSC->adjust(tid);
+                A_tile.nedges = A_CSC->nnz_i;
+                C_tile.nedges = C_CSC->nnz_i;
             Env::spmm_real_time[tid] += Env::toc(start_time);  
             if(!tid) Env::iteration++;
         }
         else {
             hybrid(my_threads, Env::thread_rowgroup[tid], l, tid, tid);
+            //printf("rank=%d tid=%d layer=%d hybrid Done\n", Env::rank, tid, l);
             break;
         }
         
     }
-
+    printf("rank=%d tid=%d add_to_idle_threads\n", Env::rank, tid);
     while(add_to_idle_threads(my_threads, tid)) {
         const int32_t leader = Env::threads[tid].leader;
         if(leader != -1) {
@@ -514,63 +535,48 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
             hybrid(my_threads, leader_rowgroup, start_layer, leader, tid);
         }
     }
-
+    printf("Rank=%d, tid=%d add_to_idle_ranks\n", Env::rank, tid);
+    
     uint32_t leader_rowgroup = 0;
     uint32_t start_layer = 0;     
-    while(add_to_idle_ranks(tid, leader_rowgroup, start_layer)) {
-        //s_spa = spaWeightVec[tid];
-        printf("rank=%d tid=%d rowgroup=%d start_layer=%d\n", Env::rank, tid, leader_rowgroup, start_layer);
+    int32_t ret = 0;
+    while((ret = add_to_idle_ranks(leader_rowgroup, start_layer, tid))) {
+        if(ret == 1) {
+        if(std::find(my_rowgrps.begin(), my_rowgrps.end(), leader_rowgroup) == my_rowgrps.end()) {
+            my_rowgrps.push_back(leader_rowgroup);
+        }
+        auto& s_spa = Net::spaWeightVec[tid];
+        //printf("rank=%d tid=%d rowgroup=%d start_layer=%d\n", Env::rank, tid, leader_rowgroup, start_layer);
         for (uint32_t l = start_layer; l < maxLayers; l++) {
+          //  printf("rank=%d tid=%d layer=%d\n", Env::rank, tid, l);
             start_time = Env::tic();
+                struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0].in_subtiles.back()
+                                                         : output->tiles[leader_rowgroup][0].in_subtiles.back();
+                                                         
+                struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0].in_subtiles.back()
+                                                         : inputFeatures->tiles[leader_rowgroup][0].in_subtiles.back();                
+            
+            /*
                 if(not(l%2)) {
-                    A_tile = inputFeatures->tiles[leader_rowgroup][0];
-                    C_tile = output->tiles[leader_rowgroup][0];
+                    A_tile = inputFeatures->tiles[leader_rowgroup][0].in_subtiles.back();
+                    C_tile = output->tiles[leader_rowgroup][0].in_subtiles.back();
                 }
                 else {
-                    A_tile = output->tiles[leader_rowgroup][0];
-                    C_tile = inputFeatures->tiles[leader_rowgroup][0];
+                    A_tile = output->tiles[leader_rowgroup][0].in_subtiles.back();
+                    C_tile = inputFeatures->tiles[leader_rowgroup][0].in_subtiles.back();
                 }
-
+            */
                 std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
                 std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-                B_tile = layers[l]->tiles[0][0];
+                struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
                 std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
                 std::shared_ptr<struct Data_Block<Weight>> b_bias = biasWeightVecs[l];
                 
-                printf("%d %d: %lu %d %d\n", Env::rank, tid, A_tile.nedges, A_tile.width, A_tile.height);
-                printf("%d %d: %lu %d %d\n", Env::rank, tid, C_tile.nedges, C_tile.width, C_tile.height);
+                //printf("rank=%d tid=%d: layer=%d rg=%d A[%d %d] C[%d %d] SPA{%lu}\n", Env::rank, tid, l, leader_rowgroup, A_tile.width, A_tile.height, C_tile.width, C_tile.height, s_spa->nitems);
+                //printf("%d %d: %lu %d %d\n", Env::rank, tid, C_tile.nedges, C_tile.width, C_tile.height);
                 
                 
-                
-            Weight*          s_A   = spaWeightVec[tid]->ptr;
-            
-
-        
-            uint32_t* IA = A_CSC->IA_blk->ptr;
-            uint32_t* JA = A_CSC->JA_blk->ptr;
-            Weight*    A = A_CSC->A_blk->ptr;
-            
-           printf("%lu %lu %lu\n", A_CSC->IA_blk->nitems, A_CSC->JA_blk->nitems, A_CSC->A_blk->nitems);
-           /*
-            double checksum = 0;
-            uint64_t checkcount = 0;
-            for(uint32_t j = 0; j < A_CSC->ncols; j++) {
-                
-                    std::cout << "j=" << j << "," << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
-                for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
-                    (void) IA[i];
-                    (void) A[i];
-                    checksum += A[i];
-                    checkcount++;
-                    //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
-                    s_A[IA[i]]=1;
-                }
-            }    
-        
-            printf("Rank=%d tid=%d checksum=%f checkcount=%lu\n", Env::rank, tid, checksum, checkcount);        
-            */
-            
-                
+              
                 
                 
                 
@@ -578,18 +584,18 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
                 
                 
             Env::spmm_symb_time[tid] += Env::toc(start_time);
-            printf("Symb start\n");
+            //printf("%d %d Symb start\n", Env::rank, tid);
             start_time = Env::tic();
                 const uint32_t start_col = 0;
                 const uint32_t end_col   = B_CSC->ncols;
                 std::tie(thread_st.off_nnz, nrows, ncols) =  spmm_symb(A_CSC, B_CSC, s_spa, start_col, end_col, tid);
             Env::spmm_symb_time[tid] += Env::toc(start_time);
-            printf("Symb end\n");
+            //printf("%d %d Symb end %lu %d %d\n",Env::rank, tid, thread_st.off_nnz, nrows, ncols);
             start_time = Env::tic();
                 int32_t leader_tid = -1;
                 C_CSC->reallocate(thread_st.off_nnz, nrows, ncols, leader_tid, tid);
             Env::memory_allocation_time[tid] += Env::toc(start_time);
-            
+            //printf("%d %d spmm start\n",Env::rank, tid);
             start_time = Env::tic();
                 uint32_t off_col   = 0;
                 thread_st.idx_nnz = 0;
@@ -597,14 +603,17 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
                 Env::adjust_displacement(tid);
                 C_CSC->adjust(tid);
             Env::spmm_real_time[tid] += Env::toc(start_time);
+            //printf("%d %d spmm end\n",Env::rank, tid);
         }
+        }
+        //printf("rank=%d tid=%d layer=%d nnz=%lu done done done\n", Env::rank, tid, start_layer, output->tiles[leader_rowgroup][0].in_subtiles.back().spmat->nnz_i);
     }
     
     
     
     
     
-    printf("Rank=%d, tid=%d Done\n", Env::rank, tid);
+    printf("Rank=%d, tid=%d Finish\n", Env::rank, tid);
     pthread_barrier_wait(&Env::thread_barrier);
     Env::barrier();
     
@@ -622,14 +631,14 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     }
     pthread_barrier_wait(&Env::thread_barrier);
     Env::barrier();
-    
+    printf("Rank=%d, tid=%d Run checksum\n", Env::rank, tid);
     
     auto finish = std::chrono::high_resolution_clock::now();
     //if(!tid) Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
 
-    C_tile = inputFeatures->tiles[Env::thread_rowgroup[tid]][0];
-    auto& C_spmat = C_tile.spmat;
+    struct Tile<Weight>& C_tile = inputFeatures->tiles[Env::thread_rowgroup[tid]][0];
+    std::shared_ptr<struct CSC<Weight>>& C_spmat = C_tile.spmat;
     bool passed = validate_prediction(C_spmat, trueCategories, C_tile.start_row, tid);
     if(passed) {
         if(!tid) Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
@@ -638,17 +647,60 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
     }
     
+    int32_t c0 = 0;
+    int32_t c = 0;
+    for(uint32_t rg: my_rowgrps) {
+        for(auto tile: inputFeatures->tiles[rg][0].in_subtiles) {
+            //printf("%d %d - rg=%d c0=%d c=%d\n", Env::rank, tid, rg, c0, c);
+            std::shared_ptr<struct CSC<Weight>>& A_CSC = tile.spmat;
+            const uint32_t start_row = tile.start_row;
+            const uint64_t A_nnz   = A_CSC->nnz;
+            const uint32_t A_nrows = A_CSC->nrows;
+            const uint32_t A_ncols = A_CSC->ncols;
+            const uint32_t* A_IA   = A_CSC->IA_blk->ptr;
+            const uint32_t* A_JA   = A_CSC->JA_blk->ptr;
+            const Weight*    A_A   = A_CSC->A_blk->ptr;
+            
+            std::vector<uint32_t> allCategories(A_nrows);
+            uint32_t k = 0;
+            for(uint32_t j = 0; j < A_ncols; j++) {
+                for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
+                    allCategories[A_IA[i]] = 1;
+                }
+            }
+            
+            bool passed = true;
+            uint32_t j = 0;
+            for(uint32_t i = 0; i < A_nrows; i++) {
+                if(trueCategories[start_row + i] != allCategories[i]) {
+                    passed = false;
+                    break;
+                }
+                if(trueCategories[start_row + i]) k++;
+            }
+            printf("check: %d %d %d\n", Env::rank, tid, k);
+            if(passed) {
+                Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
+            }
+            else {
+                Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
+            }
+            c0++;
+        }
+        c++;
+    }
+    
     pthread_barrier_wait(&Env::thread_barrier);        
     Env::barrier();
 }
 
 template<typename Weight>
-bool Net<Weight>::add_to_idle_ranks(const int32_t tid, uint32_t& leader_rowgroup, uint32_t& start_layer){
+int32_t Net<Weight>::add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& start_layer, const int32_t tid){
     MPI_Request request;
     std::vector<MPI_Request> requests;
     MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();   
     
-    bool done = true;
+    int32_t done = 1;
     int window_host_rank = 0;
     int num_follower_ranks = 0;
     int some_val = 1;
@@ -668,6 +720,7 @@ bool Net<Weight>::add_to_idle_ranks(const int32_t tid, uint32_t& leader_rowgroup
     MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
     
     if(num_follower_ranks == Env::nranks) {
+        printf("Rank=%d tid=%d sending exit signal \n", Env::rank, tid);
         for(int i = 0; i < Env::nranks; i++) {
             if(i != Env::rank) {
                 int follower_rank = i;
@@ -682,7 +735,7 @@ bool Net<Weight>::add_to_idle_ranks(const int32_t tid, uint32_t& leader_rowgroup
         MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
         requests.clear();
         requests.shrink_to_fit();
-        done = false;
+        done = 0;
     }
     else {
         MPI_Status status;
@@ -719,119 +772,27 @@ bool Net<Weight>::add_to_idle_ranks(const int32_t tid, uint32_t& leader_rowgroup
                 output->update_in_subtiles(leader_rowgroup, start_layer, inputFeatures->tiles, csc_nedges, csc_start_row, csc_height, csc_width, tid);
             }
             
-            struct Tile<Weight>& A_tile = (not(start_layer%2)) ? inputFeatures->tiles[leader_rowgroup][0]
-                                                               : output->tiles[leader_rowgroup][0];
-            
+            struct Tile<Weight>& A_tile = (not(start_layer%2)) ? inputFeatures->tiles[leader_rowgroup][0].in_subtiles.back()
+                                                               : output->tiles[leader_rowgroup][0].in_subtiles.back();
+            //printf("0: Recv\n");
             std::shared_ptr<struct CSC<Weight>>& A_CSC = A_tile.spmat;
             A_CSC->Irecv(requests,source_rank, tid);
-
-            //printf("Recv\n" );  
+            //printf("1: Recv\n");
             MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
             requests.clear();
             requests.shrink_to_fit();
-            
+            //uint64_t sz = spaWeightVec[tid]->nitems;
             spaWeightVec[tid]->reallocate(A_tile.height);
-            
-            
-            
-            
+            //printf("%d %d %d [%d %d %d] old=%lu\n", Env::rank, tid, A_CSC->nrows, A_tile.height, inputFeatures->tiles[leader_rowgroup][0].in_subtiles.back().height, output->tiles[leader_rowgroup][0].in_subtiles.back().height, sz);
         }
-        
-        
-        
-        /*
-        std::vector<uint32_t> csc_metadata(7);
-        MPI_Recv(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, source_rank, source_tag, Env::thread_communicators[tid], &status);
-        printf("Rank=%d tid=%d <-- k=%d v=%d rowgroup=%d layer=%d nedges=%d start_row=%d height=%d width=%d\n", Env::rank, tid, 0, csc_metadata[0], csc_metadata[1], csc_metadata[2], csc_metadata[3], csc_metadata[4], csc_metadata[5],  csc_metadata[6]);
-        
-        uint32_t msg_status = csc_metadata[0];
-        
-        if(msg_status) {
-            
-            
-            
-            rowgroup = csc_metadata[1];
-            start_layer = csc_metadata[2];
-            
-            struct Tile<Weight> A_tile;
-            struct Tile<Weight> C_tile;
-            if(not(start_layer%2)) {
-                A_tile = inputFeatures->tiles[rowgroup][0];
-                C_tile = output->tiles[rowgroup][0];
-            }
-            else {
-                A_tile = output->tiles[rowgroup][0];
-                C_tile = inputFeatures->tiles[rowgroup][0];
-            }
-            
-     
-            std::shared_ptr<struct CSC<Weight>>& A_CSC = A_tile.spmat;
-
-            
-            uint64_t csc_nedges = (uint64_t) csc_metadata[3];
-            uint32_t csc_start_row = csc_metadata[4];
-            uint32_t csc_height = csc_metadata[5];
-            uint32_t csc_width = csc_metadata[6];
-        
-            struct Tile<Weight> subtile;
-            subtile.nedges = (uint64_t) csc_metadata[3];
-            subtile.start_row = csc_metadata[4];
-            subtile.end_row = csc_metadata[4] + csc_metadata[5];
-            subtile.start_col = 0;
-            subtile.end_col = csc_metadata[6];
-            subtile.height = csc_metadata[5];
-            subtile.width = csc_metadata[6];
-            A_tile.in_subtiles.push_back(subtile);  
-            C_tile.in_subtiles.push_back(subtile);  
-            
-            //subtile.spmat = std::make_shared<struct CSC<Weight>>(subtile.nedges, subtile.height, subtile.width);
-            
-            A_tile.nedges = C_tile.nedges = subtile.nedges;
-            A_tile.start_row =  C_tile.start_row = subtile.start_row;
-            A_tile.end_row = C_tile.end_row = subtile.end_row;
-            A_tile.start_col = C_tile.start_col = subtile.start_col;
-            A_tile.end_col = C_tile.end_col = subtile.end_col;
-            A_tile.height = C_tile.height = subtile.height;
-            A_tile.width = C_tile.width = subtile.width;
-            A_CSC = std::move(std::make_shared<struct CSC<Weight>>(A_tile.nedges, A_tile.height, A_tile.width));
-            //printf("%lu %d %d %lu\n", A_tile.nedges, A_tile.height, A_tile.width, subtile.nedges);
-            //printf("%lu %lu %lu\n", A_CSC->JA_blk->nitems, A_CSC->IA_blk->nitems, A_CSC->A_blk->nitems);
-            
-            MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();            
-            uint32_t* JA = A_CSC->JA_blk->ptr;
-            uint32_t* IA = A_CSC->IA_blk->ptr;
-            Weight*    A = A_CSC->A_blk->ptr;
-            MPI_Irecv(JA, A_CSC->JA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+0, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-            MPI_Irecv(IA, A_CSC->IA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+1, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-            MPI_Irecv(A, A_CSC->A_blk->nitems,    WEIGHT_TYPE, source_rank, (Env::rank*3)+2, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-            //printf("Recv\n" );  
-            MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-            requests.clear();
-            requests.shrink_to_fit();
-            
-            spaWeightVec[tid]->reallocate(A_tile.height);
-            
-            
-            
-            
-
-            printf("%d %d all done %lu %d\n", Env::rank, tid, A_tile.nedges, A_tile.height);                
-        }
-        else {
-            done = false;
-            printf("%d %d leaving\n", Env::rank, tid);                
-        }
-        */
+        done = msg_status;
     }
     return(done);
 }
 
 template<typename Weight>
-void Net<Weight>::add_to_my_follower_ranks(const uint32_t leader_rowgroup, const uint32_t start_layer, const uint32_t nthreads_local, const int32_t tid) {
-    
+bool Net<Weight>::add_to_my_follower_ranks(const uint32_t leader_rowgroup, const uint32_t start_layer, const uint32_t nthreads_local, const int32_t tid) {
+    bool done = true;
     int window_host_rank = 0;
     int num_follower_ranks = 0;
     int some_val = 0;
@@ -882,144 +843,81 @@ void Net<Weight>::add_to_my_follower_ranks(const uint32_t leader_rowgroup, const
         else {
             output->update_out_subtiles(leader_rowgroup, start_layer, inputFeatures->tiles, subtiles, subcscs, follower_ranks, nthreads_local, tid);
         }
-        
+        bool p = false;
         for(uint32_t k = 1; k < subtiles.size(); k++) {
             struct Tile<Weight> subtile = subtiles[k];
-            printf("Rank=%d tid=%d --> k=%d v=%d rowgroup=%d layer=%d nedges=%lu start_row=%d height=%d width=%d\n", Env::rank, tid, k, 1, leader_rowgroup, start_layer, subtile.nedges, subtile.start_row, subtile.height, subtile.width);
-            std::vector<uint32_t> csc_metadata = {1, leader_rowgroup, start_layer, (uint32_t)subtile.nedges, subtile.start_row, subtile.height, subtile.width};
-            MPI_Isend(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, subtile.rank, subtile.rank, Env::thread_communicators[tid], &request);        
-            requests.push_back(request);
+            //if(!subtile.nedges) p = true;
+            printf("Rank=%d tid=%d --> k=%d v=%d rowgroup=%d layer=%d nedges=%lu start_row=%d height=%d width=%d nthreads=%d\n", Env::rank, tid, subtile.rank, 1, leader_rowgroup, start_layer, subtile.nedges, subtile.start_row, subtile.height, subtile.width, nthreads_local);
+            uint32_t msg_status = (subtile.nedges) ? 1 : 2;
+            //if(msg_status == 1) {
+                std::vector<uint32_t> csc_metadata = {msg_status, leader_rowgroup, start_layer, (uint32_t)subtile.nedges, subtile.start_row, subtile.height, subtile.width};
+                MPI_Isend(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, subtile.rank, subtile.rank, Env::thread_communicators[tid], &request);        
+                requests.push_back(request);
+            ///}
+            if(msg_status == 2) {
+                /*
+                for(uint32_t k = 0; k < subtiles.size(); k++) {
+                    struct Tile<Weight> subtile = subtiles[k];
+                    printf("Rank=%d tid=%d --> kk=%d v=%d rowgroup=%d layer=%d nedges=%lu start_row=%d height=%d width=%d\n", Env::rank, tid, subtile.rank, 1, leader_rowgroup, start_layer, subtile.nedges, subtile.start_row, subtile.height, subtile.width);                
+                }
+                */
+                
+                
+                /*
+                MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::thread_windows[tid]);
+                    some_val = 1;
+                    MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, Env::nranks, MPI_SUM, Env::thread_windows[tid]);
+                    MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+                    MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, subtile.rank, MPI_REPLACE, Env::thread_windows[tid]);
+                    MPI_Win_flush(window_host_rank, Env::thread_windows[tid]);
+                MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
+                */
+                done = false;
+            }
         }
         MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
         requests.clear();
         requests.shrink_to_fit();
-        
-        
-        
-        
         
         /*
-        MPI_Request request;
-        std::vector<MPI_Request> requests;
-
-
-
-        struct Tile<Weight> A_tile;
-        struct Tile<Weight> C_tile;
-        if(not(start_layer%2)) {
-            A_tile = inputFeatures->tiles[rowgroup][0];
-            C_tile = output->tiles[rowgroup][0];
+        if(p) {
+            for(uint32_t k = 0; k < subtiles.size(); k++) {
+                struct Tile<Weight> subtile = subtiles[k];
+                printf("Rank=%d tid=%d --> kk=%d v=%d rowgroup=%d layer=%d nedges=%lu start_row=%d height=%d width=%d\n", Env::rank, tid, k, 1, leader_rowgroup, start_layer, subtile.nedges, subtile.start_row, subtile.height, subtile.width);                
+            }
+            std::exit(0);
         }
-        else {
-            A_tile = output->tiles[rowgroup][0];
-            C_tile = inputFeatures->tiles[rowgroup][0];
-        }
-
-        
-
-        std::shared_ptr<struct CSC<Weight>>& A_CSC = A_tile.spmat;
-
-        
-        
-        
-        
-        
-        uint32_t nparts_local  = nthreads_local;
-        uint32_t nparts_remote = follower_ranks.size();
-        std::vector<std::shared_ptr<struct CSC<Weight>>> CSCs;
-        //printf("rank=%d tid=%d nnzi=%lu\n", Env::rank, tid, A_CSC->nnz_i);
-        A_CSC->split_and_overwrite(CSCs, nparts_local, nparts_remote);
-        
-        uint32_t nparts = 1 + nparts_remote;
-        //printf("rank=%d tid=%d split with %lu followers np=%d npl%d npr=%d %lu\n", Env::rank, tid, follower_ranks.size(), nparts, nparts_local, nparts_remote, CSCs.size());
-        std::vector<struct Tile<Weight>> subtiles(nparts);
-        //A_tile.subtiles.resize(nparts);
-        uint32_t my_start_row = A_tile.start_row;
-        for(uint32_t k = 0; k < nparts; k++) {
-            struct Tile<Weight>& subtile = subtiles[k];
-            std::shared_ptr<struct CSC<Weight>>& subcsc = CSCs[k];  
-            subtile.rank = (k == 0) ? Env::rank : follower_ranks[k-1]; 
-            subtile.thread = tid;
-            subtile.nedges = subcsc->nnz;
-            subtile.start_row = my_start_row;
-            subtile.end_row = my_start_row + subcsc->nrows;
-            subtile.start_col = 0;
-            subtile.end_col = subcsc->ncols;
-            subtile.height = subcsc->nrows;
-            subtile.width = subcsc->ncols;
-            my_start_row += subcsc->nrows;
-              
-            
-        }
-        
-        struct Tile<Weight> subtile = subtiles[0];
-        A_tile.nedges = C_tile.nedges = subtile.nedges;
-        A_tile.start_row =  C_tile.start_row = subtile.start_row;
-        A_tile.end_row = C_tile.end_row = subtile.end_row;
-        A_tile.start_col = C_tile.start_col = subtile.start_col;
-        A_tile.end_col = C_tile.end_col = subtile.end_col;
-        A_tile.height = C_tile.height = subtile.height;
-        A_tile.width = C_tile.width = subtile.width;
-        
-        for(uint32_t k = 1; k < nparts; k++) {
-            struct Tile<Weight> subtile = subtiles[k];
-            //uint32_t rowgroup = rowgroup;
-            printf("Rank=%d tid=%d --> k=%d v=%d rowgroup=%d layer=%d nedges=%lu start_row=%d height=%d width=%d\n", Env::rank, tid, k, 1, rowgroup, start_layer, subtile.nedges, subtile.start_row, subtile.height, subtile.width);
-            std::vector<uint32_t> csc_metadata = {1, rowgroup, start_layer, (uint32_t)subtile.nedges, subtile.start_row, subtile.height, subtile.width};
-            MPI_Isend(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, subtile.rank, subtile.rank, Env::thread_communicators[tid], &request);        
-            requests.push_back(request);
-        }
-        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-        requests.clear();
-        requests.shrink_to_fit();
-        
-        //a.insert(a.end(), b.begin(), b.end());
         */
-        
         
         for(uint32_t k = 1; k < subtiles.size(); k++) {
             struct Tile<Weight> subtile = subtiles[k];
             std::shared_ptr<struct CSC<Weight>>& subcsc = subcscs[k];
             subcsc->Isend(requests, subtile.rank, tid);
-            /*
-            uint32_t* JA = subcsc->JA_blk->ptr;
-            uint32_t* IA = subcsc->IA_blk->ptr;
-            Weight*    A = subcsc->A_blk->ptr;
-            
-            MPI_Isend(JA, subcsc->JA_blk->nitems, MPI_UNSIGNED, subtile.rank, (subtile.rank*3)+0, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-            MPI_Isend(IA, subcsc->IA_blk->nitems, MPI_UNSIGNED, subtile.rank, (subtile.rank*3)+1, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-            MPI_Isend(A, subcsc->A_blk->nitems,    WEIGHT_TYPE, subtile.rank, (subtile.rank*3)+2, Env::thread_communicators[tid], &request);
-            requests.push_back(request);
-            */
         }
-        //printf("send>>>>\n");
         MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
         requests.clear();
         requests.shrink_to_fit();
         
         subtiles.clear();
         subtiles.shrink_to_fit();
-        
         subcscs.clear();
         subcscs.shrink_to_fit();
-        
-        //A_tile.out_subtiles.insert(A_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
-        //C_tile.out_subtiles.insert(C_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
-        
         
         follower_ranks.clear();
         follower_ranks.shrink_to_fit();
         
         struct Tile<Weight>& A_tile = (not(start_layer%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                            : output->tiles[leader_rowgroup][0];
+        //uint64_t sz = Net::spaWeightVec[tid]->nitems;
         spaWeightVec[tid]->reallocate(A_tile.height);   
+        //printf("rank=%d tid=%d old=%lu new=%lu h=[%d %d]%d\n", Env::rank, tid, sz, Net::spaWeightVec[tid]->nitems, inputFeatures->tiles[leader_rowgroup][0].height, output->tiles[leader_rowgroup][0].height, A_tile.height);
     }
+    return(done);
 }
 
 template<typename Weight>
 int32_t Net<Weight>::add_to_my_follower_threads(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid) {
+    //printf("Rank=%d tid=%d 1. add_to_my_follower_threads>>>>>\n", Env::rank, tid);
     uint32_t num_threads = my_threads.size();
     if(!Env::follower_threads.empty()) {
         pthread_mutex_lock(&Env::thread_mutex);  
@@ -1044,12 +942,14 @@ int32_t Net<Weight>::add_to_my_follower_threads(std::vector<int32_t>& my_threads
         pthread_cond_broadcast(&Env::thread_cond); 
         pthread_mutex_unlock(&Env::thread_mutex);
     }
+    //printf("Rank=%d tid=%d 1. add_to_my_follower_threads<<<<<\n", Env::rank, tid);
     return(num_threads);
 }
 
 
 template<typename Weight>
 void Net<Weight>::add_to_my_follower_threads(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid) {  
+    //printf("Rank=%d tid=%d 2. add_to_my_follower_threads>>>>>\n", Env::rank, tid);
     uint32_t old_num_threads = 0;
     uint32_t new_num_threads = 0;
     uint32_t num_threads = 0;
@@ -1079,17 +979,18 @@ void Net<Weight>::add_to_my_follower_threads(std::vector<int32_t>& my_threads, c
             pthread_mutex_unlock(&Env::thread_mutex);
         }
     }
+    //printf("Rank=%d tid=%d 2. add_to_my_follower_threads<<<<<\n", Env::rank, tid);
 }
 
 template<typename Weight>
 bool Net<Weight>::add_to_idle_threads(std::vector<int32_t>& my_threads, const int32_t tid) {
+    //printf("Rank=%d tid=%d  Env::follower_threads.size()=%lu add_to_idle_threads>>>>>\n", Env::rank, tid, Env::follower_threads.size());
     bool status = true;
     if(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
         pthread_mutex_lock(&Env::thread_mutex);
             Env::follower_threads.push_back(tid);
             my_threads.erase(my_threads.begin(), my_threads.end());
             Env::threads[tid].leader = -1;
-            //Env::follower_to_leader[tid] = -1;
             if(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
                 pthread_cond_wait(&Env::thread_cond, &Env::thread_mutex); 
             }
@@ -1102,6 +1003,7 @@ bool Net<Weight>::add_to_idle_threads(std::vector<int32_t>& my_threads, const in
     else {
         status = false;
     }
+    //printf("Rank=%d tid=%d  add_to_idle_threads<<<<<<\n", Env::rank, tid);
     return(status);
 }
 
@@ -1116,10 +1018,18 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
     struct Tile<Weight> B_tile;
     struct Tile<Weight> C_tile;
     
+    if(tid != leader) {
+        spaWeightVec[tid]->reallocate(inputFeatures->tiles[leader_rowgroup][0].height);   
+        //printf("Rank=%d tid=%d nit=%lu\n", Env::rank, tid, spaWeightVec[tid]->nitems);
+    }
+    
     std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];  
+    
     struct Env::thread_struct& thread_st = Env::threads[tid];
     bool old_thread = false;
     for(uint32_t l = start_layer; l < maxLayers; l++) {
+        //if(tid == leader) 
+        //printf("1.hybrid: rank=%d tid=%d layer=%d nthreads=%lu\n", Env::rank, tid, l, my_threads.size());
         start_time = Env::tic();
             add_to_my_follower_threads(my_threads, l, ncols, leader, tid);
             Env::decrease_num_threads(1, leader, tid);
@@ -1141,10 +1051,60 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
             B_tile = layers[l]->tiles[0][0];
             std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
             std::shared_ptr<struct Data_Block<Weight>> b_bias = biasWeightVecs[l];  
-
+            //printf("Rank=%d tid=%d [%lu]SYMB\n", Env::rank, tid, my_threads.size());
             const uint32_t start_col = Env::threads[tid].start_col;// Env::follower_threads_info[leader][tid].start_col;
             const uint32_t end_col   = Env::threads[tid].end_col; //Env::follower_threads_info[leader][tid].end_col;
+            /*
+            {
+                printf("Rank=%d tid=%d  nnz=%lu height=%d width=%d nit=%lu [%d %d]\n", Env::rank, tid, A_tile.nedges, A_tile.height, A_tile.width, s_spa->nitems, inputFeatures->tiles[leader_rowgroup][0].height, output->tiles[leader_rowgroup][0].height);
+                const uint64_t A_nnz   = A_CSC->nnz;
+                const uint32_t A_nrows = A_CSC->nrows;
+                const uint32_t A_ncols = A_CSC->ncols;
+                const uint32_t* A_IA   = A_CSC->IA_blk->ptr;
+                const uint32_t* A_JA   = A_CSC->JA_blk->ptr;
+                const Weight*    A_A   = A_CSC->A_blk->ptr;
+                    
+                const uint64_t B_nnz   = B_CSC->nnz;
+                const uint32_t B_nrows = B_CSC->nrows;
+                const uint32_t B_ncols = B_CSC->ncols;
+                const uint32_t* B_IA   = B_CSC->IA_blk->ptr;
+                const uint32_t* B_JA   = B_CSC->JA_blk->ptr;
+                const Weight*    B_A   = B_CSC->A_blk->ptr;
+                
+                Weight*          s_A   = s_spa->ptr;
+                
+                printf("[%d %d %d]: [%lu %d %d] [%lu %d %d]\n", Env::rank, tid, tid==leader, A_nnz, A_nrows, A_ncols, B_nnz, B_nrows, B_ncols);
+                
+                uint32_t* IA = A_CSC->IA_blk->ptr;
+                uint32_t* JA = A_CSC->JA_blk->ptr;
+                Weight*    A = A_CSC->A_blk->ptr;
+                
+                
+                uint64_t checksum = 0;
+                double checkcount = 0;
+                if(tid == leader) {
+                    for(uint32_t j = 0; j < A_ncols; j++) { 
+                            //std::cout << "j=" << j << "," << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;    
+                        for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
+                            (void) IA[i];
+                            (void) A[i];
+                            checksum += A[i];
+                            checkcount++;
+                            s_A[IA[i]] = 1;
+                            //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
+                        }
+                    }  
+                }
+                printf("rank=%d tid=%d checksum=%lu checkcount=%f\n", Env::rank, tid, checksum, checkcount);
+                
+                
+            }
+            */
+            
+            
+            
             std::tie(thread_st.off_nnz, nrows, ncols) =  spmm_symb(A_CSC, B_CSC, s_spa, start_col, end_col, tid);
+            //printf("Rank=%d tid=%d nnz=%lu nrows=%d ncols=%d\n", Env::rank, tid, thread_st.off_nnz, nrows, ncols);
             pthread_barrier_wait(&Env::thread_barriers[leader]);
         Env::spmm_symb_time[tid] += Env::toc(start_time);   
 
@@ -1167,6 +1127,7 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
             A_CSC->repopulate(C_CSC, my_threads, leader, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
         if(!tid) Env::iteration++;
+        //printf("2.hybrid: rank=%d tid=%d layer=%d nthreads=%lu\n", Env::rank, tid, l, my_threads.size());
     }
 }
 #endif 
