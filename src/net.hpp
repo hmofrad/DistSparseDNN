@@ -39,6 +39,7 @@ class Net {
         uint32_t Nneurons;
         Weight biasValue;
         uint32_t maxLayers;
+        int32_t nCategories;
         
         PARALLELISM_TYPE parallelism_type;
         bool repartition = false;
@@ -121,10 +122,10 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     categoryFile += (input_type == INPUT_TYPE::_TEXT_) ? "-categories.tsv" : "-categories.bin";
     
     if(INPUT_TYPE::_TEXT_ == input_type) {
-        IO::text_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
+        nCategories = IO::text_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
     }
     else {
-        IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
+        nCategories = IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
@@ -441,9 +442,6 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     uint32_t nrows = inputFeatures->tile_height;
     uint32_t ncols = layers[0]->ncols;
     
-    //struct Tile<Weight> A_tile;
-    //struct Tile<Weight> B_tile;
-    //struct Tile<Weight> C_tile;
     std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
     struct Env::thread_struct& thread_st = Env::threads[tid];
     std::vector<int32_t> my_threads;
@@ -526,7 +524,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         }
         
     }
-    printf("rank=%d tid=%d add_to_idle_threads\n", Env::rank, tid);
+    //printf("rank=%d tid=%d add_to_idle_threads\n", Env::rank, tid);
     while(add_to_idle_threads(my_threads, tid)) {
         const int32_t leader = Env::threads[tid].leader;
         if(leader != -1) {
@@ -535,7 +533,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
             hybrid(my_threads, leader_rowgroup, start_layer, leader, tid);
         }
     }
-    printf("Rank=%d, tid=%d add_to_idle_ranks\n", Env::rank, tid);
+    //printf("Rank=%d, tid=%d add_to_idle_ranks\n", Env::rank, tid);
     
     uint32_t leader_rowgroup = 0;
     uint32_t start_layer = 0;     
@@ -545,7 +543,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         if(std::find(my_rowgrps.begin(), my_rowgrps.end(), leader_rowgroup) == my_rowgrps.end()) {
             my_rowgrps.push_back(leader_rowgroup);
         }
-        auto& s_spa = Net::spaWeightVec[tid];
+        //auto& s_spa = Net::spaWeightVec[tid];
         //printf("rank=%d tid=%d rowgroup=%d start_layer=%d\n", Env::rank, tid, leader_rowgroup, start_layer);
         for (uint32_t l = start_layer; l < maxLayers; l++) {
           //  printf("rank=%d tid=%d layer=%d\n", Env::rank, tid, l);
@@ -613,7 +611,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     
     
     
-    printf("Rank=%d, tid=%d Finish\n", Env::rank, tid);
+    //printf("Rank=%d, tid=%d Finish\n", Env::rank, tid);
     pthread_barrier_wait(&Env::thread_barrier);
     Env::barrier();
     
@@ -631,7 +629,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     }
     pthread_barrier_wait(&Env::thread_barrier);
     Env::barrier();
-    printf("Rank=%d, tid=%d Run checksum\n", Env::rank, tid);
+    //printf("Rank=%d, tid=%d Run checksum\n", Env::rank, tid);
     
     auto finish = std::chrono::high_resolution_clock::now();
     //if(!tid) Env::exec_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
@@ -639,18 +637,13 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
 
     struct Tile<Weight>& C_tile = inputFeatures->tiles[Env::thread_rowgroup[tid]][0];
     std::shared_ptr<struct CSC<Weight>>& C_spmat = C_tile.spmat;
-    bool passed = validate_prediction(C_spmat, trueCategories, C_tile.start_row, tid);
-    if(passed) {
-        if(!tid) Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
-    }
-    else {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
-    }
+    int32_t count = validate_prediction1(C_spmat, trueCategories, C_tile.start_row);
     
-    int32_t c0 = 0;
-    int32_t c = 0;
     for(uint32_t rg: my_rowgrps) {
         for(auto tile: inputFeatures->tiles[rg][0].in_subtiles) {
+            count += validate_prediction1(tile.spmat, trueCategories, tile.start_row);
+            
+            /*
             //printf("%d %d - rg=%d c0=%d c=%d\n", Env::rank, tid, rg, c0, c);
             std::shared_ptr<struct CSC<Weight>>& A_CSC = tile.spmat;
             const uint32_t start_row = tile.start_row;
@@ -678,19 +671,44 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
                 }
                 if(trueCategories[start_row + i]) k++;
             }
-            printf("check: %d %d %d\n", Env::rank, tid, k);
+            //printf("check: %d %d %d\n", Env::rank, tid, k);
+            */
+            /*
             if(passed) {
                 Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
             }
             else {
                 Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
             }
-            c0++;
+            */
+            //c0++;
+            
         }
-        c++;
+        //c++;
     }
     
-    pthread_barrier_wait(&Env::thread_barrier);        
+    Env::counters[tid].checkcount = count;
+    //printf("Rank=%d tid=%d\n", Env::rank, tid);
+    pthread_barrier_wait(&Env::thread_barrier);
+    Env::barrier();
+    if(!tid) {
+        int32_t counts = 0;
+        for(auto counter: Env::counters) {
+            counts += (int32_t) counter.checkcount;
+        }
+        //printf("%d %d\n", tid, counts);
+        int32_t countss = 0;
+        MPI_Allreduce(&counts, &countss, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        Env::barrier();
+        bool passed = (countss == nCategories);
+        if(passed) {
+            if(!tid) Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
+        }
+        else {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
+        }
+    }
+    pthread_barrier_wait(&Env::thread_barrier);
     Env::barrier();
 }
 
@@ -720,7 +738,7 @@ int32_t Net<Weight>::add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& star
     MPI_Win_unlock(window_host_rank, Env::thread_windows[tid]);
     
     if(num_follower_ranks == Env::nranks) {
-        printf("Rank=%d tid=%d sending exit signal \n", Env::rank, tid);
+        //printf("Rank=%d tid=%d sending exit signal \n", Env::rank, tid);
         for(int i = 0; i < Env::nranks; i++) {
             if(i != Env::rank) {
                 int follower_rank = i;
@@ -729,7 +747,7 @@ int32_t Net<Weight>::add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& star
                 MPI_Isend(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, follower_rank, follower_rank, Env::thread_communicators[tid], &request);
                 //MPI_Isend(&th_csc_handshake, 1, MPI_INT, follower_rank, follower_rank, Env::thread_communicators[tid], &request);   
                 requests.push_back(request);
-                printf("rank=%d tid=%d --> rank=%d add_to_idle_ranks MPI_Send zeros\n", Env::rank, tid, follower_rank);
+                //printf("rank=%d tid=%d --> rank=%d add_to_idle_ranks MPI_Send zeros\n", Env::rank, tid, follower_rank);
             }
         }
         MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
@@ -741,7 +759,7 @@ int32_t Net<Weight>::add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& star
         MPI_Status status;
         int source_rank;
         int source_tag;
-        printf("Rank=%d tid=%d waiting \n", Env::rank, tid);
+        //printf("Rank=%d tid=%d waiting \n", Env::rank, tid);
         do{    
             int flag = 0;
             while(!flag) {
@@ -754,7 +772,7 @@ int32_t Net<Weight>::add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& star
         
         std::vector<uint32_t> csc_metadata(7);
         MPI_Recv(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, source_rank, source_tag, Env::thread_communicators[tid], &status);
-        printf("Rank=%d tid=%d <-- k=%d v=%d rowgroup=%d layer=%d nedges=%d start_row=%d height=%d width=%d\n", Env::rank, tid, 0, csc_metadata[0], csc_metadata[1], csc_metadata[2], csc_metadata[3], csc_metadata[4], csc_metadata[5],  csc_metadata[6]);
+        //printf("Rank=%d tid=%d <-- k=%d v=%d rowgroup=%d layer=%d nedges=%d start_row=%d height=%d width=%d\n", Env::rank, tid, 0, csc_metadata[0], csc_metadata[1], csc_metadata[2], csc_metadata[3], csc_metadata[4], csc_metadata[5],  csc_metadata[6]);
         
         uint32_t msg_status = csc_metadata[0];
         
@@ -847,7 +865,7 @@ bool Net<Weight>::add_to_my_follower_ranks(const uint32_t leader_rowgroup, const
         for(uint32_t k = 1; k < subtiles.size(); k++) {
             struct Tile<Weight> subtile = subtiles[k];
             //if(!subtile.nedges) p = true;
-            printf("Rank=%d tid=%d --> k=%d v=%d rowgroup=%d layer=%d nedges=%lu start_row=%d height=%d width=%d nthreads=%d\n", Env::rank, tid, subtile.rank, 1, leader_rowgroup, start_layer, subtile.nedges, subtile.start_row, subtile.height, subtile.width, nthreads_local);
+            //printf("Rank=%d tid=%d --> k=%d v=%d rowgroup=%d layer=%d nedges=%lu start_row=%d height=%d width=%d nthreads=%d\n", Env::rank, tid, subtile.rank, 1, leader_rowgroup, start_layer, subtile.nedges, subtile.start_row, subtile.height, subtile.width, nthreads_local);
             uint32_t msg_status = (subtile.nedges) ? 1 : 2;
             //if(msg_status == 1) {
                 std::vector<uint32_t> csc_metadata = {msg_status, leader_rowgroup, start_layer, (uint32_t)subtile.nedges, subtile.start_row, subtile.height, subtile.width};
