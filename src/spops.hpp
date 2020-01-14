@@ -38,7 +38,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
         
     Weight*          s_A   = s->ptr;
 
-    if((A_ncols != B_nrows) or (s->nitems != A_nrows)) {
+    if((A_ncols != B_nrows) or (s->nitems < A_nrows)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d], SPA[%lu]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
         std::exit(1); 
     }
@@ -103,7 +103,7 @@ inline void spmm_real(std::shared_ptr<struct CSC<Weight>> A_CSC,
     Weight*          s_A   = s->ptr;
     const Weight*    b_A   = b->ptr;
         
-    if((A_ncols != B_nrows) or (s->nitems != A_nrows)) {
+    if((A_ncols != B_nrows) or (s->nitems < A_nrows)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
         std::exit(1); 
     }
