@@ -449,9 +449,9 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     std::vector<int32_t> my_rowgrps;
     bool has_data_to_share = true;
     auto start = std::chrono::high_resolution_clock::now();  
-    if(Env::rank == 1) {
-        sleep(5);
-    }
+    //if(Env::rank == 1) {
+    //    sleep(5);
+    //}
     for (uint32_t l = 0; l < maxLayers; l++) {
         //printf("hybrid_x_hybrid: rank=%d tid=%d layer=%d nthreads=%lu\n", Env::rank, tid, l, my_threads.size());
         if(add_to_my_follower_threads(my_threads, l, ncols, tid) == 1) {
@@ -488,11 +488,11 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
             //if(A_tile.nedges) {
                 //printf("rank=%d tid=%d layer=%d nnz=%lu =%lu =%lu [%d %d]\n", Env::rank, tid, l, A_tile.nedges, C_tile.nedges, thread_st.off_nnz, A_tile.height, C_tile.height);
                 
-                start_time = Env::tic();
+                //start_time = Env::tic();
                 if(has_data_to_share) {
                     has_data_to_share = add_to_my_follower_ranks(Env::thread_rowgroup[tid], l, my_threads, tid);
                 }
-                Env::hybrid_probe_time[tid] += Env::toc(start_time);  
+                //Env::hybrid_probe_time[tid] += Env::toc(start_time);  
                 
             //}
             //else {
@@ -805,7 +805,7 @@ int32_t Net<Weight>::add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& star
             requests.clear();
             requests.shrink_to_fit();
             //uint64_t sz = spaWeightVec[tid]->nitems;
-            spaWeightVec[tid]->reallocate(A_tile.height);
+            //spaWeightVec[tid]->reallocate(A_tile.height);
             //printf("%d %d %d [%d %d %d] old=%lu\n", Env::rank, tid, A_CSC->nrows, A_tile.height, inputFeatures->tiles[leader_rowgroup][0].in_subtiles.back().height, output->tiles[leader_rowgroup][0].in_subtiles.back().height, sz);
         }
         done = msg_status;
@@ -934,9 +934,9 @@ bool Net<Weight>::add_to_my_follower_ranks(const uint32_t leader_rowgroup, const
                                                            : output->tiles[leader_rowgroup][0];
         //uint64_t sz = Net::spaWeightVec[tid]->nitems;
         
-        for(auto t: my_threads) {
-            spaWeightVec[t]->reallocate(A_tile.height);   
-        }
+        //for(auto t: my_threads) {
+          //  spaWeightVec[t]->reallocate(A_tile.height);   
+        //}
         //printf("rank=%d tid=%d old=%lu new=%lu h=[%d %d]%d\n", Env::rank, tid, sz, Net::spaWeightVec[tid]->nitems, inputFeatures->tiles[leader_rowgroup][0].height, output->tiles[leader_rowgroup][0].height, A_tile.height);
     }
     return(done);
@@ -962,7 +962,7 @@ int32_t Net<Weight>::add_to_my_follower_threads(std::vector<int32_t>& my_threads
                 Env::threads[t].start_layer = start_layer;
                 Env::threads[t].start_col = ((ncols/num_threads) * i);
                 Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
-                spaWeightVec[t]->reallocate(new_height);
+                //spaWeightVec[t]->reallocate(new_height);
             }
             Env::init_num_threads(num_threads, tid, tid);
         }
@@ -1001,7 +1001,7 @@ void Net<Weight>::add_to_my_follower_threads(std::vector<int32_t>& my_threads, c
                     Env::threads[t].start_layer = start_layer;
                     Env::threads[t].start_col = ((ncols/num_threads) * i);
                     Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
-                    spaWeightVec[t]->reallocate(new_height);
+                    //spaWeightVec[t]->reallocate(new_height);
                 }
                 pthread_barrier_destroy(&Env::thread_barriers[tid]);
                 pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
@@ -1098,8 +1098,8 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
             std::shared_ptr<struct Data_Block<Weight>> b_bias = biasWeightVecs[l];  
             
             start_time = Env::tic();
-            if((tid == leader) and has_data_to_share) {
-                has_data_to_share = add_to_my_follower_ranks(leader_rowgroup, l, my_threads, tid);
+            //if((tid == leader) and has_data_to_share) {
+              //  has_data_to_share = add_to_my_follower_ranks(leader_rowgroup, l, my_threads, tid);
                 /*
                 if(tid == leader) {
                     
@@ -1114,8 +1114,8 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
                     }
                 }
                 */
-            }
-            pthread_barrier_wait(&Env::thread_barriers[leader]);
+            //}
+            //pthread_barrier_wait(&Env::thread_barriers[leader]);
             Env::hybrid_probe_time[tid] += Env::toc(start_time);     
             
             
