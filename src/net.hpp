@@ -52,7 +52,9 @@ class Net {
         void data_x_model(const int32_t tid);
         void data_x_data(const int32_t tid);
         void hybrid_x_hybrid(const int32_t tid);
-        void hybrid(std::vector<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t start_layer, const int32_t leader, const int32_t tid);
+        uint32_t hybrid_x_data(std::vector<int32_t>& my_threads, const int32_t tid);
+        void hybrid_x_model(std::vector<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid);
+        //void hybrid(std::vector<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t start_layer, const int32_t leader, const int32_t tid);
         
         bool add_to_idle_threads(std::vector<int32_t>& my_threads, const int32_t tid);
         int32_t add_to_my_follower_threads(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid);
@@ -191,7 +193,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
     output->set_tile_info(inputFeatures->tiles);
     
-    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method.\n"); 
+    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method [%s].\n", PARALLELISM_TYPES[parallelism_type]); 
     auto finish = std::chrono::high_resolution_clock::now();
     Env::io_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
     Env::barrier();
@@ -285,6 +287,8 @@ void Net<Weight>::inferenceReLU(const int32_t tid) {
 template<typename Weight>
 void Net<Weight>::data_x_model(const int32_t tid) {
     uint32_t leader_rowgroup = Env::rank;
+    const int32_t leader_tid = 0;
+    struct Env::thread_struct& thread_st = Env::threads[tid];
     
     struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
     struct Tile<Weight>& C_tile = output->tiles[leader_rowgroup][0];
@@ -295,9 +299,6 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     const uint32_t ncols = layers[0]->ncols;
     uint32_t B_start_col, B_end_col;
     uint32_t B_sub_start_col, B_sub_end_col;
-    
-    const int32_t leader_tid = 0;
-    struct Env::thread_struct& thread_st = Env::threads[tid];
 
     auto start = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
@@ -312,9 +313,9 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         B_sub_end_col   = B_tile.end_col;
         
         data_x_model_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
-                                     nrows, ncols, B_start_col, B_end_col, 
-                                     B_sub_start_col, B_sub_end_col, 
-                                     thread_st, leader_tid, tid);
+                            nrows, ncols, B_start_col, B_end_col, 
+                            B_sub_start_col, B_sub_end_col, 
+                            thread_st, leader_tid, tid);
     }
     auto finish = std::chrono::high_resolution_clock::now();
     
@@ -324,159 +325,126 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     data_x_model_validate_prediction(A_CSC, A_tile.start_row, trueCategories, nCategories, leader_tid, tid);
 }
 
-/*
-template<typename Weight>
-void Net<Weight>::data_x_model(const int32_t tid) {
-    if(Env::NUMA_ALLOC)
-        (void)Env::set_thread_affinity(tid);   
-    
-    double start_time = 0;
-    uint64_t nnz   = 0;
-    uint32_t nrows = inputFeatures->tile_height;
-    uint32_t ncols = layers[0]->ncols;
-    
-    struct Tile<Weight> A_tile;
-    struct Tile<Weight> B_tile;
-    struct Tile<Weight> C_tile;
-    
-    std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
-    struct Env::thread_struct& thread_st = Env::threads[tid];
-    
-    auto start = std::chrono::high_resolution_clock::now();  
-    for (uint32_t l = 0; l < maxLayers; l++) {
-        start_time = Env::tic(); 
-            A_tile = inputFeatures->tiles[Env::rank][0];
-            std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-            B_tile = layers[l]->tiles[0][tid];
-            std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
-            C_tile = output->tiles[Env::rank][0];
-            std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-            std::shared_ptr<struct Data_Block<Weight>> b_bias = biasWeightVecs[l];
-
-            uint32_t start_col = 0;
-            uint32_t end_col   = B_CSC->ncols;
-            std::tie(thread_st.off_nnz, nrows, std::ignore) =  spmm_symb(A_CSC, B_CSC, s_spa, start_col, end_col, tid);
-            pthread_barrier_wait(&Env::thread_barrier);
-        Env::spmm_symb_time[tid] += Env::toc(start_time);   
-        
-        start_time = Env::tic();
-            const int32_t leader_tid = 0;
-            nnz = Env::adjust_nnz(leader_tid, tid);
-            C_CSC->reallocate(nnz, nrows, ncols, leader_tid, tid);
-        Env::memory_allocation_time[tid] += Env::toc(start_time);
-        
-        start_time = Env::tic();
-            uint32_t off_col   = B_tile.start_col;
-            pthread_barrier_wait(&Env::thread_barrier);
-            spmm_real(A_CSC, B_CSC, C_CSC, s_spa, b_bias, start_col, end_col, off_col, thread_st.idx_nnz, tid);
-            pthread_barrier_wait(&Env::thread_barrier);
-            Env::adjust_displacement(tid);
-            C_CSC->adjust(leader_tid, tid);	
-        Env::spmm_real_time[tid] += Env::toc(start_time);
-        
-        start_time = Env::tic();
-            start_col = B_tile.start_col;
-            end_col   = B_tile.end_col;
-            uint32_t dis_nnz = thread_st.dis_nnz;
-            A_CSC->repopulate(C_CSC, start_col, end_col, dis_nnz, leader_tid, tid);
-        Env::memory_allocation_time[tid] += Env::toc(start_time);
-        
-        //A_CSC->walk_dxm(false, leader_tid, tid);
-        
-        if(!tid) Env::iteration++;
-    }    
-    auto finish = std::chrono::high_resolution_clock::now();
-    Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish - start).count())/1e9;
-
-    A_tile = inputFeatures->tiles[Env::rank][0];
-    const std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-    if(!tid) {
-        bool passed = validate_prediction(A_CSC, trueCategories, A_tile.start_row);
-        if(passed) {
-            Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
-        }
-        else {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
-        }
-    }
-    pthread_barrier_wait(&Env::thread_barrier);
-}
-*/
-
 template<typename Weight>
 void Net<Weight>::data_x_data(const int32_t tid) {
-    if(Env::NUMA_ALLOC)
-        (void)Env::set_thread_affinity(tid);   
-    
-    double start_time = 0;
-    uint64_t nnz = 0;
-    uint32_t nrows = inputFeatures->tile_height;
-    uint32_t ncols = layers[0]->ncols;
-    
-    struct Tile<Weight> A_tile;
-    struct Tile<Weight> B_tile;
-    struct Tile<Weight> C_tile;
-    std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
+    uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
+    int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
+    
+    std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
+    std::shared_ptr<struct Data_Block<Weight>> b_bias;
+    
+    const uint32_t nrows = inputFeatures->tile_height;
+    const uint32_t ncols = layers[0]->ncols;
+    uint32_t B_start_col, B_end_col;
+    const uint32_t B_off_col = 0;
     
     auto start = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
-        start_time = Env::tic(); 
-            if(not(l%2)) {
-                A_tile = inputFeatures->tiles[Env::thread_rowgroup[tid]][0];
-                C_tile = output->tiles[Env::thread_rowgroup[tid]][0];
-            }
-            else {
-                A_tile = output->tiles[Env::thread_rowgroup[tid]][0];
-                C_tile = inputFeatures->tiles[Env::thread_rowgroup[tid]][0];
-            }
-
-            std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-            std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-            B_tile = layers[l]->tiles[0][0];
-            std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
-            auto& b_bias = biasWeightVecs[l];  
-
-            const uint32_t start_col = 0;
-            const uint32_t end_col   = B_CSC->ncols;
-            std::tie(thread_st.off_nnz, nrows, ncols) =  spmm_symb(A_CSC, B_CSC, s_spa, start_col, end_col, tid);
-        Env::spmm_symb_time[tid] += Env::toc(start_time);      
+        struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
+                                                 : output->tiles[leader_rowgroup][0];
+        std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
+        struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
+        std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
+        struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
+                                                 : inputFeatures->tiles[leader_rowgroup][0];
+        std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
+        b_bias = biasWeightVecs[l];      
+        B_start_col = 0;
+        B_end_col = B_CSC->ncols;
         
-        start_time = Env::tic();
-            int32_t leader_tid = -1;
-            C_CSC->reallocate(thread_st.off_nnz, nrows, ncols, leader_tid, tid);
-        Env::memory_allocation_time[tid] += Env::toc(start_time);
-
-        start_time = Env::tic();
-            uint32_t off_col   = 0;
-            thread_st.idx_nnz = 0;
-            spmm_real(A_CSC, B_CSC, C_CSC, s_spa, b_bias, start_col, end_col, off_col, thread_st.idx_nnz, tid);
-            Env::adjust_displacement(tid);
-            C_CSC->adjust(tid);
-        Env::spmm_real_time[tid] += Env::toc(start_time);  
-        
-        //leader_tid = 0;
-        //C_CSC->walk_dxd(false, leader_tid, tid);
-
-        if(!tid) Env::iteration++;
+        data_x_data_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
+                           nrows, ncols, B_start_col, B_end_col, B_off_col, 
+                           thread_st, leader_tid, tid);       
     }
-    
     auto finish = std::chrono::high_resolution_clock::now();
+    
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
     
-    C_tile = inputFeatures->tiles[Env::thread_rowgroup[tid]][0];
-    std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-    bool passed = validate_prediction(C_CSC, trueCategories, C_tile.start_row, tid);
-    if(passed) {
-        if(!tid) Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
-    }
-    else {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
-    }
-    
-    pthread_barrier_wait(&Env::thread_barrier);   
+    struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
+    const std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
+    data_x_data_validate_prediction(A_CSC, A_tile.start_row, trueCategories, nCategories, leader_tid, tid);
 }
 
+template<typename Weight>
+void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
+    uint32_t my_rowgroup = Env::thread_rowgroup[tid];
+    int32_t my_leader_tid = 0;
+    std::vector<int32_t> my_threads;
+    auto start = std::chrono::high_resolution_clock::now();  
+    uint32_t my_start_layer = hybrid_x_data(my_threads, tid);
+    if(my_start_layer < maxLayers) {
+        hybrid_x_model(my_threads, my_rowgroup, my_start_layer, tid, tid);
+    }
+    
+    while(add_to_idle_threads(my_threads, tid)) {
+        const int32_t leader = Env::threads[tid].leader;
+        if(leader != -1) {
+            uint32_t leader_rowgroup = Env::threads[tid].rowgroup;
+            uint32_t leader_start_layer = Env::threads[tid].start_layer;
+            hybrid_x_model(my_threads, leader_rowgroup, leader_start_layer, leader, tid);
+        }
+    }
+    auto finish = std::chrono::high_resolution_clock::now();
+    
+    Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
+
+    //struct Tile<Weight>& A_tile = inputFeatures->tiles[my_rowgroup][0];
+    //const std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
+    //int32_t count = validate_prediction1(A_CSC, trueCategories, A_tile.start_row);
+    
+    struct Tile<Weight>& A_tile = inputFeatures->tiles[my_rowgroup][0];
+    const std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
+    data_x_data_validate_prediction(A_CSC, A_tile.start_row, trueCategories, nCategories, my_leader_tid, tid);
+    
+}
+
+template<typename Weight>
+uint32_t Net<Weight>::hybrid_x_data(std::vector<int32_t>& my_threads, const int32_t tid) {
+    uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
+    int32_t leader_tid = 0;
+    struct Env::thread_struct& thread_st = Env::threads[tid];
+    //std::vector<int32_t> my_threads;
+    my_threads.push_back(tid);
+    //std::vector<int32_t> my_rowgrps;
+    //bool has_data_to_share = true;
+    
+    std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
+    std::shared_ptr<struct Data_Block<Weight>> b_bias;
+    
+    uint32_t nrows;
+    const uint32_t ncols = layers[0]->ncols;
+    uint32_t B_start_col, B_end_col;
+    const uint32_t B_off_col = 0;
+    uint32_t l = 0; 
+    for (l = 0; l < maxLayers; l++) {
+        if(add_to_my_follower_threads(my_threads, l, ncols, tid) == 1) {
+            struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
+                                                 : output->tiles[leader_rowgroup][0];
+            std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
+            struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
+            std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
+            struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
+                                                     : inputFeatures->tiles[leader_rowgroup][0];
+            std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
+            b_bias = biasWeightVecs[l];      
+            B_start_col = 0;
+            B_end_col = B_CSC->ncols;
+            nrows = A_CSC->nrows;
+            
+            data_x_data_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
+                               nrows, ncols, B_start_col, B_end_col, B_off_col, 
+                               thread_st, leader_tid, tid);   
+        }
+        else {
+            break;
+        }
+    }
+    return(l);
+}
+
+
+/*
 template<typename Weight>
 void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     if(Env::NUMA_ALLOC)
@@ -650,6 +618,8 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     Env::barrier();
     
 }
+
+*/
 
 template<typename Weight>
 int32_t Net<Weight>::add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& start_layer, const int32_t tid){
@@ -836,8 +806,6 @@ template<typename Weight>
 int32_t Net<Weight>::add_to_my_follower_threads(std::vector<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid) {
     uint32_t num_threads = my_threads.size();
     if(!Env::follower_threads.empty()) {
-        uint32_t new_height = (not(start_layer%2)) ? output->tiles[Env::thread_rowgroup[tid]][0].height
-                                                   : inputFeatures->tiles[Env::thread_rowgroup[tid]][0].height;  
         pthread_mutex_lock(&Env::thread_mutex);  
         if(!Env::follower_threads.empty()) {
             num_threads += Env::follower_threads.size();
@@ -871,8 +839,6 @@ void Net<Weight>::add_to_my_follower_threads(std::vector<int32_t>& my_threads, c
     uint32_t num_threads = 0;
 
     if(tid == leader) {
-        uint32_t new_height = (not(start_layer%2)) ? output->tiles[Env::thread_rowgroup[tid]][0].height
-                                                     : inputFeatures->tiles[Env::thread_rowgroup[tid]][0].height;  
         old_num_threads = my_threads.size();
         if(!Env::follower_threads.empty()) {
             pthread_mutex_lock(&Env::thread_mutex);  
@@ -923,8 +889,9 @@ bool Net<Weight>::add_to_idle_threads(std::vector<int32_t>& my_threads, const in
     return(status);
 }
 
+/*
 template<typename Weight>
-void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t start_layer, const int32_t leader, const int32_t tid) {
+void Net<Weight>::hybrid_x_model(std::vector<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid) {
     double start_time = 0;
     uint64_t nnz   = 0;
     uint32_t nrows = inputFeatures->tile_height;
@@ -935,20 +902,21 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
     struct Env::thread_struct& thread_st = Env::threads[tid];
     bool old_thread = false;
     bool has_data_to_share = true;
-    for(uint32_t l = start_layer; l < maxLayers; l++) {
+    for(uint32_t l = leader_start_layer; l < maxLayers; l++) {
         start_time = Env::tic();
-            add_to_my_follower_threads(my_threads, l, ncols, leader, tid);
-            Env::decrease_num_threads(1, leader, tid);
-            Env::init_num_threads(my_threads.size(), leader, tid);
+            add_to_my_follower_threads(my_threads, l, ncols, leader_tid, tid);
+            Env::decrease_num_threads(1, leader_tid, tid);
+            Env::init_num_threads(my_threads.size(), leader_tid, tid);
         Env::hybrid_probe_time[tid] += Env::toc(start_time);     
             
         start_time = Env::tic();
-        
-            struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
-                                                     : output->tiles[leader_rowgroup][0];
+        struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
+        struct Tile<Weight>& C_tile = output->tiles[leader_rowgroup][0];
+            //struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
+              //                                       : output->tiles[leader_rowgroup][0];
                                                          
-            struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
-                                                     : inputFeatures->tiles[leader_rowgroup][0];                
+            //struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
+                                                     //: inputFeatures->tiles[leader_rowgroup][0];                
 
             std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
             std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
@@ -957,40 +925,82 @@ void Net<Weight>::hybrid(std::vector<int32_t>& my_threads, const uint32_t leader
             std::shared_ptr<struct Data_Block<Weight>> b_bias = biasWeightVecs[l];  
             
             start_time = Env::tic();
-            /*
-            if((tid == leader) and has_data_to_share) {
-                has_data_to_share = add_to_my_follower_ranks(leader_rowgroup, l, my_threads, tid);
-            }
-            pthread_barrier_wait(&Env::thread_barriers[leader]);
-            Env::hybrid_probe_time[tid] += Env::toc(start_time);   
-            */
+            
+            //if((tid == leader) and has_data_to_share) {
+            //    has_data_to_share = add_to_my_follower_ranks(leader_rowgroup, l, my_threads, tid);
+            //}
+            //pthread_barrier_wait(&Env::thread_barriers[leader]);
+            //Env::hybrid_probe_time[tid] += Env::toc(start_time);   
+            
             
             
             const uint32_t start_col = Env::threads[tid].start_col;
             const uint32_t end_col   = Env::threads[tid].end_col;
             std::tie(thread_st.off_nnz, nrows, ncols) =  spmm_symb(A_CSC, B_CSC, s_spa, start_col, end_col, tid);
-            pthread_barrier_wait(&Env::thread_barriers[leader]);
+            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
         Env::spmm_symb_time[tid] += Env::toc(start_time);   
 
         start_time = Env::tic();
-            nnz = Env::adjust_nnz(my_threads, leader, tid);
-            C_CSC->reallocate(nnz, nrows, ncols, leader, tid);
+            nnz = Env::adjust_nnz(my_threads, leader_tid, tid);
+            C_CSC->reallocate(nnz, nrows, ncols, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
 
         start_time = Env::tic();
             uint32_t off_col = 0;   
-            pthread_barrier_wait(&Env::thread_barriers[leader]);
+            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
             spmm_real(A_CSC, B_CSC, C_CSC, s_spa, b_bias, start_col, end_col, off_col, thread_st.idx_nnz, tid);
-            pthread_barrier_wait(&Env::thread_barriers[leader]);
-            Env::adjust_displacement(my_threads, leader, tid);
-            C_CSC->adjust(my_threads, leader, tid);	
+            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+            Env::adjust_displacement(my_threads, leader_tid, tid);
+            C_CSC->adjust(my_threads, leader_tid, tid);	
         Env::spmm_real_time[tid] += Env::toc(start_time);
 
         start_time = Env::tic();
-            pthread_barrier_wait(&Env::thread_barriers[leader]);
-            A_CSC->repopulate(C_CSC, my_threads, leader, tid);
+            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+            A_CSC->repopulate(C_CSC, my_threads, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
         if(!tid) Env::iteration++;
     }
 }
+*/
+
+
+template<typename Weight>
+void Net<Weight>::hybrid_x_model(std::vector<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid) {
+    struct Env::thread_struct& thread_st = Env::threads[tid];
+    
+    struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
+    struct Tile<Weight>& C_tile = output->tiles[leader_rowgroup][0];
+    std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
+    std::shared_ptr<struct Data_Block<Weight>> b_bias;
+    
+    uint32_t nrows;
+    const uint32_t ncols = layers[0]->ncols;
+    uint32_t B_start_col, B_end_col;
+    const uint32_t B_off_col = 0;   
+    double start_time = 0;
+
+    for (uint32_t l = leader_start_layer; l < maxLayers; l++) {
+        start_time = Env::tic();
+            add_to_my_follower_threads(my_threads, l, ncols, leader_tid, tid);
+            Env::decrease_num_threads(1, leader_tid, tid);
+            Env::init_num_threads(my_threads.size(), leader_tid, tid);
+        Env::hybrid_probe_time[tid] += Env::toc(start_time);     
+        
+        std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
+        struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
+        std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
+        std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
+        b_bias = biasWeightVecs[l];
+        B_start_col = Env::threads[tid].start_col;
+        B_end_col = Env::threads[tid].end_col;
+        nrows = A_CSC->nrows;
+        data_x_model_hybrid_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
+                                   nrows, ncols, B_start_col, B_end_col, B_off_col,
+                                   my_threads, thread_st, leader_tid, tid);
+    }
+}
+
+
+
+
 #endif 
