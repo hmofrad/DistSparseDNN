@@ -18,10 +18,6 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
                                                          const uint32_t start_col,
                                                          const uint32_t end_col,
                                                          const int32_t tid) {
-    uint64_t nnzmax = 0;
-    uint32_t nrows = 0;
-    uint32_t ncols = 0; 
-
     const uint64_t A_nnz   = A_CSC->nnz;
     const uint32_t A_nrows = A_CSC->nrows;
     const uint32_t A_ncols = A_CSC->ncols;
@@ -43,13 +39,11 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
         std::exit(1); 
     }
     
+    uint64_t nnzmax = 0;
+    uint32_t nrows = A_nrows;
+    uint32_t ncols = B_ncols; 
     
-    
-    nrows = A_nrows;
-    ncols = B_ncols;
-    //printf("flip %d %d\n", nrows, ncols);
     for(uint32_t j = start_col; j < end_col; j++) {
-        //printf("Rank=%d tid=%d j=%d\n", Env::rank, tid, j);
         for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
             uint32_t l = B_IA[k];
             for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
@@ -63,7 +57,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
             }
         }
     }
-    //printf("flop\n");
+    
     return std::make_tuple(nnzmax, nrows, ncols);
 }
 
@@ -118,6 +112,93 @@ inline void spmm_real(std::shared_ptr<struct CSC<Weight>> A_CSC,
         C_CSC->populate_spa(&s_A, b_A, off_col + j, idx_nnz, tid);
     }
 }
+
+template<typename Weight>
+inline void data_x_model_1_iter(std::shared_ptr<struct CSC<Weight>> A_CSC, 
+                                std::shared_ptr<struct CSC<Weight>> B_CSC, 
+                                std::shared_ptr<struct CSC<Weight>> C_CSC, 
+                                std::shared_ptr<struct Data_Block<Weight>> s_spa,
+                                const std::shared_ptr<struct Data_Block<Weight>> b_bias,
+                                const uint32_t nrows,
+                                const uint32_t ncols,
+                                const uint32_t B_start_col,
+                                const uint32_t B_end_col,
+                                const uint32_t B_sub_start_col,
+                                const uint32_t B_sub_end_col,
+                                struct Env::thread_struct& thread_st,
+                                const int32_t leader_tid, 
+                                const int32_t tid) {
+    double start_time = 0;
+    start_time = Env::tic(); 
+        std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_CSC, B_CSC, s_spa, B_start_col, B_end_col, tid);
+        pthread_barrier_wait(&Env::thread_barrier);
+    Env::spmm_symb_time[tid] += Env::toc(start_time);   
+    
+    start_time = Env::tic();
+        uint64_t nnz = Env::adjust_nnz(leader_tid, tid);
+        C_CSC->reallocate(nnz, nrows, ncols, leader_tid, tid);
+    Env::memory_allocation_time[tid] += Env::toc(start_time);
+    
+    start_time = Env::tic();
+        pthread_barrier_wait(&Env::thread_barrier);
+        spmm_real(A_CSC, B_CSC, C_CSC, s_spa, b_bias, B_start_col, B_end_col, B_sub_start_col, thread_st.idx_nnz, tid);
+        pthread_barrier_wait(&Env::thread_barrier);
+        Env::adjust_displacement(tid);
+        C_CSC->adjust(leader_tid, tid);	
+    Env::spmm_real_time[tid] += Env::toc(start_time);
+    
+    start_time = Env::tic();
+        A_CSC->repopulate(C_CSC, B_sub_start_col, B_sub_end_col, thread_st.dis_nnz, leader_tid, tid);
+    Env::memory_allocation_time[tid] += Env::toc(start_time);
+}
+
+template<typename Weight>
+inline void data_x_model_validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
+                                             const uint32_t start_row,
+                                             const std::vector<uint32_t> trueCategories,
+                                             const int32_t nCategories,
+                                             const int32_t leader_tid, 
+                                             const int32_t tid) {                  
+    if(tid == leader_tid) {
+        const uint64_t A_nnz   = A_CSC->nnz;
+        const uint32_t A_nrows = A_CSC->nrows;
+        const uint32_t A_ncols = A_CSC->ncols;
+        const uint32_t* A_IA   = A_CSC->IA_blk->ptr;
+        const uint32_t* A_JA   = A_CSC->JA_blk->ptr;
+        const Weight*    A_A   = A_CSC->A_blk->ptr;
+        
+        std::vector<uint32_t> allCategories(A_nrows);
+
+        for(uint32_t j = 0; j < A_ncols; j++) {
+            for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
+                allCategories[A_IA[i]] = 1;
+            }
+        }
+        
+        int count = 0;
+        for(uint32_t i = 0; i < A_nrows; i++) {
+            if(trueCategories[start_row + i] != allCategories[i]) {
+                break;
+            }
+            if(allCategories[i]) {
+                count++;
+            }
+        }
+        int counts = 0;
+        MPI_Allreduce(&count, &counts, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        
+        bool passed = (counts == nCategories);
+        if(passed) {
+            Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
+        }
+        else {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
+        }
+    }
+    pthread_barrier_wait(&Env::thread_barrier);
+    Env::barrier();
+}
+
 
 template<typename Weight>
 inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
