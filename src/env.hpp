@@ -70,6 +70,7 @@ namespace Env {
     int get_nsockets();
     bool numa_configure();
     bool set_thread_affinity(const int32_t tid);
+    int32_t get_socket_id(const int32_t tid);
     
     struct thread_struct {
         thread_struct(){};
@@ -140,6 +141,8 @@ namespace Env {
     void destroy_thread_communicators(MPI_Group* thread_groups_, 
                                       MPI_Group* thread_groups,
                                       MPI_Comm*  thread_communicators);
+                                      
+    double global_time;
 }
 
 int Env::init() {
@@ -267,6 +270,10 @@ int Env::get_nsockets() {
     return(nsockets);
 }
 
+int32_t Env::get_socket_id(const int32_t tid) {
+    return(Env::threads_core_id[tid % Env::num_unique_cores]/Env::ncores_per_socket + 1);
+}
+
 bool Env::set_thread_affinity(const int32_t tid) {
     int cid = Env::threads_core_id[tid % Env::num_unique_cores];
     cpu_set_t cpuset;
@@ -307,8 +314,9 @@ bool Env::numa_configure() {
     
     Env::threads_socket_id.resize(Env::nthreads);
     for(int i = 0; i < Env::nthreads; i++) {
-        int cid = Env::threads_core_id[i % Env::num_unique_cores];
-        Env::threads_socket_id[i] = cid / Env::ncores_per_socket;
+        //int cid = Env::threads_core_id[i % Env::num_unique_cores];
+        //Env::threads_socket_id[i] = cid / Env::ncores_per_socket;
+        Env::threads_socket_id[i] = Env::get_socket_id(i);
     }
     
     if(Env::nthreads != num_unique_cores) {
