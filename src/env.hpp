@@ -36,7 +36,7 @@ namespace Env {
     
     std::vector<uint32_t> thread_rowgroup;
     std::vector<struct counter_struct> counters; 
-    std::vector<double> scores;
+    std::vector<uint32_t> scores;
     int iteration = 0;
     
     double io_time;
@@ -55,6 +55,8 @@ namespace Env {
     std::vector<pthread_mutex_t> thread_mutexes;
     
     std::deque<int32_t> follower_threads;
+    uint32_t num_finished_threads = 0;
+    std::vector<bool> finished_threads;
     
     int init();
     void barrier();
@@ -109,7 +111,8 @@ namespace Env {
     
     template<typename Type>
     void create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_shared_data_size, MPI_Win* window, MPI_Comm communicator);
-    void destroy_mpi_asynch_shared_mem(MPI_Win* window);
+    template<typename Type>
+    void destroy_mpi_asynch_shared_mem(Type** mpi_shared_data, MPI_Win* window);
     
     //int32_t* idle_ranks;
     //MPI_Win window;
@@ -198,7 +201,7 @@ int Env::init() {
     for(int32_t i = 0; i < Env::nthreads; i++) {
         init_num_threads(0, i, i);
     }
-    
+    finished_threads.resize(Env::nthreads, true);
     //create_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, Env::nranks+1, &Env::window);
     
     //printf("%d\n", Env::rank);
@@ -271,7 +274,7 @@ int Env::get_nsockets() {
 }
 
 int32_t Env::get_socket_id(const int32_t tid) {
-    return(Env::threads_core_id[tid % Env::num_unique_cores]/Env::ncores_per_socket + 1);
+    return(Env::threads_core_id[tid % Env::num_unique_cores]/Env::ncores_per_socket);
 }
 
 bool Env::set_thread_affinity(const int32_t tid) {
@@ -314,9 +317,9 @@ bool Env::numa_configure() {
     
     Env::threads_socket_id.resize(Env::nthreads);
     for(int i = 0; i < Env::nthreads; i++) {
-        //int cid = Env::threads_core_id[i % Env::num_unique_cores];
-        //Env::threads_socket_id[i] = cid / Env::ncores_per_socket;
-        Env::threads_socket_id[i] = Env::get_socket_id(i);
+        int cid = Env::threads_core_id[i % Env::num_unique_cores];
+        Env::threads_socket_id[i] = cid / Env::ncores_per_socket;
+        //Env::threads_socket_id[i] = Env::get_socket_id(i);
     }
     
     if(Env::nthreads != num_unique_cores) {
@@ -369,7 +372,7 @@ int Env::finalize() {
     //destroy_mpi_asynch_shared_mem(&Env::window);
     
     for(int32_t i = 0; i < Env::nthreads; i++) {
-        destroy_mpi_asynch_shared_mem(&Env::thread_windows[i]);
+        destroy_mpi_asynch_shared_mem<int32_t>(&Env::idle_threads[i], &Env::thread_windows[i]);
     }
     
     for(int32_t i = 0; i < Env::nthreads; i++) {
@@ -377,7 +380,7 @@ int Env::finalize() {
     }
     
     MPI_Barrier(MPI_COMM_WORLD);
-    
+
     int ret = MPI_Finalize();
     return((ret == MPI_SUCCESS) ? 0 : 1);
 }
@@ -474,7 +477,12 @@ void Env::create_mpi_asynch_shared_mem(Type** mpi_shared_data, int32_t mpi_share
     MPI_Win_create(*mpi_shared_data, window_size, sizeof(Type), MPI_INFO_NULL, communicator, window);
 }
 
-void Env::destroy_mpi_asynch_shared_mem(MPI_Win* window) {
+template<typename Type>
+void Env::destroy_mpi_asynch_shared_mem(Type** mpi_shared_data, MPI_Win* window) {
+    if(Env::rank == 0) {
+        MPI_Free_mem(*mpi_shared_data);
+    }
+    
     MPI_Win_free(window);     
 }
 
