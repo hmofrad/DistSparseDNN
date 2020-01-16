@@ -110,7 +110,7 @@ inline void spmm_real(std::shared_ptr<struct CSC<Weight>> A_CSC,
             }
         }
         C_CSC->populate_spa(&s_A, b_A, off_col + j, idx_nnz, tid);
-    }
+    }    
 }
 
 template<typename Weight>
@@ -302,7 +302,7 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct CSC<Weight>> A_CSC
                                 const uint32_t B_start_col,
                                 const uint32_t B_end_col,
                                 const uint32_t B_off_col,
-                                const std::vector<int32_t> my_threads,
+                                const std::deque<int32_t> my_threads,
                                 struct Env::thread_struct& thread_st,
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
