@@ -36,7 +36,7 @@ namespace Env {
     
     std::vector<uint32_t> thread_rowgroup;
     std::vector<struct counter_struct> counters; 
-    
+    std::vector<double> scores;
     int iteration = 0;
     
     double io_time;
@@ -54,7 +54,7 @@ namespace Env {
     std::vector<pthread_cond_t> thread_conds; 
     std::vector<pthread_mutex_t> thread_mutexes;
     
-    std::vector<int32_t> follower_threads;
+    std::deque<int32_t> follower_threads;
     
     int init();
     void barrier();
@@ -91,12 +91,14 @@ namespace Env {
         uint64_t checkcount;
         uint64_t checknnz;
         bool     checkconv;
+        uint32_t layer_index;
+        uint32_t score;
     };
     
     uint64_t adjust_nnz(const int32_t leader_tid, const int32_t tid);
-    uint64_t adjust_nnz(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+    uint64_t adjust_nnz(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
     void adjust_displacement(const int32_t tid);
-    void adjust_displacement(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+    void adjust_displacement(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
     
     std::vector<struct thread_struct> threads;
     std::vector<uint32_t> num_threads;
@@ -165,8 +167,10 @@ int Env::init() {
         Env::NUMA_ALLOC = false;
     }
     
-    counters.resize(Env::nthreads); 
     thread_rowgroup.resize(Env::nthreads);
+    counters.resize(Env::nthreads); 
+    scores.resize(Env::nthreads);
+    
     
     spmm_symb_time.resize(Env::nthreads);
     spmm_real_time.resize(Env::nthreads);
@@ -389,7 +393,7 @@ uint64_t Env::adjust_nnz(const int32_t leader_tid, const int32_t tid) {
     return(nnz);
 }
 
-uint64_t Env::adjust_nnz(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {
+uint64_t Env::adjust_nnz(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {
     uint64_t nnz = 0;
     if(tid == leader_tid) {
         for(auto t: my_threads) {
@@ -413,7 +417,7 @@ void Env::adjust_displacement(const int32_t tid) {
     Env::threads[tid].dis_nnz = (tid == 0) ? 0 : Env::threads[tid].off_nnz - Env::threads[tid-1].idx_nnz;
 }
 
-void Env::adjust_displacement(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {
+void Env::adjust_displacement(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {
     if(tid == leader_tid) {
         Env::threads[tid].dis_nnz = 0;
         for(uint32_t i = 1; i < my_threads.size(); i++) {    
