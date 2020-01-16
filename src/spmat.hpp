@@ -27,9 +27,9 @@ struct CSC {
         void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid);
         void adjust(const int32_t tid);
         void adjust(const int32_t leader_tid, const int32_t tid);
-        void adjust(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+        void adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
         void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid);
-        void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
         void split_and_overwrite(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, const uint32_t nparts_local, const uint32_t nparts_remote);
         
         void Isend(std::vector<MPI_Request>& requests, const int32_t destination_rank, const int32_t tid);
@@ -296,7 +296,7 @@ void CSC<Weight>::adjust(const int32_t leader_tid, const int32_t tid){
 }
 
 template<typename Weight>
-void CSC<Weight>::adjust(const std::vector<int32_t> my_threads, const int32_t leader_tid, const int32_t tid){    
+void CSC<Weight>::adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid){    
     if((leader_tid == -1) or (tid == leader_tid)) {
         CSC::nnz_i = 0;
         for(uint32_t i = 0; i < my_threads.size(); i++) {    
@@ -355,7 +355,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
 }
 
 template<typename Weight>
-void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::vector<int32_t> my_threads, const int32_t leader_tid,  const int32_t tid) {
+void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::deque<int32_t> my_threads, const int32_t leader_tid,  const int32_t tid) {
     uint32_t  o_ncols = other->ncols;
     uint32_t  o_nrows = other->nrows;
     uint64_t  o_nnz   = other->nnz;
