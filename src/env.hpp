@@ -35,6 +35,7 @@ namespace Env {
     bool NUMA_ALLOC = false;
     
     std::vector<uint32_t> thread_rowgroup;
+    std::deque<uint32_t> rank_rowgroups;
     std::vector<struct counter_struct> counters; 
     std::vector<uint32_t> scores;
     int iteration = 0;
@@ -176,6 +177,8 @@ int Env::init() {
     thread_rowgroup.resize(Env::nthreads);
     counters.resize(Env::nthreads); 
     scores.resize(Env::nthreads);
+    
+    
     
     
     spmm_symb_time.resize(Env::nthreads);
