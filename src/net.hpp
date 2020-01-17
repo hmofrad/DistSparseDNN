@@ -13,8 +13,8 @@
 #include <deque>
 
 /* Input x layers */
-enum PARALLELISM_TYPE {_DATA_X_DATA_, _DATA_X_MODEL_, _HYBRID_X_HYBRID_};
-const char* PARALLELISM_TYPES[] = {"_DATA_X_DATA_", "_DATA_X_MODEL_", "_HYBRID_X_HYBRID_"};
+enum PARALLELISM_TYPE {_MANAGER_X_WORKER_, _DATA_X_DATA_, _DATA_X_MODEL_, _HYBRID_X_HYBRID_};
+const char* PARALLELISM_TYPES[] = {"_MANAGER_X_WORKER_", "_DATA_X_DATA_", "_DATA_X_MODEL_", "_HYBRID_X_HYBRID_"};
 
 template<typename Weight>
 class Net {
@@ -44,7 +44,8 @@ class Net {
         
         PARALLELISM_TYPE parallelism_type;
         bool repartition = false;
-        bool greedy = false;
+        bool greedy = true;
+        uint32_t split_factor = 16;
         
         void printTimes();
         void printTimesExcel();
@@ -54,6 +55,7 @@ class Net {
         void data_x_model(const int32_t tid);
         void data_x_data(const int32_t tid);
         void hybrid_x_hybrid(const int32_t tid);
+        void manager_x_worker(const int32_t tid);
         uint32_t hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t tid);
         void hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid);
         //void hybrid(std::vector<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t start_layer, const int32_t leader, const int32_t tid);
@@ -106,6 +108,14 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                    feature_file, input_type, 
                                                                    TILING_TYPE::_1D_ROW_, repartition));
     }
+    else if(parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) {
+        inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads * split_factor, Env::nranks * Env::nthreads * split_factor, 1, Env::nranks,
+                                                                   Env::nthreads, Env::nranks * Env::nthreads, 
+                                                                   nnz, nrows, ncols, 
+                                                                   feature_file, input_type, 
+                                                                   TILING_TYPE::_1D_ROW_, repartition));        
+       inputFeatures->set_rank_indices();  
+    }
     else {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks,
                                                                    Env::nthreads, Env::nranks * Env::nthreads, 
@@ -133,7 +143,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    //maxLayers = 5;
+    //maxLayers = 2;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -184,6 +194,12 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
 
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
+                                                            0, inputFeatures->nrows, inputFeatures->ncols, 
+                                                            TILING_TYPE::_1D_ROW_, repartition));
+    }
+    else if(parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) {
+        output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads * split_factor, Env::nranks * Env::nthreads * split_factor, 1, Env::nranks, 
+                                                            Env::nthreads, Env::nranks * Env::nthreads, 
                                                             0, inputFeatures->nrows, inputFeatures->ncols, 
                                                             TILING_TYPE::_1D_ROW_, repartition));
     }
@@ -284,6 +300,9 @@ void Net<Weight>::inferenceReLU(const int32_t tid) {
     else if(parallelism_type == PARALLELISM_TYPE::_HYBRID_X_HYBRID_) {
         hybrid_x_hybrid(tid);
     }
+    else if(parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) {
+        manager_x_worker(tid);
+    }    
 }
 
 template<typename Weight>
@@ -320,12 +339,66 @@ void Net<Weight>::data_x_model(const int32_t tid) {
                             thread_st, leader_tid, tid);
     }
     auto finish = std::chrono::high_resolution_clock::now();
-    
     Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish - start).count())/1e9;
 
     const std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
     data_x_model_validate_prediction(A_CSC, A_tile.start_row, trueCategories, nCategories, leader_tid, tid);
 }
+
+template<typename Weight>
+void Net<Weight>::manager_x_worker(const int32_t tid) {
+    uint32_t leader_rowgroup = 0;
+    int32_t leader_tid = 0;
+    struct Env::thread_struct& thread_st = Env::threads[tid];
+    
+    std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
+    std::shared_ptr<struct Data_Block<Weight>> b_bias;
+    
+    const uint32_t nrows = inputFeatures->tile_height;
+    const uint32_t ncols = layers[0]->ncols;
+    uint32_t B_start_col, B_end_col;
+    const uint32_t B_off_col = 0;
+    auto start = std::chrono::high_resolution_clock::now();  
+    while(!Env::rank_rowgroups.empty()) {
+        
+        pthread_mutex_lock(&Env::thread_mutex);  
+        if(!Env::rank_rowgroups.empty()) {
+            leader_rowgroup = Env::rank_rowgroups.front();
+            Env::rank_rowgroups.pop_front();
+            pthread_mutex_unlock(&Env::thread_mutex);  
+        }
+        else {
+            pthread_mutex_unlock(&Env::thread_mutex);
+            break;
+        }
+        
+        for (uint32_t l = 0; l < maxLayers; l++) {
+            struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
+                                                     : output->tiles[leader_rowgroup][0];
+            std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
+            struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
+            std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
+            struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
+                                                     : inputFeatures->tiles[leader_rowgroup][0];
+            std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
+            b_bias = biasWeightVecs[l];      
+            B_start_col = 0;
+            B_end_col = B_CSC->ncols;
+            data_x_data_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
+                               nrows, ncols, B_start_col, B_end_col, B_off_col, 
+                               thread_st, leader_tid, tid);       
+        }   
+    }
+    auto finish = std::chrono::high_resolution_clock::now();
+    Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
+
+    pthread_barrier_wait(&Env::thread_barrier);
+    if(tid == leader_tid) {
+        inputFeatures->set_rank_indices();  
+    }
+    manager_x_worker_validate_prediction(inputFeatures->tiles, trueCategories, nCategories, leader_tid, tid);
+}
+
 
 template<typename Weight>
 void Net<Weight>::data_x_data(const int32_t tid) {
@@ -360,7 +433,6 @@ void Net<Weight>::data_x_data(const int32_t tid) {
                            thread_st, leader_tid, tid);       
     }
     auto finish = std::chrono::high_resolution_clock::now();
-    
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
     
     struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
