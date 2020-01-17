@@ -67,6 +67,7 @@ class Tiling {
         
         bool one_rank = false;
         void set_threads_indices();
+        void set_rank_indices();
         uint32_t get_tile_info(const std::string field, const int32_t tid);
         void     set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles); 
         
@@ -671,6 +672,21 @@ void Tiling<Weight>::set_threads_indices() {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
                 Env::thread_rowgroup[tile.thread] = i;
+            }
+        }
+    } 
+}
+
+template<typename Weight>
+void Tiling<Weight>::set_rank_indices() {
+    Env::rank_rowgroups.clear();
+    Env::rank_rowgroups.shrink_to_fit();
+    
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(tile.rank == Env::rank) {
+                Env::rank_rowgroups.push_back(i);
             }
         }
     } 
