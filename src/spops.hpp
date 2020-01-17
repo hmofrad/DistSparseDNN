@@ -292,6 +292,59 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct CSC<Wei
 
 
 template<typename Weight>
+inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct Tile<Weight>>> tiles,
+                                const std::vector<uint32_t> trueCategories,
+                                const int32_t nCategories,
+                                const int32_t leader_tid, 
+                                const int32_t tid) {
+                                        
+    if(tid == leader_tid) {
+        int count = 0;
+        for(uint32_t rowgroup:  Env::rank_rowgroups) {
+            struct Tile<Weight>& A_tile = tiles[rowgroup][0];
+            std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
+            uint32_t start_row = A_tile.start_row;
+                                        
+            uint64_t A_nnz   = A_CSC->nnz;
+            uint32_t A_nrows = A_CSC->nrows;
+            uint32_t A_ncols = A_CSC->ncols;
+            uint32_t* A_IA   = A_CSC->IA_blk->ptr;
+            uint32_t* A_JA   = A_CSC->JA_blk->ptr;
+            Weight*    A_A   = A_CSC->A_blk->ptr;
+            std::vector<uint32_t> allCategories(A_nrows);
+
+            for(uint32_t j = 0; j < A_ncols; j++) {
+                for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
+                    allCategories[A_IA[i]] = 1;
+                }
+            }
+            
+            for(uint32_t i = 0; i < A_nrows; i++) {
+                if(trueCategories[start_row + i] != allCategories[i]) {
+                    break;
+                }
+                if(allCategories[i]) {
+                    count++;
+                }
+            }
+        }
+        printf("%d %d\n", Env::rank, count);
+        int counts = 0;
+        MPI_Allreduce(&count, &counts, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        bool passed = (counts == nCategories);
+        if(passed) {
+            Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
+        }
+        else {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
+        }
+    }
+    pthread_barrier_wait(&Env::thread_barrier);
+    Env::barrier();
+}
+
+
+template<typename Weight>
 inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct CSC<Weight>> A_CSC, 
                                 std::shared_ptr<struct CSC<Weight>> B_CSC, 
                                 std::shared_ptr<struct CSC<Weight>> C_CSC, 
