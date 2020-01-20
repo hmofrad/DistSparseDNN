@@ -32,8 +32,8 @@ struct CSC {
         void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
         void split_and_overwrite(std::vector<std::shared_ptr<struct CSC<Weight>>>& CSCs, const uint32_t nparts_local, const uint32_t nparts_remote);
         
-        void Isend(std::vector<MPI_Request>& requests, const int32_t destination_rank, const int32_t tid);
-        void Irecv(std::vector<MPI_Request>& requests, const int32_t source_rank, const int32_t tid);
+        void Isend(std::vector<MPI_Request>& requests, const int32_t destination_rank, const MPI_Comm MPI_COMM);
+        void Irecv(std::vector<MPI_Request>& requests, const int32_t source_rank,      const MPI_Comm MPI_COMM);
         
         uint64_t nnz   = 0;
         uint64_t nnz_i = 0;
@@ -735,7 +735,7 @@ printf("%f %lu\nn", checksum, checkcount);
 }
 
 template<typename Weight>
-void CSC<Weight>::Isend(std::vector<MPI_Request>& requests, const int32_t destination_rank, const int32_t tid) {
+void CSC<Weight>::Isend(std::vector<MPI_Request>& requests, const int32_t destination_rank, const MPI_Comm MPI_COMM) {
     MPI_Request request;
     MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
     
@@ -743,26 +743,28 @@ void CSC<Weight>::Isend(std::vector<MPI_Request>& requests, const int32_t destin
     uint32_t* IA = CSC::IA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
     
-    MPI_Isend(JA, CSC::JA_blk->nitems, MPI_UNSIGNED, destination_rank, (destination_rank*3)+0, Env::thread_communicators[tid], &request);
+    MPI_Isend(JA, CSC::JA_blk->nitems, MPI_UNSIGNED, destination_rank, (destination_rank*3)+0, MPI_COMM, &request);
     requests.push_back(request);
-    MPI_Isend(IA, CSC::IA_blk->nitems, MPI_UNSIGNED, destination_rank, (destination_rank*3)+1, Env::thread_communicators[tid], &request);
+    MPI_Isend(IA, CSC::IA_blk->nitems, MPI_UNSIGNED, destination_rank, (destination_rank*3)+1, MPI_COMM, &request);
     requests.push_back(request);
-    MPI_Isend(A, CSC::A_blk->nitems,    WEIGHT_TYPE, destination_rank, (destination_rank*3)+2, Env::thread_communicators[tid], &request);
+    MPI_Isend(A, CSC::A_blk->nitems,    WEIGHT_TYPE, destination_rank, (destination_rank*3)+2, MPI_COMM, &request);
     requests.push_back(request);
 }
 
 template<typename Weight>
-void CSC<Weight>::Irecv(std::vector<MPI_Request>& requests, const int32_t source_rank, const int32_t tid) {
+void CSC<Weight>::Irecv(std::vector<MPI_Request>& requests, const int32_t source_rank, const MPI_Comm MPI_COMM) {
     MPI_Request request;
     MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
+    
     uint32_t* JA = CSC::JA_blk->ptr;
     uint32_t* IA = CSC::IA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
-    MPI_Irecv(JA, CSC::JA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+0, Env::thread_communicators[tid], &request);
+    
+    MPI_Irecv(JA, CSC::JA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+0, MPI_COMM, &request);
     requests.push_back(request);
-    MPI_Irecv(IA, CSC::IA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+1, Env::thread_communicators[tid], &request);
+    MPI_Irecv(IA, CSC::IA_blk->nitems, MPI_UNSIGNED, source_rank, (Env::rank*3)+1, MPI_COMM, &request);
     requests.push_back(request);
-    MPI_Irecv(A, CSC::A_blk->nitems,    WEIGHT_TYPE, source_rank, (Env::rank*3)+2, Env::thread_communicators[tid], &request);
+    MPI_Irecv(A, CSC::A_blk->nitems,    WEIGHT_TYPE, source_rank, (Env::rank*3)+2, MPI_COMM, &request);
     requests.push_back(request);
 }
 
