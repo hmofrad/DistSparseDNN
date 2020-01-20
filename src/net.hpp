@@ -145,7 +145,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    maxLayers = 5;
+    //maxLayers = 5;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -349,7 +349,9 @@ void Net<Weight>::data_x_model(const int32_t tid) {
 
 template<typename Weight>
 void Net<Weight>::manager_x_worker(const int32_t tid) {
-    if(!Env::rank) sleep(5);
+    
+    //if(Env::rank == 1) {sleep(5);}
+    //printf("Rank=%d tid=%d\n", Env::rank, tid);
     uint32_t leader_rowgroup = 0;
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -365,19 +367,20 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
     const uint32_t B_off_col = 0;
     auto start = std::chrono::high_resolution_clock::now();  
     while(!Env::rank_rowgroups.empty()) {
-        pthread_mutex_lock(&Env::thread_mutex);  
+        pthread_mutex_lock(&Env::thread_mutex_q);  
         if(!Env::rank_rowgroups.empty()) {
             leader_rowgroup = Env::rank_rowgroups.front();
+            Env::processed_rowgroups.push_back(leader_rowgroup);
             Env::rank_rowgroups.pop_front();
             
             if(!tid and !Env::rank_rowgroups.empty() and add_to_my_follower_ranks_mxw(Env::rank_rowgroups.front(), last_follower_rank, last_follower_thread)) {
                 Env::rank_rowgroups.pop_front();
             }
             
-            pthread_mutex_unlock(&Env::thread_mutex);  
+            pthread_mutex_unlock(&Env::thread_mutex_q);  
         }
         else {
-            pthread_mutex_unlock(&Env::thread_mutex);
+            pthread_mutex_unlock(&Env::thread_mutex_q);
             break;
         }
         
@@ -406,13 +409,14 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
     add_to_idle_ranks_mxw(tid);
     
     
+    
     auto finish = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
 
     pthread_barrier_wait(&Env::thread_barrier);
-    if(tid == leader_tid) {
-        inputFeatures->set_rank_indices();  
-    }
+    //if(tid == leader_tid) {
+    //    inputFeatures->set_rank_indices();  
+    //}
     manager_x_worker_validate_prediction(inputFeatures->tiles, trueCategories, nCategories, leader_tid, tid);
     
     
@@ -424,9 +428,17 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
             printf("%d ", k);
         }
         printf("\n");
+        
+        //for(auto r: Env::processed_rowgroups) {
+        //    printf("%d ", r);
+        //}
+        //printf("\n");
     }
     pthread_barrier_wait(&Env::thread_barrier);
     Env::barrier();
+    
+    
+    
 }
 
 template<typename Weight>
@@ -444,7 +456,7 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
     int some_idx = 0;
     pthread_barrier_wait(&Env::thread_barrier);
     if(!tid) {
-        printf("Rank=%d tid=%d >>> \n", Env::rank, tid);
+        //printf("Rank=%d tid=%d >>> \n", Env::rank, tid);
     //pthread_mutex_lock(&Env::thread_mutex);      
         MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::ranks_window);    
             some_idx = Env::rank;
@@ -459,7 +471,7 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
 
         do {
             if(num_idle_ranks == Env::nranks) {
-                printf("Rank=%d tid=%d EXITING \n", Env::rank, tid);
+                //printf("Rank=%d tid=%d EXITING \n", Env::rank, tid);
                 
                 for(int i = 0; i < Env::nranks; i++) {
                     if(i != Env::rank) {
@@ -497,22 +509,111 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                 uint32_t start_row = csc_metadata[4];
                 uint32_t height = csc_metadata[5];
                 uint32_t width = csc_metadata[6];
-                printf("Destination Rank=%d <-- Source rank=%d [%d %d %d %lu %d %d %d]\n", Env::rank, source_rank, msg_status, rowgroup, start_layer, nedges, start_row, height, width);            
+                //printf("Destination Rank=%d <-- Source rank=%d [%d %d %d %lu %d %d %d]\n", Env::rank, source_rank, msg_status, rowgroup, start_layer, nedges, start_row, height, width);            
                 if(msg_status == 1) {
-                    printf("LOOOp\n");
+                    struct Tile<Weight>& in_A_tile = inputFeatures->tiles[rowgroup][0];
+                    struct Tile<Weight>& in_C_tile = output->tiles[rowgroup][0];
+                    in_A_tile.rank = in_C_tile.rank = Env::rank;
+                    in_A_tile.nedges = nedges;
+                    in_A_tile.start_row = in_C_tile.start_row =  start_row;
+                    in_A_tile.end_row = in_C_tile.end_row = start_row + height;
+                    in_A_tile.height = in_C_tile.height = height;
+                    in_A_tile.width = in_C_tile.width = width;
+                    
+                    in_C_tile.nedges =  0;
+                    std::shared_ptr<struct CSC<Weight>>& in_C_csc = in_C_tile.spmat;
+                    in_C_csc = std::move(std::make_shared<struct CSC<Weight>>(in_C_tile.nedges, in_C_tile.height, in_C_tile.width));
+                    
+                    std::shared_ptr<struct CSC<Weight>>& in_A_csc = in_A_tile.spmat;
+                    in_A_csc = std::move(std::make_shared<struct CSC<Weight>>(in_A_tile.nedges, in_A_tile.height, in_A_tile.width));
+                    in_A_csc->Irecv(requests, source_rank, MPI_COMM_WORLD);            
+                    MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+                    requests.clear();
+                    requests.shrink_to_fit();
+                    
+                    pthread_mutex_lock(&Env::thread_mutex_q);  
+                        Env::recv_rowgroups.push_back(rowgroup);
+                        //printf("Rank=%d tid=%d enqueue rowgroup=%d\n", Env::rank, tid, rowgroup);
+                    pthread_mutex_unlock(&Env::thread_mutex_q); 
+                    
+                    pthread_mutex_lock(&Env::thread_mutex);
+                    pthread_cond_signal(&Env::thread_cond);  
+                    pthread_mutex_unlock(&Env::thread_mutex);
+                    //printf("LOOOp\n");
                 }
                 else {
                     done = false;
                 }
             }
+            
+            if(!done) {
+                pthread_mutex_lock(&Env::thread_mutex);
+                Env::manager = false;
+                pthread_cond_broadcast(&Env::thread_cond);  
+                pthread_mutex_unlock(&Env::thread_mutex);
+            }
+            
         } while(done);
     }
     else {
-        printf("Rank=%d tid=%d leaving\n", Env::rank, tid);
+        uint32_t leader_rowgroup = 0;
+        int32_t leader_tid = 0;
+        struct Env::thread_struct& thread_st = Env::threads[tid];
+        
+        std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
+        std::shared_ptr<struct Data_Block<Weight>> b_bias;
+        
+        const uint32_t nrows = inputFeatures->tile_height;
+        const uint32_t ncols = layers[0]->ncols;
+        uint32_t B_start_col, B_end_col;
+        const uint32_t B_off_col = 0;
+        
+        while(Env::manager) {
+            //printf("Rank=%d tid=%d waiting\n", Env::rank, tid);
+            //if(Env::manager) {
+            pthread_mutex_lock(&Env::thread_mutex);
+            if(Env::manager) {
+                pthread_cond_wait(&Env::thread_cond, &Env::thread_mutex); 
+            }
+            pthread_mutex_unlock(&Env::thread_mutex);            
+            
+            pthread_mutex_lock(&Env::thread_mutex_q);  
+            if(!Env::recv_rowgroups.empty()) {
+                leader_rowgroup = Env::recv_rowgroups.front();
+                Env::processed_rowgroups.push_back(leader_rowgroup);
+                Env::recv_rowgroups.pop_front();
+                //printf("Rank=%d tid=%d dequeue rowgroup=%d\n", Env::rank, tid, leader_rowgroup);        
+                pthread_mutex_unlock(&Env::thread_mutex_q); 
+                // Process rowgroup
+                for (uint32_t l = 0; l < maxLayers; l++) {
+                    struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
+                                                             : output->tiles[leader_rowgroup][0];
+                    std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
+                    struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
+                    std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
+                    struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
+                                                             : inputFeatures->tiles[leader_rowgroup][0];
+                    std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
+                    b_bias = biasWeightVecs[l];      
+                    B_start_col = 0;
+                    B_end_col = B_CSC->ncols;
+                    data_x_data_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
+                                       nrows, ncols, B_start_col, B_end_col, B_off_col, 
+                                       thread_st, leader_tid, tid);       
+                }   
+            }
+            else {
+                pthread_mutex_unlock(&Env::thread_mutex_q); 
+                continue;
+            }
+        }
+        
+        
+        
         //pthread_mutex_lock(&Env::thread_mutex);  
         //pthread_mutex_unlock(&Env::thread_mutex);  
     }
-    printf("Rank=%d tid=%d waiting for zero\n", Env::rank, tid);
+    //printf("Rank=%d tid=%d waiting for zero\n", Env::rank, tid);
     pthread_barrier_wait(&Env::thread_barrier);
     
     
@@ -601,6 +702,8 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
 
 template<typename Weight>
 bool Net<Weight>::add_to_my_follower_ranks_mxw(const uint32_t rowgroup, int32_t& last_follower_rank, int32_t& last_follower_thread) {
+    MPI_Request request;
+    std::vector<MPI_Request> requests;
     bool done = false;
     int window_host_rank = 0;
     int num_idle_ranks = 0;
@@ -635,17 +738,28 @@ bool Net<Weight>::add_to_my_follower_ranks_mxw(const uint32_t rowgroup, int32_t&
         }
     MPI_Win_unlock(window_host_rank, Env::ranks_window);
     if(num_idle_ranks > 0) {
+        struct Tile<Weight>& out_tile = inputFeatures->tiles[rowgroup][0];
         uint32_t msg_status = 1;
         uint32_t start_layer = 0;
-        uint32_t nedges = (uint32_t) inputFeatures->tiles[rowgroup][0].nedges;
-        uint32_t start_row = inputFeatures->tiles[rowgroup][0].start_row;
-        uint32_t height = inputFeatures->tiles[rowgroup][0].height;
-        uint32_t width = inputFeatures->tiles[rowgroup][0].width;
+        uint32_t nedges = (uint32_t) out_tile.nedges;
+        uint32_t start_row = out_tile.start_row;
+        uint32_t height = out_tile.height;
+        uint32_t width = out_tile.width;
         
         std::vector<uint32_t> csc_metadata = {msg_status, rowgroup, start_layer, nedges, start_row, height, width};
         MPI_Send(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, destination_rank, destination_rank, MPI_COMM_WORLD);        
-
-        printf("Source rank=%d --> Destination Rank=%d [%d %d %d %d %d %d %d]\n", Env::rank, destination_rank, msg_status, rowgroup, start_layer, nedges, start_row, height, width);
+        
+        std::shared_ptr<struct CSC<Weight>>& out_csc = out_tile.spmat;
+        out_csc->Isend(requests, destination_rank, MPI_COMM_WORLD);
+        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+        requests.clear();
+        requests.shrink_to_fit();
+        out_tile.rank = destination_rank;
+        // Delete tile
+        Env::send_rowgroups.push_back(rowgroup);
+        done = true;
+        //printf("Source rank=%d --> Destination Rank=%d [%d %d %d %d %d %d %d]\n", Env::rank, destination_rank, msg_status, rowgroup, start_layer, nedges, start_row, height, width);
+        
     }
         /*
         if((destination_rank >= 0) and (destination_tid >= 0)) {
