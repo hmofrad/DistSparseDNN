@@ -125,6 +125,11 @@ namespace Env {
     std::vector<MPI_Comm> thread_communicators;
     std::vector<int32_t> threads_rank;
     std::vector<int32_t> threads_nranks;
+    
+    int32_t* idle_ranks;
+    MPI_Win ranks_window;
+    int32_t manager = -1;
+    
     /*
     void create_thread_communicators(std::vector<MPI_Group>& thread_groups_, 
                                      std::vector<MPI_Group>& thread_groups,
@@ -233,6 +238,9 @@ int Env::init() {
     for(int32_t i = 0; i < Env::nthreads; i++) {
         create_mpi_asynch_shared_mem<int32_t>(&Env::idle_threads[i], Env::nranks+1, &Env::thread_windows[i], Env::thread_communicators[i]);
     }        
+    
+    create_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, Env::nranks+1, &Env::ranks_window, MPI_COMM_WORLD);
+    
     
     /*
     if(Env::rank == 3) {
@@ -381,6 +389,8 @@ int Env::finalize() {
     for(int32_t i = 0; i < Env::nthreads; i++) {
         destroy_thread_communicators(&Env::thread_groups_[i], &Env::thread_groups[i], &Env::thread_communicators[i]);
     }
+    
+    destroy_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, &Env::ranks_window);
     
     MPI_Barrier(MPI_COMM_WORLD);
 
