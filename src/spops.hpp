@@ -300,7 +300,7 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
                                         
     if(tid == leader_tid) {
         int count = 0;
-        for(uint32_t rowgroup:  Env::rank_rowgroups) {
+        for(uint32_t rowgroup:  Env::processed_rowgroups) {
             struct Tile<Weight>& A_tile = tiles[rowgroup][0];
             std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
             uint32_t start_row = A_tile.start_row;
