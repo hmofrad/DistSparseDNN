@@ -36,6 +36,9 @@ namespace Env {
     
     std::vector<uint32_t> thread_rowgroup;
     std::deque<uint32_t> rank_rowgroups;
+    std::deque<uint32_t> processed_rowgroups;
+    std::deque<uint32_t> recv_rowgroups;
+    std::deque<uint32_t> send_rowgroups;
     std::vector<struct counter_struct> counters; 
     std::vector<uint32_t> scores;
     int iteration = 0;
@@ -54,6 +57,9 @@ namespace Env {
     pthread_mutex_t thread_mutex;
     std::vector<pthread_cond_t> thread_conds; 
     std::vector<pthread_mutex_t> thread_mutexes;
+    
+    
+    //bool manager = true;
     
     std::deque<int32_t> follower_threads;
     uint32_t num_finished_threads = 0;
@@ -128,7 +134,8 @@ namespace Env {
     
     int32_t* idle_ranks;
     MPI_Win ranks_window;
-    int32_t manager = -1;
+    pthread_mutex_t thread_mutex_q;
+    bool manager = true;
     
     /*
     void create_thread_communicators(std::vector<MPI_Group>& thread_groups_, 
@@ -195,6 +202,8 @@ int Env::init() {
     pthread_barrier_init(&thread_barrier, NULL, Env::nthreads);
     thread_mutex = PTHREAD_MUTEX_INITIALIZER;
     thread_cond = PTHREAD_COND_INITIALIZER;
+    
+    thread_mutex_q = PTHREAD_MUTEX_INITIALIZER;
     
     thread_mutexes.resize(Env::nthreads);
     thread_conds.resize(Env::nthreads);
