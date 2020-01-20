@@ -58,7 +58,6 @@ class Net {
         void manager_x_worker(const int32_t tid);
         uint32_t hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t tid);
         void hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid);
-        //void hybrid(std::vector<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t start_layer, const int32_t leader, const int32_t tid);
         
         bool add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid);
         int32_t add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid);
@@ -66,6 +65,9 @@ class Net {
         
         int32_t add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& start_layer, const int32_t tid);
         bool add_to_my_follower_ranks(const uint32_t leader_rowgroup, const uint32_t start_layer, const std::deque<int32_t> my_threads, const int32_t tid);
+        
+        void add_to_idle_ranks_mxw(const int32_t tid);
+        bool add_to_my_follower_ranks_mxw(const uint32_t rowgroup, int32_t& last_follower_rank, int32_t& last_follower_thread);
         
         
 };
@@ -143,7 +145,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    //maxLayers = 2;
+    maxLayers = 5;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -347,9 +349,12 @@ void Net<Weight>::data_x_model(const int32_t tid) {
 
 template<typename Weight>
 void Net<Weight>::manager_x_worker(const int32_t tid) {
+    if(!Env::rank) sleep(5);
     uint32_t leader_rowgroup = 0;
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
+    int32_t last_follower_rank = -1;
+    int32_t last_follower_thread = -1;
     
     std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
@@ -360,11 +365,15 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
     const uint32_t B_off_col = 0;
     auto start = std::chrono::high_resolution_clock::now();  
     while(!Env::rank_rowgroups.empty()) {
-        
         pthread_mutex_lock(&Env::thread_mutex);  
         if(!Env::rank_rowgroups.empty()) {
             leader_rowgroup = Env::rank_rowgroups.front();
             Env::rank_rowgroups.pop_front();
+            
+            if(!tid and !Env::rank_rowgroups.empty() and add_to_my_follower_ranks_mxw(Env::rank_rowgroups.front(), last_follower_rank, last_follower_thread)) {
+                Env::rank_rowgroups.pop_front();
+            }
+            
             pthread_mutex_unlock(&Env::thread_mutex);  
         }
         else {
@@ -389,6 +398,14 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
                                thread_st, leader_tid, tid);       
         }   
     }
+    //printf("Rank=%d tid=%d done\n", Env::rank, tid);
+    
+    
+    //leader_rowgroup = 0;
+    //uint32_t start_layer = 0;     
+    add_to_idle_ranks_mxw(tid);
+    
+    
     auto finish = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
 
@@ -397,6 +414,299 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
         inputFeatures->set_rank_indices();  
     }
     manager_x_worker_validate_prediction(inputFeatures->tiles, trueCategories, nCategories, leader_tid, tid);
+    
+    
+    pthread_barrier_wait(&Env::thread_barrier);
+    Env::barrier();    
+    if (!Env::rank and !tid) {
+        for(int i = 0; i < Env::nranks+1; i++) {
+            int& k = *(Env::idle_ranks + i);
+            printf("%d ", k);
+        }
+        printf("\n");
+    }
+    pthread_barrier_wait(&Env::thread_barrier);
+    Env::barrier();
+}
+
+template<typename Weight>
+void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
+    MPI_Request request;
+    std::vector<MPI_Request> requests;
+    MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();   
+    
+    bool done = true;
+    int window_host_rank = 0;
+    int num_idle_ranks = 0;
+    int some_val = 1;
+    int some_res = 0;
+    int some_cmp = 0;
+    int some_idx = 0;
+    pthread_barrier_wait(&Env::thread_barrier);
+    if(!tid) {
+        printf("Rank=%d tid=%d >>> \n", Env::rank, tid);
+    //pthread_mutex_lock(&Env::thread_mutex);      
+        MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::ranks_window);    
+            some_idx = Env::rank;
+            MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, some_idx, MPI_REPLACE, Env::ranks_window);
+            MPI_Win_flush(window_host_rank, Env::ranks_window);
+            
+            some_idx = Env::nranks;
+            MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, some_idx, MPI_SUM, Env::ranks_window);
+            MPI_Win_flush(window_host_rank, Env::ranks_window);
+            num_idle_ranks = some_res + 1;
+        MPI_Win_unlock(window_host_rank, Env::ranks_window);    
+
+        do {
+            if(num_idle_ranks == Env::nranks) {
+                printf("Rank=%d tid=%d EXITING \n", Env::rank, tid);
+                
+                for(int i = 0; i < Env::nranks; i++) {
+                    if(i != Env::rank) {
+                        int idle_rank = i;
+                        std::vector<uint32_t> csc_metadata = {0, 0, 0, 0, 0, 0, 0};
+                        MPI_Isend(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, idle_rank, idle_rank, MPI_COMM_WORLD, &request);
+                        requests.push_back(request);
+                    }
+                }
+                MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+                requests.clear();
+                requests.shrink_to_fit();
+                done = false;
+            }
+            else {
+                MPI_Status status;
+                int source_rank;
+                int source_tag;
+
+                do{    
+                    int flag = 0;
+                    while(!flag) {
+                        MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, MPI_COMM_WORLD, &flag, &status);
+                    }
+                    source_rank = status.MPI_SOURCE;
+                    source_tag = status.MPI_TAG;
+                } while(source_tag != Env::rank);
+                
+                std::vector<uint32_t> csc_metadata(7);
+                MPI_Recv(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, source_rank, source_tag, MPI_COMM_WORLD, &status);
+                uint32_t msg_status = csc_metadata[0];
+                uint32_t rowgroup = csc_metadata[1];
+                uint32_t start_layer = csc_metadata[2];
+                uint64_t nedges = (uint64_t) csc_metadata[3];
+                uint32_t start_row = csc_metadata[4];
+                uint32_t height = csc_metadata[5];
+                uint32_t width = csc_metadata[6];
+                printf("Destination Rank=%d <-- Source rank=%d [%d %d %d %lu %d %d %d]\n", Env::rank, source_rank, msg_status, rowgroup, start_layer, nedges, start_row, height, width);            
+                if(msg_status == 1) {
+                    printf("LOOOp\n");
+                }
+                else {
+                    done = false;
+                }
+            }
+        } while(done);
+    }
+    else {
+        printf("Rank=%d tid=%d leaving\n", Env::rank, tid);
+        //pthread_mutex_lock(&Env::thread_mutex);  
+        //pthread_mutex_unlock(&Env::thread_mutex);  
+    }
+    printf("Rank=%d tid=%d waiting for zero\n", Env::rank, tid);
+    pthread_barrier_wait(&Env::thread_barrier);
+    
+    
+    
+    //pthread_mutex_unlock(&Env::thread_mutex);  
+    
+    /*
+    //
+    if(num_idle_threads_global == (Env::nranks*Env::nthreads)) {
+        printf("Rank=%d tid=%d S=%d Exiting\n", Env::rank, tid, num_idle_threads_global);
+        done = false;
+    }
+    else {
+        if(!tid) {
+
+            //done = (bool) msg_status;
+        }
+        pthread_barrier_wait(&Env::thread_barrier);
+    }
+    return(done);
+    */
+    /*
+    if(num_follower_ranks == Env::nranks) {
+        for(int i = 0; i < Env::nranks; i++) {
+            if(i != Env::rank) {
+                int follower_rank = i;
+                std::vector<uint32_t> csc_metadata = {0, 0, 0, 0, 0, 0, 0};
+                MPI_Isend(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, follower_rank, follower_rank, Env::thread_communicators[tid], &request);
+                requests.push_back(request);
+            }
+        }
+        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+        requests.clear();
+        requests.shrink_to_fit();
+        done = 0;
+    }
+    else {
+        MPI_Status status;
+        int source_rank;
+        int source_tag;
+
+        do{    
+            int flag = 0;
+            while(!flag) {
+                MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, Env::thread_communicators[tid], &flag, &status);
+            }
+            source_rank = status.MPI_SOURCE;
+            source_tag = status.MPI_TAG;
+        } while(source_tag != Env::rank);
+        
+        
+        std::vector<uint32_t> csc_metadata(7);
+        MPI_Recv(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, source_rank, source_tag, Env::thread_communicators[tid], &status);
+        
+        uint32_t msg_status = csc_metadata[0];
+        
+        if(msg_status) {
+            leader_rowgroup = csc_metadata[1];
+            start_layer = csc_metadata[2];
+            uint64_t csc_nedges = (uint64_t) csc_metadata[3];
+            uint32_t csc_start_row = csc_metadata[4];
+            uint32_t csc_height = csc_metadata[5];
+            uint32_t csc_width = csc_metadata[6];
+            if(not(start_layer%2)) {
+                inputFeatures->update_in_subtiles(leader_rowgroup, start_layer, output->tiles, csc_nedges, csc_start_row, csc_height, csc_width, tid);
+            }
+            else {
+                output->update_in_subtiles(leader_rowgroup, start_layer, inputFeatures->tiles, csc_nedges, csc_start_row, csc_height, csc_width, tid);
+            }
+            
+            struct Tile<Weight>& A_tile = (not(start_layer%2)) ? inputFeatures->tiles[leader_rowgroup][0].in_subtiles.back()
+                                                               : output->tiles[leader_rowgroup][0].in_subtiles.back();
+            
+            std::shared_ptr<struct CSC<Weight>>& A_CSC = A_tile.spmat;
+            A_CSC->Irecv(requests,source_rank, tid);
+            
+            MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+            requests.clear();
+            requests.shrink_to_fit();
+        }
+        done = msg_status;
+    }
+    */
+    
+}
+
+template<typename Weight>
+bool Net<Weight>::add_to_my_follower_ranks_mxw(const uint32_t rowgroup, int32_t& last_follower_rank, int32_t& last_follower_thread) {
+    bool done = false;
+    int window_host_rank = 0;
+    int num_idle_ranks = 0;
+    int idle_rank = 0;
+    int destination_rank = 0;
+    int some_val = 0;
+    int some_res = 0;
+    int some_cmp = 0;
+    int some_idx = 0;
+    std::vector<int32_t> follower_ranks;   
+    //int destination_rank = -1;
+    //int destination_tid = -1;
+    
+    MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::ranks_window);
+        some_idx = Env::nranks;
+        MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, some_idx, MPI_NO_OP, Env::ranks_window);
+        MPI_Win_flush(window_host_rank, Env::ranks_window);
+        num_idle_ranks = some_res;
+        if(num_idle_ranks) {
+            for(int32_t i = 1; i < Env::nranks; i++) {
+                destination_rank = (Env::rank+i) % Env::nranks;
+                some_idx = destination_rank;
+                some_val = 0;
+                some_cmp = 1;
+                MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, some_idx, MPI_NO_OP, Env::ranks_window);
+                MPI_Win_flush_all(Env::ranks_window);
+                idle_rank = some_res;
+                if(idle_rank) {
+                    break;
+                }
+            }
+        }
+    MPI_Win_unlock(window_host_rank, Env::ranks_window);
+    if(num_idle_ranks > 0) {
+        uint32_t msg_status = 1;
+        uint32_t start_layer = 0;
+        uint32_t nedges = (uint32_t) inputFeatures->tiles[rowgroup][0].nedges;
+        uint32_t start_row = inputFeatures->tiles[rowgroup][0].start_row;
+        uint32_t height = inputFeatures->tiles[rowgroup][0].height;
+        uint32_t width = inputFeatures->tiles[rowgroup][0].width;
+        
+        std::vector<uint32_t> csc_metadata = {msg_status, rowgroup, start_layer, nedges, start_row, height, width};
+        MPI_Send(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, destination_rank, destination_rank, MPI_COMM_WORLD);        
+
+        printf("Source rank=%d --> Destination Rank=%d [%d %d %d %d %d %d %d]\n", Env::rank, destination_rank, msg_status, rowgroup, start_layer, nedges, start_row, height, width);
+    }
+        /*
+        if((destination_rank >= 0) and (destination_tid >= 0)) {
+
+            //std::exit(0);                                                           
+        }
+        */
+        return(done);
+    /*
+    if(not follower_ranks.empty()) {
+        MPI_Request request;
+        std::vector<MPI_Request> requests;
+        
+        std::vector<struct Tile<Weight>> subtiles;
+        std::vector<std::shared_ptr<struct CSC<Weight>>> subcscs;
+        uint32_t nthreads_local = my_threads.size();
+        if(not(start_layer%2)) {
+            inputFeatures->update_out_subtiles(leader_rowgroup, start_layer, output->tiles, subtiles, subcscs, follower_ranks, nthreads_local, tid);
+        }
+        else {
+            output->update_out_subtiles(leader_rowgroup, start_layer, inputFeatures->tiles, subtiles, subcscs, follower_ranks, nthreads_local, tid);
+        }
+        for(uint32_t k = 1; k < subtiles.size(); k++) {
+            struct Tile<Weight> subtile = subtiles[k];
+            uint32_t msg_status = (subtile.nedges) ? 1 : 2;
+
+            std::vector<uint32_t> csc_metadata = {msg_status, leader_rowgroup, start_layer, (uint32_t)subtile.nedges, subtile.start_row, subtile.height, subtile.width};
+            MPI_Isend(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, subtile.rank, subtile.rank, Env::thread_communicators[tid], &request);        
+            requests.push_back(request);
+            
+            if(msg_status == 2) {
+                done = false;
+            }
+        }
+        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+        requests.clear();
+        requests.shrink_to_fit();
+        
+        for(uint32_t k = 1; k < subtiles.size(); k++) {
+            struct Tile<Weight> subtile = subtiles[k];
+            std::shared_ptr<struct CSC<Weight>>& subcsc = subcscs[k];
+            subcsc->Isend(requests, subtile.rank, tid);
+        }
+        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
+        requests.clear();
+        requests.shrink_to_fit();
+        
+        subtiles.clear();
+        subtiles.shrink_to_fit();
+        subcscs.clear();
+        subcscs.shrink_to_fit();
+        
+        follower_ranks.clear();
+        follower_ranks.shrink_to_fit();
+        
+        struct Tile<Weight>& A_tile = (not(start_layer%2)) ? inputFeatures->tiles[leader_rowgroup][0]
+                                                           : output->tiles[leader_rowgroup][0];
+    }
+    */
+
+    
 }
 
 
