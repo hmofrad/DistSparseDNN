@@ -14,8 +14,8 @@
 #include <omp.h>
 #include <thread>
 #include <sys/sysinfo.h>
-#include <numa.h>
-//#include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
+//#include <numa.h>
+#include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
 #include "types.hpp"
 
 
@@ -32,7 +32,7 @@ namespace Env {
     std::vector<int> threads_socket_id;
     int num_unique_cores = 0;
     const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
-    bool NUMA_ALLOC = false;
+    bool NUMA_ALLOC = true;
     
     std::vector<uint32_t> thread_rowgroup;
     std::deque<uint32_t> rank_rowgroups;
