@@ -582,16 +582,16 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                     //while(!Env::recv_rowgroups.empty()) {
                     //    std::this_thread::sleep_for(std::chrono::nanoseconds(10));
                     //}
-                //printf("Sleep %d is done \n", Env::rank);
+                printf("Rank=%d Recv is done\n", Env::rank);
                 }
                 else {
-                    printf("exiting %d %d\n", Env::rank, Env::recv_rowgroups.empty());
+                    printf("Rank=%d recv size=%d Exiting\n", Env::rank, Env::recv_rowgroups.empty());
                     done = false;
                 }
             }
             
             if(!done) {
-                printf("1. Rank=%d size of queue= %lu\n", Env::rank, Env::recv_rowgroups.size());
+                printf("Rank=%d false size of queue= %lu\n", Env::rank, Env::recv_rowgroups.size());
                 
                 
                 /*
@@ -634,20 +634,20 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                     
                 }
                 */
-                printf("2. Rank=%d size of queue= %lu\n", Env::rank, Env::recv_rowgroups.size());
+                printf("Rank=%d false size of queue= %lu\n", Env::rank, Env::recv_rowgroups.size());
                 
                 pthread_mutex_lock(&Env::thread_mutex);
                 Env::manager = false;
-                Env::count = 0;
+                //Env::count = 0;
                 pthread_cond_broadcast(&Env::thread_cond);  
                 pthread_mutex_unlock(&Env::thread_mutex);
-                printf("3. Rank=%d size of queue= %lu\n", Env::rank, Env::recv_rowgroups.size());
+                printf("Rank=%d false size of queue= %lu\n", Env::rank, Env::recv_rowgroups.size());
             }
             else{
-                printf("Rank=%d 0000 wait for queue\n", Env::rank);
+                printf("Rank=%d true wait for queue(%lu)\n", Env::rank, Env::recv_rowgroups.size());
                 pthread_mutex_lock(&Env::thread_mutex_q);
                 Env::recv_rowgroups.insert(Env::recv_rowgroups.begin(), temp_rowgroups.begin(), temp_rowgroups.end());
-                Env::count = Env::recv_rowgroups.size();
+                //Env::count = Env::recv_rowgroups.size();
                 pthread_mutex_unlock(&Env::thread_mutex_q);
                 
                 pthread_mutex_lock(&Env::thread_mutex);
@@ -656,7 +656,7 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
 
                 temp_rowgroups.clear();
                 temp_rowgroups.shrink_to_fit();
-                printf("Rank=%d 1111 wait for queue\n", Env::rank);
+                printf("Rank=%d true wait for queue(%lu)\n", Env::rank,  Env::recv_rowgroups.size());
                 bool notEmpty = true;
                 do{
                     
@@ -671,7 +671,7 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                        notEmpty = Env::recv_rowgroups.empty();
                        pthread_mutex_unlock(&Env::thread_mutex_q);
                 }while(notEmpty);
-                printf("Rank=%d 2222 wait for queue\n", Env::rank);
+                printf("Rank=%d true wait for queue(%lu)\n", Env::rank,  Env::recv_rowgroups.size());
                 
                 
                 /*
@@ -716,7 +716,7 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                 leader_rowgroup = Env::recv_rowgroups.front();
                 Env::processed_rowgroups.push_back(leader_rowgroup);
                 Env::recv_rowgroups.pop_front();
-                printf("Rank=%d tid=%d dequeue rowgroup=%d empty=%d \n", Env::rank, tid, leader_rowgroup, Env::recv_rowgroups.empty());
+                printf("Rank=%d tid=%d dequeue rowgroup=%d size=%lu \n", Env::rank, tid, leader_rowgroup, Env::recv_rowgroups.size());
                 pthread_mutex_unlock(&Env::thread_mutex_q); 
                 // Process rowgroup
                 for (uint32_t l = 0; l < maxLayers; l++) {
@@ -767,10 +767,10 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
     
     //printf("Rank=%d tid=%d waiting for zero count=%d\n", Env::rank, tid, Env::count);
     
-    //pthread_barrier_wait(&Env::thread_barrier);
+    pthread_barrier_wait(&Env::thread_barrier);
     
     if(!tid)
-        printf(">>>.Rank=%d tid=%d DONE %d\n", Env::rank, tid, Env::count);
+        printf("Rank=%d tid=%d DONE %d\n", Env::rank, tid, Env::count);
     
     //pthread_mutex_unlock(&Env::thread_mutex);  
     
