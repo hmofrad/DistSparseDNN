@@ -290,7 +290,6 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct CSC<Wei
     Env::barrier();
 }
 
-
 template<typename Weight>
 inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct Tile<Weight>>> tiles,
                                 const std::vector<uint32_t> trueCategories,
