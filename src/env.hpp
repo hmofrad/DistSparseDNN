@@ -57,7 +57,7 @@ namespace Env {
     pthread_mutex_t thread_mutex;
     std::vector<pthread_cond_t> thread_conds; 
     std::vector<pthread_mutex_t> thread_mutexes;
-    
+    pthread_cond_t manager_cond; 
     
     //bool manager = true;
     
@@ -135,7 +135,9 @@ namespace Env {
     int32_t* idle_ranks;
     MPI_Win ranks_window;
     pthread_mutex_t thread_mutex_q;
+    pthread_mutex_t manager_mutex;
     bool manager = true;
+    int count = 0;
     
     /*
     void create_thread_communicators(std::vector<MPI_Group>& thread_groups_, 
@@ -204,6 +206,7 @@ int Env::init() {
     thread_cond = PTHREAD_COND_INITIALIZER;
     
     thread_mutex_q = PTHREAD_MUTEX_INITIALIZER;
+    manager_mutex = PTHREAD_MUTEX_INITIALIZER;
     
     thread_mutexes.resize(Env::nthreads);
     thread_conds.resize(Env::nthreads);
