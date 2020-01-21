@@ -683,9 +683,10 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                 */
                 
                 while(Env::count != Env::nthreads - 1) {
-                    pthread_mutex_lock(&Env::thread_mutex);
-                    pthread_cond_broadcast(&Env::thread_cond);  
-                    pthread_mutex_unlock(&Env::thread_mutex);
+                    std::this_thread::sleep_for(std::chrono::nanoseconds(10));
+                    //pthread_mutex_lock(&Env::thread_mutex);
+                    //pthread_cond_broadcast(&Env::thread_cond);  
+                    //pthread_mutex_unlock(&Env::thread_mutex);
                     //printf("Rank=%d broadcast\n", Env::rank);
                 }
                 
