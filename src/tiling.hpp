@@ -1540,6 +1540,7 @@ void Tiling<Weight>::update_in_subtiles(const uint32_t leader_rowgroup, const ui
     
     //subtile.spmat = std::move(std::make_shared<struct CSC<Weight>>(nedges, height, width));
      
+     
     this_tile.in_subtiles.back().spmat = std::move(std::make_shared<struct CSC<Weight>>(csc_nedges, csc_height, csc_width));
     other_tile.in_subtiles.back().spmat = std::move(std::make_shared<struct CSC<Weight>>(0, csc_height, csc_width)); 
 
