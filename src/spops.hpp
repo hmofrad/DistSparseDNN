@@ -327,7 +327,7 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
                 }
             }
         }
-        printf("Rank=%d Count=%d\n", Env::rank, count);
+        
         int counts = 0;
         MPI_Allreduce(&count, &counts, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
         bool passed = (counts == nCategories);
