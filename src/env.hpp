@@ -62,8 +62,13 @@ namespace Env {
     //bool manager = true;
     
     std::deque<int32_t> follower_threads;
+
     uint32_t num_finished_threads = 0;
     std::vector<bool> finished_threads;
+
+    std::vector<std::deque<int32_t>> numa_follower_threads;
+    std::vector<pthread_cond_t> numa_thread_cond;
+    std::vector<pthread_mutex_t> numa_thread_mutex;
     
     int init();
     void barrier();
@@ -201,19 +206,29 @@ int Env::init() {
     execution_time.resize(Env::nthreads);
     hybrid_probe_time.resize(Env::nthreads);
     
-    pthread_barrier_init(&thread_barrier, NULL, Env::nthreads);
-    thread_mutex = PTHREAD_MUTEX_INITIALIZER;
-    thread_cond = PTHREAD_COND_INITIALIZER;
+    pthread_barrier_init(&Env::thread_barrier, NULL, Env::nthreads);
+    Env::thread_mutex = PTHREAD_MUTEX_INITIALIZER;
+    Env::thread_cond = PTHREAD_COND_INITIALIZER;
     
-    thread_mutex_q = PTHREAD_MUTEX_INITIALIZER;
-    manager_mutex = PTHREAD_MUTEX_INITIALIZER;
+    Env::thread_mutex_q = PTHREAD_MUTEX_INITIALIZER;
+    Env::manager_mutex = PTHREAD_MUTEX_INITIALIZER;
     
-    thread_mutexes.resize(Env::nthreads);
-    thread_conds.resize(Env::nthreads);
-    thread_barriers.resize(Env::nthreads);
+    Env::thread_mutexes.resize(Env::nthreads);
+    Env::thread_conds.resize(Env::nthreads);
+    Env::thread_barriers.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++) {
-        thread_mutexes[i] = PTHREAD_MUTEX_INITIALIZER;
-        thread_conds[i] = PTHREAD_COND_INITIALIZER;
+        Env::thread_mutexes[i] = PTHREAD_MUTEX_INITIALIZER;
+        Env::thread_conds[i] = PTHREAD_COND_INITIALIZER;
+        pthread_barrier_init(&Env::thread_barriers[i], NULL, 1);
+    }
+    numa_follower_threads.resize(Env::nsockets);
+    numa_thread_mutex.resize(Env::nsockets);
+    numa_thread_cond.resize(Env::nsockets);
+    
+    
+    for(int32_t i = 0; i < Env::nsockets; i++) {
+        Env::numa_thread_mutex[i] = PTHREAD_MUTEX_INITIALIZER;
+        Env::numa_thread_cond[i] = PTHREAD_COND_INITIALIZER;
     }
     
     threads.resize(Env::nthreads);
