@@ -296,7 +296,7 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
                                 const int32_t nCategories,
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
-                                        
+    pthread_barrier_wait(&Env::thread_barrier);                                        
     if(tid == leader_tid) {
         int count = 0;
         for(uint32_t rowgroup:  Env::processed_rowgroups) {
