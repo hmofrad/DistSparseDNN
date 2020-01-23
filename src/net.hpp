@@ -46,6 +46,8 @@ class Net {
         bool repartition = false;
         bool greedy = true;
         uint32_t split_factor = 16;
+        bool rank_work_sharing = false;
+        bool numa_queues = true;
         
         void printTimes();
         void printTimesExcel();
@@ -61,7 +63,7 @@ class Net {
         
         bool add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid);
         int32_t add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid);
-        void    add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid);
+        bool    add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid);
         
         int32_t add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& start_layer, const int32_t tid);
         bool add_to_my_follower_ranks(const uint32_t leader_rowgroup, const uint32_t start_layer, const std::deque<int32_t> my_threads, const int32_t tid);
@@ -145,7 +147,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    ///maxLayers = 5;
+    //maxLayers = 5;
     layers.resize(maxLayers);
     biasWeightVecs.resize(maxLayers);
     for(uint32_t i = 0; i < maxLayers; i++) {
@@ -373,7 +375,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
             Env::processed_rowgroups.push_back(leader_rowgroup);
             Env::rank_rowgroups.pop_front();
             
-            if(!tid and !Env::rank_rowgroups.empty()) {
+            if(rank_work_sharing and !tid and !Env::rank_rowgroups.empty()) {
                 add_to_my_follower_ranks_mxw();
             }
             else {
@@ -402,27 +404,14 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
                                thread_st, leader_tid, tid);       
         }   
     }
-    //printf("Rank=%d tid=%d done\n", Env::rank, tid);
-    
-    
-    //leader_rowgroup = 0;
-    //uint32_t start_layer = 0;     
-    add_to_idle_ranks_mxw(tid);
-    
-    
+
+    if(rank_work_sharing) add_to_idle_ranks_mxw(tid);
     
     auto finish = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
 
-    pthread_barrier_wait(&Env::thread_barrier);
-    //if(tid == leader_tid) {
-    //    inputFeatures->set_rank_indices();  
-    //}
     manager_x_worker_validate_prediction(inputFeatures->tiles, trueCategories, nCategories, leader_tid, tid);
     
-    
-    pthread_barrier_wait(&Env::thread_barrier);
-    Env::barrier();    
     if (!Env::rank and !tid) {
         printf("RMA: [ ");
         for(int i = 0; i < Env::nranks+1; i++) {
@@ -430,20 +419,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
             printf("%d ", k);
         }
         printf("]\n");
-        
-        //for(auto r: Env::processed_rowgroups) {
-        //    printf("%d ", r);
-        //}
-        //printf("\n");
     }
-    //if(!tid)
-       // printf("Rank=%d: rank=%lu processed=%lu send=%lu recv=%lu\n", Env::rank, Env::rank_rowgroups.size(), Env::processed_rowgroups.size(), Env::send_rowgroups.size(), Env::recv_rowgroups.size());
-    
-    pthread_barrier_wait(&Env::thread_barrier);
-    Env::barrier();
-    
-    
-    
 }
 
 template<typename Weight>
@@ -461,10 +437,6 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
     pthread_barrier_wait(&Env::thread_barrier);
     if(Env::nthreads == 1) return;
     if(!tid) {
-        //printf("Rank=%d tid=%d >>> \n", Env::rank, tid);
-    //pthread_mutex_lock(&Env::thread_mutex);      
-  
-
         do {
             int num_idle_ranks = 0;
             MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::ranks_window);    
@@ -479,25 +451,18 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                 num_idle_ranks = some_res + 1;
             MPI_Win_unlock(window_host_rank, Env::ranks_window);  
             
-          //  printf("Rank=%d num_idle_ranks=%d: A\n", Env::rank, num_idle_ranks);
-            if(num_idle_ranks == Env::nranks) {
-                //printf("Rank=%d tid=%d EXITING \n", Env::rank, tid);
-                
+            if(num_idle_ranks == Env::nranks) {    
                 for(int i = 0; i < Env::nranks; i++) {
                     if(i != Env::rank) {
                         int idle_rank = i;
-                        //std::vector<uint32_t> csc_metadata = {0, 0, 0, 0, 0, 0, 0};
-                        //MPI_Isend(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, idle_rank, idle_rank, MPI_COMM_WORLD, &request);
                         char handshake = 0;
                         MPI_Isend(&handshake, 1, MPI_CHAR, idle_rank, idle_rank, MPI_COMM_WORLD, &request);
-                        //printf("Rank=%d --> %d handshake=%d\n", Env::rank, idle_rank, handshake);
                         requests.push_back(request);
                     }
                 }
                 MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
                 requests.clear();
                 requests.shrink_to_fit();
-                
                 done = false;
             }
             else {
@@ -516,8 +481,6 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                 
                 char handshake = 0;
                 MPI_Recv(&handshake, 1, MPI_CHAR, source_rank, source_tag, MPI_COMM_WORLD, &status);        
-               // printf("Rank=%d <-- %d handshake=%d\n", Env::rank, source_rank, handshake);
-                //printf("Destination Rank=%d <-- Source rank=%d [%d %d %d %lu %d %d %d]\n", Env::rank, source_rank, msg_status, rowgroup, start_layer, nedges, start_row, height, width);            
                 
                 if(handshake == 1) { 
                     std::vector<std::vector<uint32_t>> csc_metadatas(Env::nthreads);
@@ -533,8 +496,6 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                     
                     for(int32_t i = 0; i < Env::nthreads; i++) {  
                         std::vector<uint32_t>& csc_metadata = csc_metadatas[i];
-                        //for(auto c: csc_metadata) {printf("%d ", c);} printf("\n");
-                        //MPI_Irecv(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, source_rank, source_tag, MPI_COMM_WORLD, &status);
                         uint32_t msg_status = csc_metadata[0];
                         uint32_t rowgroup = csc_metadata[1];
                         uint32_t start_layer = csc_metadata[2];
@@ -561,148 +522,49 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                         in_A_csc->Irecv(requests, source_rank, MPI_COMM_WORLD);            
                         
                         temp_rowgroups.push_back(rowgroup);
-                       // break;
-
                     }
                     MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
                     requests.clear();
                     requests.shrink_to_fit();
-                    
-                    //pthread_mutex_lock(&Env::thread_mutex_q);  
-                      //  Env::recv_rowgroups.insert(Env::recv_rowgroups.begin(), temp_rowgroups.begin(), temp_rowgroups.end());
-                        
-                        //    printf("Rank=%d tid=%d enqueue nrowgroup=%lu\n", Env::rank, tid, temp_rowgroups.size());
-                    //pthread_mutex_unlock(&Env::thread_mutex_q); 
-                    
 
-                    
                     csc_metadatas.clear();
                     csc_metadatas.shrink_to_fit();
-                    //printf("Sleep %d %lu\n", Env::rank, Env::recv_rowgroups.size());
                     
-                    //while(!Env::recv_rowgroups.empty()) {
-                    //    std::this_thread::sleep_for(std::chrono::nanoseconds(10));
-                    //}
-                //printf("Rank=%d Recv is done\n", Env::rank);
+                    pthread_mutex_lock(&Env::thread_mutex_q);
+                    Env::recv_rowgroups.insert(Env::recv_rowgroups.begin(), temp_rowgroups.begin(), temp_rowgroups.end());
+                    pthread_mutex_unlock(&Env::thread_mutex_q);
+                
+                    temp_rowgroups.clear();
+                    temp_rowgroups.shrink_to_fit();
                 }
                 else {
-                    //printf("Rank=%d recv size=%d Exiting\n", Env::rank, Env::recv_rowgroups.empty());
                     done = false;
                 }
             }
             
-            if(!done) {
-               // printf("Rank=%d false size of queue= %lu\n", Env::rank, Env::recv_rowgroups.size());
-                
-                
-                /*
-                if(!Env::recv_rowgroups.empty()) {
-                    
-                    //pthread_mutex_lock(&Env::thread_mutex);
-                    //Env::count = Env::recv_rowgroups.size();
-                    //pthread_cond_broadcast(&Env::thread_cond);  
-                    //pthread_mutex_unlock(&Env::thread_mutex);
-                    
-                    //pthread_mutex_lock(&Env::manager_mutex);
-                    //pthread_cond_wait(&Env::manager_cond, &Env::manager_mutex); 
-                    //pthread_mutex_unlock(&Env::manager_mutex);
-                    
-                    
-                    pthread_mutex_lock(&Env::thread_mutex);
-                   pthread_cond_broadcast(&Env::thread_cond);  
-                    pthread_mutex_unlock(&Env::thread_mutex);
-                    
-                    //while(!Env::recv_rowgroups.empty()) {
-                      //  int a = 1986 * 1988;
-                        //std::this_thread::sleep_for(std::chrono::nanoseconds(10));
-                       //printf("%d %lu\n", Env::rank, Env::recv_rowgroups.size());
-                    //}
-                    
-                    bool notEmpty = true;
-                    do{
-                        
-                        //bool isEmpty = Env::recv_rowgroups.empty();
-                        //if(isEmpty) break;
-                        //bool isEmpty =  Env::recv_rowgroups.empty();
-                    //while(Env::count) {
-                            //int a = 1986 * 1988;
-                            //std::this_thread::sleep_for(std::chrono::nanoseconds(10));
-                           //printf("%d %lu\n", Env::rank, Env::recv_rowgroups.size());
-                           pthread_mutex_lock(&Env::thread_mutex_q);
-                           notEmpty = Env::recv_rowgroups.empty();
-                           pthread_mutex_unlock(&Env::thread_mutex_q);
-                    }while(notEmpty);
-                    
-                }
-                */
-                //printf("Rank=%d false size of queue= %lu\n", Env::rank, Env::recv_rowgroups.size());
-                
+            if(!done) {                
                 pthread_mutex_lock(&Env::thread_mutex);
                 Env::manager = false;
                 Env::count = 0;
                 pthread_cond_broadcast(&Env::thread_cond);  
                 pthread_mutex_unlock(&Env::thread_mutex);
-              //  printf("Rank=%d false size of queue= %lu\n", Env::rank, Env::recv_rowgroups.size());
-                
+
                 while(Env::count != Env::nthreads - 1) {
                     pthread_mutex_lock(&Env::thread_mutex);
                     pthread_cond_broadcast(&Env::thread_cond);  
                     pthread_mutex_unlock(&Env::thread_mutex);
-                    //printf("Rank=%d broadcast\n", Env::rank);
                 }
             }
             else{
-               // printf("Rank=%d true wait for queue(%lu)\n", Env::rank, Env::recv_rowgroups.size());
-                pthread_mutex_lock(&Env::thread_mutex_q);
-                Env::recv_rowgroups.insert(Env::recv_rowgroups.begin(), temp_rowgroups.begin(), temp_rowgroups.end());
-                //Env::count = Env::recv_rowgroups.size();
-                pthread_mutex_unlock(&Env::thread_mutex_q);
-                
                 pthread_mutex_lock(&Env::thread_mutex);
+                Env::manager = true;
                 Env::count = 0;
                 pthread_cond_broadcast(&Env::thread_cond);  
                 pthread_mutex_unlock(&Env::thread_mutex);
-
-                temp_rowgroups.clear();
-                temp_rowgroups.shrink_to_fit();
-                //printf("Rank=%d true wait for queue(%lu)\n", Env::rank,  Env::recv_rowgroups.size());
-                /*
-                bool notEmpty = true;
-                do{
-                    
-                    //bool isEmpty = Env::recv_rowgroups.empty();
-                    //if(isEmpty) break;
-                    //bool isEmpty =  Env::recv_rowgroups.empty();
-                //while(Env::count) {
-                        //int a = 1986 * 1988;
-                        //std::this_thread::sleep_for(std::chrono::nanoseconds(10));
-                       //printf("%d %lu\n", Env::rank, Env::recv_rowgroups.size());
-                       pthread_mutex_lock(&Env::thread_mutex_q);
-                       notEmpty = Env::recv_rowgroups.empty();
-                       pthread_mutex_unlock(&Env::thread_mutex_q);
-                }while(notEmpty);
-                */
-                
                 while(Env::count != Env::nthreads - 1) {
                     std::this_thread::sleep_for(std::chrono::nanoseconds(10));
-                    //pthread_mutex_lock(&Env::thread_mutex);
-                    //pthread_cond_broadcast(&Env::thread_cond);  
-                    //pthread_mutex_unlock(&Env::thread_mutex);
-                    //printf("Rank=%d broadcast\n", Env::rank);
                 }
-                
-                //printf("Rank=%d true wait for queue(%lu)\n", Env::rank,  Env::recv_rowgroups.size());
-                
-                
-                /*
-                printf("Rank=%d 2222 wait for queue\n", Env::rank);
-                pthread_mutex_lock(&Env::manager_mutex);
-                pthread_cond_wait(&Env::manager_cond, &Env::manager_mutex); 
-                pthread_mutex_unlock(&Env::manager_mutex);
-                printf("Rank=%d 3333 wait for queue\n", Env::rank);
-                */
             }
-            
         } while(done);
     }
     else {
@@ -719,24 +581,11 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
         const uint32_t B_off_col = 0;
         
         while(Env::manager) {
-            //printf("Rank=%d tid=%d waiting\n", Env::rank, tid);
-            //if(Env::manager) {
-            //pthread_mutex_lock(&Env::thread_mutex);
-            //if(Env::manager) {
-            //    pthread_cond_wait(&Env::thread_cond, &Env::thread_mutex); 
-            //}
-            //pthread_mutex_unlock(&Env::thread_mutex);            
-            
             pthread_mutex_lock(&Env::thread_mutex_q);  
             if(!Env::recv_rowgroups.empty()) {
-                //pthread_mutex_lock(&Env::thread_mutex);
-                //Env::count--;
-                //pthread_mutex_unlock(&Env::thread_mutex);
-                
                 leader_rowgroup = Env::recv_rowgroups.front();
                 Env::processed_rowgroups.push_back(leader_rowgroup);
                 Env::recv_rowgroups.pop_front();
-                //printf("Rank=%d tid=%d dequeue rowgroup=%d size=%lu \n", Env::rank, tid, leader_rowgroup, Env::recv_rowgroups.size());
                 pthread_mutex_unlock(&Env::thread_mutex_q); 
                 // Process rowgroup
                 for (uint32_t l = 0; l < maxLayers; l++) {
@@ -757,130 +606,25 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                 }   
             }
             else {
-                
                 pthread_mutex_unlock(&Env::thread_mutex_q); 
-                /*
-                pthread_mutex_lock(&Env::manager_mutex);
-                printf("Rank=%d tid=%d count=%d\n", Env::rank, tid, Env::count);
-                if(Env::count == 0) {
-                    printf("Rank=%d tid=%d count=%d SIGNAL 0\n", Env::rank, tid, Env::count);
-                    pthread_cond_signal(&Env::manager_cond);  
-                    Env::count = -1;
-                }
-                pthread_mutex_unlock(&Env::manager_mutex);
-                */
                 pthread_mutex_lock(&Env::thread_mutex);
                 Env::count++;
-                //printf("Rank=%d tid=%d q size=%lu count=%d goes to sleep \n", Env::rank, tid, Env::recv_rowgroups.size(), Env::count);
                 pthread_cond_wait(&Env::thread_cond, &Env::thread_mutex); 
                 pthread_mutex_unlock(&Env::thread_mutex);
             }
-        }
-        
-        
-        
-        //pthread_mutex_lock(&Env::thread_mutex);  
-        //pthread_mutex_unlock(&Env::thread_mutex);  
+        } 
     }
+    
     pthread_mutex_lock(&Env::thread_mutex);
     Env::count++;
     pthread_mutex_unlock(&Env::thread_mutex);
-    //printf("Rank=%d tid=%d waiting for zero count=%d\n", Env::rank, tid, Env::count);
-    
-    
     pthread_barrier_wait(&Env::thread_barrier);
-    
-    //if(!tid)
-      //  printf("Rank=%d tid=%d DONE %d\n", Env::rank, tid, Env::count);
-    
-    //pthread_mutex_unlock(&Env::thread_mutex);  
-    
-    /*
-    //
-    if(num_idle_threads_global == (Env::nranks*Env::nthreads)) {
-        printf("Rank=%d tid=%d S=%d Exiting\n", Env::rank, tid, num_idle_threads_global);
-        done = false;
-    }
-    else {
-        if(!tid) {
-
-            //done = (bool) msg_status;
-        }
-        pthread_barrier_wait(&Env::thread_barrier);
-    }
-    return(done);
-    */
-    /*
-    if(num_follower_ranks == Env::nranks) {
-        for(int i = 0; i < Env::nranks; i++) {
-            if(i != Env::rank) {
-                int follower_rank = i;
-                std::vector<uint32_t> csc_metadata = {0, 0, 0, 0, 0, 0, 0};
-                MPI_Isend(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, follower_rank, follower_rank, Env::thread_communicators[tid], &request);
-                requests.push_back(request);
-            }
-        }
-        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-        requests.clear();
-        requests.shrink_to_fit();
-        done = 0;
-    }
-    else {
-        MPI_Status status;
-        int source_rank;
-        int source_tag;
-
-        do{    
-            int flag = 0;
-            while(!flag) {
-                MPI_Iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, Env::thread_communicators[tid], &flag, &status);
-            }
-            source_rank = status.MPI_SOURCE;
-            source_tag = status.MPI_TAG;
-        } while(source_tag != Env::rank);
-        
-        
-        std::vector<uint32_t> csc_metadata(7);
-        MPI_Recv(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, source_rank, source_tag, Env::thread_communicators[tid], &status);
-        
-        uint32_t msg_status = csc_metadata[0];
-        
-        if(msg_status) {
-            leader_rowgroup = csc_metadata[1];
-            start_layer = csc_metadata[2];
-            uint64_t csc_nedges = (uint64_t) csc_metadata[3];
-            uint32_t csc_start_row = csc_metadata[4];
-            uint32_t csc_height = csc_metadata[5];
-            uint32_t csc_width = csc_metadata[6];
-            if(not(start_layer%2)) {
-                inputFeatures->update_in_subtiles(leader_rowgroup, start_layer, output->tiles, csc_nedges, csc_start_row, csc_height, csc_width, tid);
-            }
-            else {
-                output->update_in_subtiles(leader_rowgroup, start_layer, inputFeatures->tiles, csc_nedges, csc_start_row, csc_height, csc_width, tid);
-            }
-            
-            struct Tile<Weight>& A_tile = (not(start_layer%2)) ? inputFeatures->tiles[leader_rowgroup][0].in_subtiles.back()
-                                                               : output->tiles[leader_rowgroup][0].in_subtiles.back();
-            
-            std::shared_ptr<struct CSC<Weight>>& A_CSC = A_tile.spmat;
-            A_CSC->Irecv(requests,source_rank, tid);
-            
-            MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-            requests.clear();
-            requests.shrink_to_fit();
-        }
-        done = msg_status;
-    }
-    */
-    
 }
 
 template<typename Weight>
 void Net<Weight>::add_to_my_follower_ranks_mxw() {
-    
     MPI_Request request;
     std::vector<MPI_Request> requests;
-    //bool done = false;
     int window_host_rank = 0;
     int num_idle_ranks = 0;
     int idle_rank = 0;
@@ -890,8 +634,6 @@ void Net<Weight>::add_to_my_follower_ranks_mxw() {
     int some_cmp = 0;
     int some_idx = 0;
     std::vector<int32_t> follower_ranks;   
-    //int destination_rank = -1;
-    //int destination_tid = -1;
     
     MPI_Win_lock(MPI_LOCK_EXCLUSIVE, window_host_rank, 0, Env::ranks_window);
         some_idx = Env::nranks;
@@ -899,8 +641,6 @@ void Net<Weight>::add_to_my_follower_ranks_mxw() {
         MPI_Win_flush(window_host_rank, Env::ranks_window);
         num_idle_ranks = some_res;
         if(num_idle_ranks) {
-            //printf("Rank=%d num_idle_ranks=%d: B1\n", Env::rank, num_idle_ranks);
-            //printf("Rank=%d num_idle_ranks=%d: add_to_my_follower_ranks_mxw1\n", Env::rank, num_idle_ranks);
             for(int32_t i = 1; i < Env::nranks; i++) {
                 destination_rank = (Env::rank+i) % Env::nranks;
                 some_val = 0;
@@ -909,32 +649,28 @@ void Net<Weight>::add_to_my_follower_ranks_mxw() {
                 MPI_Compare_and_swap(&some_val, &some_res, &some_cmp, MPI_INT, window_host_rank, some_idx, Env::ranks_window);
                 MPI_Win_flush_all(Env::ranks_window);
                 idle_rank = some_res;
-                //printf("Rank=%d dest=%d idle_rank=%d\n", Env::rank, destination_rank, some_res);
                 if(idle_rank) {
                     some_val = -1;
                     some_idx = Env::nranks;
                     MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, some_idx, MPI_SUM, Env::ranks_window);
                     MPI_Win_flush_all(Env::ranks_window);
-                  //  printf("Rank=%d dest=%d new_Num_idle=%d\n", Env::rank, destination_rank, some_res);
                     break;
                 }
             }
         }
     MPI_Win_unlock(window_host_rank, Env::ranks_window);
+    
     if(idle_rank) {
         int32_t num_send_tiles = ((int32_t) Env::rank_rowgroups.size() > (Env::nthreads * 3)) ? Env::nthreads : 0;
         if(num_send_tiles == Env::nthreads) {
-            //printf("1.Rank=%d --> %d sz=%lu sz_send=%d\n", Env::rank, destination_rank, Env::rank_rowgroups.size(), num_send_tiles);
             Env::send_rowgroups.insert(Env::send_rowgroups.end(), Env::rank_rowgroups.begin(), Env::rank_rowgroups.begin()+Env::nthreads);
             Env::rank_rowgroups.erase(Env::rank_rowgroups.begin(), Env::rank_rowgroups.begin()+Env::nthreads);
             pthread_mutex_unlock(&Env::thread_mutex_q); 
-            //printf("2.Rank=%d --> %d sz=%lu sz_send=%d\n", Env::rank, destination_rank, Env::rank_rowgroups.size(), num_send_tiles);
             char handshake = 1;
             MPI_Send(&handshake, 1, MPI_CHAR, destination_rank, destination_rank, MPI_COMM_WORLD);        
             
             std::vector<std::vector<uint32_t>> csc_metadatas(Env::nthreads);
             for(uint32_t i = Env::send_rowgroups.size() - Env::nthreads, j = 0; i < Env::send_rowgroups.size(); i++, j++) {
-                //printf("Rank=%d i=%d sz=%lu\n", Env::rank, i, Env::send_rowgroups.size());
                 uint32_t rowgroup = Env::send_rowgroups[i];
                 struct Tile<Weight>& out_tile = inputFeatures->tiles[rowgroup][0];
                 uint32_t msg_status = 1;
@@ -946,13 +682,8 @@ void Net<Weight>::add_to_my_follower_ranks_mxw() {
                 out_tile.rank = destination_rank;
                 std::vector<uint32_t> csc_metadata = {msg_status, rowgroup, start_layer, nedges, start_row, height, width};
                 csc_metadatas[j] = csc_metadata;
-                //std::vector<uint32_t>& csc_metadata = csc_metadatas[j];
-                //csc_metadata = {msg_status, rowgroup, start_layer, nedges, start_row, height, width};
-
                 MPI_Isend(csc_metadatas[j].data(), csc_metadatas[j].size(), MPI_UNSIGNED, destination_rank, destination_rank, MPI_COMM_WORLD, &request);        
                 requests.push_back(request);
-
-                ///break;
             }
             MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
             requests.clear();
@@ -968,9 +699,7 @@ void Net<Weight>::add_to_my_follower_ranks_mxw() {
             }
             MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
             requests.clear();
-            requests.shrink_to_fit();
-            
-            
+            requests.shrink_to_fit();   
         }
         else {
             pthread_mutex_unlock(&Env::thread_mutex_q); 
@@ -985,102 +714,11 @@ void Net<Weight>::add_to_my_follower_ranks_mxw() {
                 MPI_Fetch_and_op(&some_val, &some_res, MPI_INT, window_host_rank, some_idx, MPI_SUM, Env::ranks_window);
                 MPI_Win_flush(window_host_rank, Env::ranks_window);
             MPI_Win_unlock(window_host_rank, Env::ranks_window);
-            //printf("Rank=%d num_idle_ranks=%d: add_to_my_follower_ranks_mxw\n", Env::rank, some_res+1);printf("Rank=%d num_idle_ranks=%d: A\n", Env::rank, num_idle_ranks);
-            num_idle_ranks = some_res+1;
-            //printf("Rank=%d num_idle_ranks=%d: B2\n", Env::rank, num_idle_ranks);
         }
-        
-        /*
-        uint32_t rowgroup = rowgroups.front();
-        struct Tile<Weight>& out_tile = inputFeatures->tiles[rowgroup][0];
-        uint32_t msg_status = 1;
-        uint32_t start_layer = 0;
-        uint32_t nedges = (uint32_t) out_tile.nedges;
-        uint32_t start_row = out_tile.start_row;
-        uint32_t height = out_tile.height;
-        uint32_t width = out_tile.width;
-        
-        std::vector<uint32_t> csc_metadata = {msg_status, rowgroup, start_layer, nedges, start_row, height, width};
-        MPI_Send(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, destination_rank, destination_rank, MPI_COMM_WORLD);        
-        
-        std::shared_ptr<struct CSC<Weight>>& out_csc = out_tile.spmat;
-        out_csc->Isend(requests, destination_rank, MPI_COMM_WORLD);
-        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-        requests.clear();
-        requests.shrink_to_fit();
-        out_tile.rank = destination_rank;
-        // Delete tile
-        Env::send_rowgroups.push_back(rowgroup);
-        Env::rank_rowgroups.pop_front();
-        */
-        //done = true;
-        
-        //printf("Source rank=%d --> Destination Rank=%d [%d %d %d %d %d %d %d]\n", Env::rank, destination_rank, msg_status, rowgroup, start_layer, nedges, start_row, height, width);
-        
     }
     else {
         pthread_mutex_unlock(&Env::thread_mutex_q); 
-    }
-        /*
-        if((destination_rank >= 0) and (destination_tid >= 0)) {
-
-            //std::exit(0);                                                           
-        }
-        */
-        //  return(done);
-    /*
-    if(not follower_ranks.empty()) {
-        MPI_Request request;
-        std::vector<MPI_Request> requests;
-        
-        std::vector<struct Tile<Weight>> subtiles;
-        std::vector<std::shared_ptr<struct CSC<Weight>>> subcscs;
-        uint32_t nthreads_local = my_threads.size();
-        if(not(start_layer%2)) {
-            inputFeatures->update_out_subtiles(leader_rowgroup, start_layer, output->tiles, subtiles, subcscs, follower_ranks, nthreads_local, tid);
-        }
-        else {
-            output->update_out_subtiles(leader_rowgroup, start_layer, inputFeatures->tiles, subtiles, subcscs, follower_ranks, nthreads_local, tid);
-        }
-        for(uint32_t k = 1; k < subtiles.size(); k++) {
-            struct Tile<Weight> subtile = subtiles[k];
-            uint32_t msg_status = (subtile.nedges) ? 1 : 2;
-
-            std::vector<uint32_t> csc_metadata = {msg_status, leader_rowgroup, start_layer, (uint32_t)subtile.nedges, subtile.start_row, subtile.height, subtile.width};
-            MPI_Isend(csc_metadata.data(), csc_metadata.size(), MPI_UNSIGNED, subtile.rank, subtile.rank, Env::thread_communicators[tid], &request);        
-            requests.push_back(request);
-            
-            if(msg_status == 2) {
-                done = false;
-            }
-        }
-        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-        requests.clear();
-        requests.shrink_to_fit();
-        
-        for(uint32_t k = 1; k < subtiles.size(); k++) {
-            struct Tile<Weight> subtile = subtiles[k];
-            std::shared_ptr<struct CSC<Weight>>& subcsc = subcscs[k];
-            subcsc->Isend(requests, subtile.rank, tid);
-        }
-        MPI_Waitall(requests.size(), requests.data(), MPI_STATUSES_IGNORE);
-        requests.clear();
-        requests.shrink_to_fit();
-        
-        subtiles.clear();
-        subtiles.shrink_to_fit();
-        subcscs.clear();
-        subcscs.shrink_to_fit();
-        
-        follower_ranks.clear();
-        follower_ranks.shrink_to_fit();
-        
-        struct Tile<Weight>& A_tile = (not(start_layer%2)) ? inputFeatures->tiles[leader_rowgroup][0]
-                                                           : output->tiles[leader_rowgroup][0];
-    }
-    */
-
-    
+    }    
 }
 
 
@@ -1133,12 +771,16 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     std::deque<int32_t> my_threads;
     
     auto start = std::chrono::high_resolution_clock::now();  
+    
+    /*
     if(!tid) {
         Env::global_time = Env::clock();
     }
     pthread_barrier_wait(&Env::thread_barrier);
     double elapsed_time = Env::clock() - Env::global_time;
     printf("Rank=%d tid=%2d time=%2.2f Started\n", Env::rank, tid, elapsed_time);
+    */
+    
     uint32_t my_start_layer = hybrid_x_data(my_threads, tid);
     if(my_start_layer < maxLayers) {
         hybrid_x_model(my_threads, my_rowgroup, my_start_layer, tid, tid);
@@ -1155,8 +797,10 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         }
     }
     auto finish = std::chrono::high_resolution_clock::now();
-    elapsed_time = Env::clock() - Env::global_time;
-    printf("Rank=%d tid=%2d time=%2.2f Finished\n", Env::rank, tid, elapsed_time);
+    
+    //elapsed_time = Env::clock() - Env::global_time;
+    //printf("Rank=%d tid=%2d time=%2.2f Finished\n", Env::rank, tid, elapsed_time);
+    
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
     //printf("Rank=%d tid=%d done\n", Env::rank, tid);
     struct Tile<Weight>& A_tile = inputFeatures->tiles[my_rowgroup][0];
@@ -1170,7 +814,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
     //std::vector<int32_t> my_threads;
-    my_threads.push_back(tid);
+    //my_threads.push_back(tid);
     //std::vector<int32_t> my_rowgrps;
     //bool has_data_to_share = true;
     
@@ -1183,7 +827,8 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
     const uint32_t B_off_col = 0;
     uint32_t l = 0; 
     for (l = 0; l < maxLayers; l++) {
-        if(add_to_my_follower_threads(my_threads, l, ncols, tid) == 1) {
+        if(!add_to_my_follower_threads(my_threads, l, ncols, tid, tid)) {
+        //if(add_to_my_follower_threads(my_threads, l, ncols, tid) == 1) {
             struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                  : output->tiles[leader_rowgroup][0];
             std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
@@ -1224,20 +869,14 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
     uint32_t B_start_col, B_end_col;
     const uint32_t B_off_col = 0;   
     double start_time = 0;
-    //printf("rank=%d tid=%d layer=%d leader=%d\n", Env::rank, tid, leader_start_layer, leader_tid);
+
     for (uint32_t l = leader_start_layer; l < maxLayers; l++) {
-        //printf("rank=%d tid=%d layer=%d\n", Env::rank, tid, l);    
-        
-        //if(greedy) {
-            //if(l > leader_start_layer) {
-            start_time = Env::tic();   
-                add_to_my_follower_threads(my_threads, l, ncols, leader_tid, tid);
-                Env::decrease_num_threads(1, leader_tid, tid);
-                Env::init_num_threads(my_threads.size(), leader_tid, tid);
-            Env::hybrid_probe_time[tid] += Env::toc(start_time);     
-          //  }
-        //}
-        
+        start_time = Env::tic();   
+            (void)add_to_my_follower_threads(my_threads, l, ncols, leader_tid, tid);
+            Env::decrease_num_threads(1, leader_tid, tid);
+            Env::init_num_threads(my_threads.size(), leader_tid, tid);
+        Env::hybrid_probe_time[tid] += Env::toc(start_time);     
+            
         std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
         struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
         std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
@@ -1249,7 +888,6 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
         data_x_model_hybrid_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                                    nrows, ncols, B_start_col, B_end_col, B_off_col,
                                    my_threads, thread_st, leader_tid, tid);
-       //Env::counters[tid].layer_index++;
        Env::scores[tid]++;
     }
 }
@@ -1279,7 +917,7 @@ int32_t Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads,
                 
                 
                 double elapsed_time = Env::clock() - Env::global_time;
-                printf("Rank=%d tid=%2d time=%02.2f Added to my   queue my threads[", Env::rank, tid, elapsed_time);
+                printf("Rank=%d tid=%2d time=%02.2f Greedy Added to my   queue my threads[", Env::rank, tid, elapsed_time);
                 for(auto t: my_threads) {
                     printf("%d ", t);
                 }
@@ -1371,51 +1009,103 @@ int32_t Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads,
             pthread_mutex_unlock(&Env::thread_mutex);
         }
     }
-    //printf("2.Rank=%d tid=%d\n", Env::rank, tid);
+
     return(num_threads);
 }
 
 
 template<typename Weight>
-void Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid) {  
+bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid) {  
+    bool found = false;
     uint32_t num_threads = my_threads.size();
     uint32_t old_num_threads = 0;
     uint32_t num_new_threads = 0;
 
     if(tid == leader) {
         if(greedy) {
-            old_num_threads = my_threads.size();
-            if(!Env::follower_threads.empty()) {
-                pthread_mutex_lock(&Env::thread_mutex);  
-                if(!Env::follower_threads.empty()) {
-                    num_threads += Env::follower_threads.size();
-                    my_threads.insert(my_threads.end(), Env::follower_threads.begin(), Env::follower_threads.end());
-                    Env::follower_threads.erase(Env::follower_threads.begin(), Env::follower_threads.end());
-                    for(uint32_t i = 0; i < num_threads; i++) {
-                        int32_t t = my_threads[i];
-                        Env::threads[t].leader = tid;
-                        Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
-                        Env::threads[t].start_layer = start_layer;
-                        Env::threads[t].start_col = ((ncols/num_threads) * i);
-                        Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
+            if(numa_queues) {
+                old_num_threads = my_threads.size();
+                uint32_t sid = Env::threads_socket_id[tid];
+                if(!Env::numa_follower_threads[sid].empty()) {
+                    pthread_mutex_lock(&Env::numa_thread_mutex[sid]);  
+                    if(!Env::numa_follower_threads[sid].empty()) {
+                        if(my_threads.empty()) {
+                            my_threads.push_back(tid);
+                            num_threads++;
+                        }
+                        num_threads += Env::numa_follower_threads[sid].size();
+                        my_threads.insert(my_threads.end(), Env::numa_follower_threads[sid].begin(), Env::numa_follower_threads[sid].end());
+                        Env::numa_follower_threads[sid].erase(Env::numa_follower_threads[sid].begin(), Env::numa_follower_threads[sid].end());
+                        for(uint32_t i = 0; i < num_threads; i++) {
+                            int32_t t = my_threads[i];
+                            Env::threads[t].leader = tid;
+                            Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
+                            Env::threads[t].start_layer = start_layer;
+                            Env::threads[t].start_col = ((ncols/num_threads) * i);
+                            Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
+                        }
+                        //printf("Rank=%d tid=%d size=%lu\n", Env::rank, tid, my_threads.size());
+                        pthread_barrier_destroy(&Env::thread_barriers[tid]);
+                        pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
+                        
+                        
+                        num_new_threads = num_threads - old_num_threads;
+                        Env::increase_num_threads(num_new_threads, leader, tid);
+                        found = true;
+                        /*
+                        double elapsed_time = Env::clock() - Env::global_time;
+                        printf("Rank=%d tid=%2d time=%02.2f Greedy Added to my   queue my threads[", Env::rank, tid, elapsed_time);
+                        for(auto t: my_threads) {
+                            printf("%d ", t);
+                        }
+                        printf("] layer = %d\n", start_layer);
+                        */
+                        
                     }
-                    pthread_barrier_destroy(&Env::thread_barriers[tid]);
-                    pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
-                    
-                    num_new_threads = num_threads - old_num_threads;
-                    Env::increase_num_threads(num_new_threads, leader, tid);
-                    
-                    double elapsed_time = Env::clock() - Env::global_time;
-                    printf("Rank=%d tid=%2d time=%02.2f Added to my   queue my threads[", Env::rank, tid, elapsed_time);
-                    for(auto t: my_threads) {
-                        printf("%d ", t);
-                    }
-                    printf("] layer = %d\n", start_layer);
-                    
-                    
+                    pthread_cond_broadcast(&Env::numa_thread_cond[sid]); 
+                    pthread_mutex_unlock(&Env::numa_thread_mutex[sid]);
                 }
-                pthread_cond_broadcast(&Env::thread_cond); 
-                pthread_mutex_unlock(&Env::thread_mutex);
+            }
+            else {
+                old_num_threads = my_threads.size();
+                if(!Env::follower_threads.empty()) {
+                    pthread_mutex_lock(&Env::thread_mutex);  
+                    if(!Env::follower_threads.empty()) {
+                        if(my_threads.empty()) {
+                            my_threads.push_back(tid);
+                            num_threads++;
+                        }
+                        num_threads += Env::follower_threads.size();
+                        my_threads.insert(my_threads.end(), Env::follower_threads.begin(), Env::follower_threads.end());
+                        Env::follower_threads.erase(Env::follower_threads.begin(), Env::follower_threads.end());
+                        for(uint32_t i = 0; i < num_threads; i++) {
+                            int32_t t = my_threads[i];
+                            Env::threads[t].leader = tid;
+                            Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
+                            Env::threads[t].start_layer = start_layer;
+                            Env::threads[t].start_col = ((ncols/num_threads) * i);
+                            Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
+                        }
+                        printf("Rank=%d tid=%d size=%lu\n", Env::rank, tid, my_threads.size());
+                        pthread_barrier_destroy(&Env::thread_barriers[tid]);
+                        pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
+                        
+                        
+                        num_new_threads = num_threads - old_num_threads;
+                        Env::increase_num_threads(num_new_threads, leader, tid);
+                        found = true;
+                        double elapsed_time = Env::clock() - Env::global_time;
+                        printf("Rank=%d tid=%2d time=%02.2f Greedy Added to my   queue my threads[", Env::rank, tid, elapsed_time);
+                        for(auto t: my_threads) {
+                            printf("%d ", t);
+                        }
+                        printf("] layer = %d\n", start_layer);
+                        
+                        
+                    }
+                    pthread_cond_broadcast(&Env::thread_cond); 
+                    pthread_mutex_unlock(&Env::thread_mutex);
+                }
             }
         }
         else {
@@ -1472,9 +1162,9 @@ void Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
                 }
                 pthread_mutex_unlock(&Env::thread_mutex);
             }
-            
         }
     }
+    return(found);
 }
 
 
@@ -1482,33 +1172,94 @@ void Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
 template<typename Weight>
 bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid) {
     bool status = true;
-    if(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
-        pthread_mutex_lock(&Env::thread_mutex);
-            Env::follower_threads.push_back(tid);
-            double elapsed_time = Env::clock() - Env::global_time;
-            printf("Rank=%d tid=%2d time=%2.2f Added to idle queue idle_threads=[", Env::rank, tid, elapsed_time);
-            for(auto t: Env::follower_threads) {
-                printf("%d ", t);
-            }
-            printf("]\n");
+    uint32_t all_done = 0;
+    if(numa_queues) {
+        for(std::deque<int32_t>& numa_thread: Env::numa_follower_threads) {
+            all_done += numa_thread.size();
+        }
+        //printf("Rank=%d tid=%d 0.all_done=%d\n", Env::rank, tid, all_done);
+        if(all_done != (uint32_t) Env::nthreads) {
+            uint32_t sid = Env::threads_socket_id[tid];            
+            pthread_mutex_lock(&Env::numa_thread_mutex[sid]);
+            
+            Env::numa_follower_threads[sid].push_back(tid);
             my_threads.erase(my_threads.begin(), my_threads.end());
             Env::threads[tid].leader = -1;
-            if(Env::finished_threads[tid]) {
-                Env::num_finished_threads++;
-                Env::finished_threads[tid] = false;
+            
+            /*
+            double elapsed_time = Env::clock() - Env::global_time;
+            printf("Rank=%d tid=%2d time=%2.2f Added to idle queue idle_threads ", Env::rank, tid, elapsed_time);
+            for(int32_t s = 0; s < Env::nsockets; s++) {
+                printf("Socket%d=[", s);
+                for(auto t: Env::numa_follower_threads[s]) {
+                    printf("%d ", t);
+                }
+                printf("] ");
             }
-            if(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
-                pthread_cond_wait(&Env::thread_cond, &Env::thread_mutex); 
+            printf("\n");
+            */
+            
+            
+            if(Env::finished_threads[tid]) {
+                    Env::num_finished_threads++;
+                    Env::finished_threads[tid] = false;
+            }
+            
+            all_done = 0;
+            for(std::deque<int32_t>& numa_thread: Env::numa_follower_threads) {
+                all_done += numa_thread.size();
+            }
+            
+            if(all_done != (uint32_t) Env::nthreads) {
+                pthread_cond_wait(&Env::numa_thread_cond[sid], &Env::numa_thread_mutex[sid]); 
+                //printf("Rank=%d tid=%2d Waked up\n", Env::rank, tid);
+                pthread_mutex_unlock(&Env::numa_thread_mutex[sid]); 
             }
             else {
-                pthread_cond_broadcast(&Env::thread_cond);    
+                //printf("Rank=%d tid=%2d 1.all_done=%d\n", Env::rank, tid, all_done);
+                pthread_mutex_unlock(&Env::numa_thread_mutex[sid]);   
+                for(int32_t s = 0; s < Env::nsockets; s++) {
+                    //printf("Rank=%d tid=%d 1.socket=%d\n", Env::rank, tid, s);
+                    pthread_mutex_lock(&Env::numa_thread_mutex[s]);
+                    pthread_cond_broadcast(&Env::numa_thread_cond[s]);   
+                    pthread_mutex_unlock(&Env::numa_thread_mutex[s]);                     
+                }
                 status = false;
             }
-        pthread_mutex_unlock(&Env::thread_mutex);
-        //printf("Rank=%d tid=%d just waked up\n", Env::rank, tid);
+        }
+        else {
+            //printf("Rank=%d tid=%2d 2.all_done=%d\n", Env::rank, tid, all_done);
+            status = false;
+        }
     }
     else {
-        status = false;
+        if(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
+            pthread_mutex_lock(&Env::thread_mutex);
+                Env::follower_threads.push_back(tid);
+                double elapsed_time = Env::clock() - Env::global_time;
+                printf("Rank=%d tid=%2d time=%2.2f Added to idle queue idle_threads=[", Env::rank, tid, elapsed_time);
+                for(auto t: Env::follower_threads) {
+                    printf("%d ", t);
+                }
+                printf("]\n");
+                my_threads.erase(my_threads.begin(), my_threads.end());
+                Env::threads[tid].leader = -1;
+                if(Env::finished_threads[tid]) {
+                    Env::num_finished_threads++;
+                    Env::finished_threads[tid] = false;
+                }
+                if(Env::follower_threads.size() != (uint32_t) Env::nthreads) {
+                    pthread_cond_wait(&Env::thread_cond, &Env::thread_mutex); 
+                }
+                else {
+                    pthread_cond_broadcast(&Env::thread_cond);    
+                    status = false;
+                }
+            pthread_mutex_unlock(&Env::thread_mutex);
+        }
+        else {
+            status = false;
+        }
     }
     return(status);
 }
