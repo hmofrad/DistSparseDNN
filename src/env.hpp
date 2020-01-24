@@ -26,6 +26,7 @@ namespace Env {
     int ncores = 0;
     int nsockets = 0;
     int ncores_per_socket = 0;
+    int nthreads_per_socket = 0;
     int rank_core_id = 0;
     int rank_socket_id = 0;
     std::vector<int> threads_core_id;
@@ -336,6 +337,7 @@ bool Env::numa_configure() {
         status = false;
     }
     Env::ncores_per_socket = Env::ncores / Env::nsockets;
+    Env::nthreads_per_socket = Env::nthreads / Env::nsockets; 
     
     Env::rank_core_id = sched_getcpu();
     Env::rank_socket_id = Env::rank_core_id / Env::ncores_per_socket;
