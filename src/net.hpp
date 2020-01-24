@@ -62,8 +62,9 @@ class Net {
         void hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid);
         
         bool add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid);
-        int32_t add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid);
+        //int32_t add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid);
         bool    add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid);
+        bool    greedy_thread_selection(std::deque<int32_t>& my_threads, std::deque<int32_t>& follower_threads, uint32_t socket_id, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid);
         
         int32_t add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& start_layer, const int32_t tid);
         bool add_to_my_follower_ranks(const uint32_t leader_rowgroup, const uint32_t start_layer, const std::deque<int32_t> my_threads, const int32_t tid);
@@ -891,7 +892,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
        Env::scores[tid]++;
     }
 }
-
+/*
 template<typename Weight>
 int32_t Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid) {
     uint32_t num_threads = my_threads.size();
@@ -948,18 +949,7 @@ int32_t Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads,
                     if((Env::scores[tid] - min_score_value) < 5) {// and (Env::follower_threads.size() > 1)) {
 
                         int32_t ith = -1;
-                        /*
-                        std::deque<int>::iterator it;
-                        for(it = Env::follower_threads.begin(); it != Env::follower_threads.end(); it++) {
-                            if(Env::threads_socket_id[*it] == Env::threads_socket_id[tid]) {
-                                ith = it - Env::follower_threads.begin();  
-                                my_threads.push_back(*it);                                
-                                Env::follower_threads.erase(it);
-                                num_threads++;
-                                break;
-                            }
-                        }
-                        */
+      
                         
                         //if(ith == -1) {
                             my_threads.push_back(Env::follower_threads.front());
@@ -1013,19 +1003,77 @@ int32_t Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads,
     return(num_threads);
 }
 
+*/
 
 template<typename Weight>
-bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid) {  
+bool Net<Weight>::greedy_thread_selection(std::deque<int32_t>& my_threads, std::deque<int32_t>& follower_threads, uint32_t socket_id,  const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid) {  
+    bool found = false;
+    uint32_t num_threads = my_threads.size();
+    uint32_t old_num_threads = 0;
+    uint32_t num_new_threads = 0;
+    
+    old_num_threads = my_threads.size();
+    if(!follower_threads.empty()) {
+        pthread_mutex_lock(&Env::numa_thread_mutex[socket_id]);  
+        if(!follower_threads.empty()) {
+            if(my_threads.empty()) {
+                my_threads.push_back(tid);
+                num_threads++;
+            }
+            num_threads += follower_threads.size();
+            my_threads.insert(my_threads.end(), follower_threads.begin(), follower_threads.end());
+            follower_threads.erase(follower_threads.begin(), follower_threads.end());
+            for(uint32_t i = 0; i < num_threads; i++) {
+                int32_t t = my_threads[i];
+                Env::threads[t].leader = tid;
+                Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
+                Env::threads[t].start_layer = start_layer;
+                Env::threads[t].start_col = ((ncols/num_threads) * i);
+                Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
+            }
+            //printf("Rank=%d tid=%d size=%lu\n", Env::rank, tid, my_threads.size());
+            pthread_barrier_destroy(&Env::thread_barriers[tid]);
+            pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
+            
+            num_new_threads = num_threads - old_num_threads;
+            Env::increase_num_threads(num_new_threads, leader, tid);
+            found = true;
+        }
+        pthread_cond_broadcast(&Env::numa_thread_cond[socket_id]); 
+        pthread_mutex_unlock(&Env::numa_thread_mutex[socket_id]);
+    }
+    return(found);
+}
+
+
+template<typename Weight>
+bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader_tid, const int32_t tid) {  
     bool found = false;
     uint32_t num_threads = my_threads.size();
     uint32_t old_num_threads = 0;
     uint32_t num_new_threads = 0;
 
-    if(tid == leader) {
+    if(tid == leader_tid) {
         if(greedy) {
             if(numa_queues) {
+                int32_t sid = Env::threads_socket_id[tid];
+                found = greedy_thread_selection(my_threads, Env::numa_follower_threads[sid], sid, start_layer, ncols, leader_tid, tid);
+                
+                for(int32_t s = 0; s < Env::nsockets; s++) {
+                    if(s != sid) {
+                        if(Env::numa_follower_threads[s].size() == (uint32_t) Env::nthreads_per_socket) {
+                            (void) greedy_thread_selection(my_threads, Env::numa_follower_threads[s], sid, start_layer, ncols, leader_tid, tid);
+                        }
+                    }
+                }
+                
+                
+                /*
                 old_num_threads = my_threads.size();
                 uint32_t sid = Env::threads_socket_id[tid];
+                
+                
+                
                 if(!Env::numa_follower_threads[sid].empty()) {
                     pthread_mutex_lock(&Env::numa_thread_mutex[sid]);  
                     if(!Env::numa_follower_threads[sid].empty()) {
@@ -1050,21 +1098,14 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
                         
                         
                         num_new_threads = num_threads - old_num_threads;
-                        Env::increase_num_threads(num_new_threads, leader, tid);
+                        Env::increase_num_threads(num_new_threads, leader_tid, tid);
                         found = true;
-                        /*
-                        double elapsed_time = Env::clock() - Env::global_time;
-                        printf("Rank=%d tid=%2d time=%02.2f Greedy Added to my   queue my threads[", Env::rank, tid, elapsed_time);
-                        for(auto t: my_threads) {
-                            printf("%d ", t);
-                        }
-                        printf("] layer = %d\n", start_layer);
-                        */
-                        
+ 
                     }
                     pthread_cond_broadcast(&Env::numa_thread_cond[sid]); 
                     pthread_mutex_unlock(&Env::numa_thread_mutex[sid]);
                 }
+            */
             }
             else {
                 old_num_threads = my_threads.size();
@@ -1086,22 +1127,12 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
                             Env::threads[t].start_col = ((ncols/num_threads) * i);
                             Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
                         }
-                        printf("Rank=%d tid=%d size=%lu\n", Env::rank, tid, my_threads.size());
                         pthread_barrier_destroy(&Env::thread_barriers[tid]);
                         pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
                         
-                        
                         num_new_threads = num_threads - old_num_threads;
-                        Env::increase_num_threads(num_new_threads, leader, tid);
+                        Env::increase_num_threads(num_new_threads, leader_tid, tid);
                         found = true;
-                        double elapsed_time = Env::clock() - Env::global_time;
-                        printf("Rank=%d tid=%2d time=%02.2f Greedy Added to my   queue my threads[", Env::rank, tid, elapsed_time);
-                        for(auto t: my_threads) {
-                            printf("%d ", t);
-                        }
-                        printf("] layer = %d\n", start_layer);
-                        
-                        
                     }
                     pthread_cond_broadcast(&Env::thread_cond); 
                     pthread_mutex_unlock(&Env::thread_mutex);
@@ -1146,7 +1177,7 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
                         pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
                         
                         num_new_threads = num_threads - old_num_threads;
-                        Env::increase_num_threads(num_new_threads, leader, tid);
+                        Env::increase_num_threads(num_new_threads, leader_tid, tid);
                         
                         double elapsed_time = Env::clock() - Env::global_time;
                         printf("Rank=%d tid=%2d time=%02.2f Added to my   queue my threads[", Env::rank, tid, elapsed_time);
