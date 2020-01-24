@@ -26,7 +26,8 @@ namespace Env {
     int ncores = 0;
     int nsockets = 0;
     int ncores_per_socket = 0;
-    int nthreads_per_socket = 0;
+    //int nthreads_per_socket = 0;
+    std::vector<uint32_t> nthreads_per_socket;
     int rank_core_id = 0;
     int rank_socket_id = 0;
     std::vector<int> threads_core_id;
@@ -337,7 +338,7 @@ bool Env::numa_configure() {
         status = false;
     }
     Env::ncores_per_socket = Env::ncores / Env::nsockets;
-    Env::nthreads_per_socket = Env::nthreads / Env::nsockets; 
+    //Env::nthreads_per_socket = Env::nthreads / Env::nsockets; 
     
     Env::rank_core_id = sched_getcpu();
     Env::rank_socket_id = Env::rank_core_id / Env::ncores_per_socket;
@@ -361,6 +362,16 @@ bool Env::numa_configure() {
         Env::threads_socket_id[i] = cid / Env::ncores_per_socket;
         //Env::threads_socket_id[i] = Env::get_socket_id(i);
     }
+    
+    Env::nthreads_per_socket.resize(Env::nsockets);
+    for(int i = 0; i < Env::nthreads; i++) {
+        printf("%d %d\n", i, Env::nthreads_per_socket[i]);
+        Env::nthreads_per_socket[Env::threads_socket_id[i]]++;
+    }
+    for(auto nt: Env::nthreads_per_socket)
+        printf("%d ", nt);
+    printf("\n");
+    //std::exit(0);
     
     if(Env::nthreads != num_unique_cores) {
         //printf("WARN[rank=%d] CPU oversubscription %d/%d.\n", Env::rank, num_unique_cores, Env::nthreads);
