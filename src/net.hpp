@@ -1058,15 +1058,15 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
             if(numa_queues) {
                 int32_t sid = Env::threads_socket_id[tid];
                 found = greedy_thread_selection(my_threads, Env::numa_follower_threads[sid], sid, start_layer, ncols, leader_tid, tid);
-                
+                bool found1 = false;
                 for(int32_t s = 0; s < Env::nsockets; s++) {
                     if(s != sid) {
                         if(Env::numa_follower_threads[s].size() == (uint32_t) Env::nthreads_per_socket) {
-                            (void) greedy_thread_selection(my_threads, Env::numa_follower_threads[s], sid, start_layer, ncols, leader_tid, tid);
+                            found1 = greedy_thread_selection(my_threads, Env::numa_follower_threads[s], sid, start_layer, ncols, leader_tid, tid);
                         }
                     }
                 }
-                
+                found |= found1;
                 
                 /*
                 old_num_threads = my_threads.size();
