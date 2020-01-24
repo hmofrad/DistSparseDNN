@@ -773,14 +773,14 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     
     auto start = std::chrono::high_resolution_clock::now();  
     
-    
+    /*
     if(!tid) {
         Env::global_time = Env::clock();
     }
     pthread_barrier_wait(&Env::thread_barrier);
     double elapsed_time = Env::clock() - Env::global_time;
     printf("Rank=%d tid=%2d time=%2.2f Started\n", Env::rank, tid, elapsed_time);
-    
+    */
     
     uint32_t my_start_layer = hybrid_x_data(my_threads, tid);
     if(my_start_layer < maxLayers) {
@@ -799,8 +799,8 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     }
     auto finish = std::chrono::high_resolution_clock::now();
     
-    elapsed_time = Env::clock() - Env::global_time;
-    printf("Rank=%d tid=%2d time=%2.2f Finished\n", Env::rank, tid, elapsed_time);
+    //elapsed_time = Env::clock() - Env::global_time;
+    //printf("Rank=%d tid=%2d time=%2.2f Finished\n", Env::rank, tid, elapsed_time);
     
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
     //printf("Rank=%d tid=%d done\n", Env::rank, tid);
@@ -1038,14 +1038,14 @@ bool Net<Weight>::greedy_thread_selection(std::deque<int32_t>& my_threads, std::
             num_new_threads = num_threads - old_num_threads;
             Env::increase_num_threads(num_new_threads, leader, tid);
             found = true;
-            
+            /*
             double elapsed_time = Env::clock() - Env::global_time;
             printf("Rank=%d tid=%2d time=%02.2f Added to my   queue my threads[", Env::rank, tid, elapsed_time);
             for(auto t: my_threads) {
                 printf("%d ", t);
             }
             printf("] layer = %d\n", start_layer);
-            
+            */
         }
         pthread_cond_broadcast(&Env::numa_thread_cond[socket_id]); 
         pthread_mutex_unlock(&Env::numa_thread_mutex[socket_id]);
