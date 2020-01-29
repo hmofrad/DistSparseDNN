@@ -46,7 +46,7 @@ class Net {
         int32_t nCategories;
         
         PARALLELISM_TYPE parallelism_type;
-        bool repartition = false;
+        bool repartition = true;
         bool replication = false;
         bool greedy = false;
         uint32_t split_factor = 16;
@@ -173,9 +173,9 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                      : IO::binary_file_stat<Weight>(layerFile);                                                                     
         nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
         ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
-        
-        if(replication) {        
-            for(int32_t s = 0; s < Env::nsockets; s++) {
+           
+        for(int32_t s = 0; s < Env::nsockets; s++) {
+            if(replication or (s == Env::rank_socket_id)) {
                 if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
                     layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
                                                                            Env::nthreads, Env::nthreads, 
@@ -189,37 +189,17 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                            layerFile, input_type, 
                                                                            TILING_TYPE::_1D_COL_, false));
                 }    
-            }
-            
-            for(int32_t s = 0; s < Env::nsockets; s++) {
+                
                 biasWeightVecs[s][i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, s));
             }
-        }
-        else {                    
-            if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
-                layers[Env::rank_socket_id][i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
-                                                                       Env::nthreads, Env::nthreads, 
-                                                                       nnz, nrows, ncols, 
-                                                                       layerFile, input_type, 
-                                                                       TILING_TYPE::_1D_COL_, repartition));
-            }
-            else {
-                layers[Env::rank_socket_id][i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
-                                                                       nnz, nrows, ncols, 
-                                                                       layerFile, input_type, 
-                                                                       TILING_TYPE::_1D_COL_, false));
-            }    
-            
-            biasWeightVecs[Env::rank_socket_id][i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, Env::rank_socket_id));
-        }
-    
+        }    
         Logging::enabled = false; 
     }
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
 
-    if(replication) {
-        for(int32_t s = 0; s < Env::nsockets; s++) {
+    for(int32_t s = 0; s < Env::nsockets; s++) {
+        if(replication or (s == Env::rank_socket_id)) {
             for(uint32_t i = 0; i < maxLayers; i++) {
                 Weight* b_A = biasWeightVecs[s][i]->ptr;
                 for(uint32_t i = 0; i < inputFeatures->ncols; i++) {
@@ -228,23 +208,18 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             }
         }
     }
-    else {
-        for(uint32_t i = 0; i < maxLayers; i++) {
-            Weight* b_A = biasWeightVecs[Env::rank_socket_id][i]->ptr;
-            for(uint32_t i = 0; i < inputFeatures->ncols; i++) {
-                b_A[i] = biasValue;
-            }
-        }
-    }
 
     spaWeightVec.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++) {
         if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
-            spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->get_tile_info("height", 0), Env::threads_socket_id[i]));
+            uint32_t tile_height = (repartition) ? inputFeatures->get_tile_info_max("height") : inputFeatures->get_tile_info("height", 0);
+            spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(tile_height, Env::threads_socket_id[i]));
             
         }
         else {
-            spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->get_tile_info("height", i), Env::threads_socket_id[i]));
+            uint32_t tile_height = (repartition) ? inputFeatures->get_tile_info_max("height") : inputFeatures->get_tile_info("height", i);
+            spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(tile_height, Env::threads_socket_id[i]));
+            //spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->get_tile_info("height", i), Env::threads_socket_id[i]));
         }
     }
 
