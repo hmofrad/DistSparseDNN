@@ -14,7 +14,7 @@
 #include <omp.h>
 #include <thread>
 #include <sys/sysinfo.h>
-///#include <numa.h>
+//#include <numa.h>
 #include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
 #include "types.hpp"
 
@@ -365,12 +365,12 @@ bool Env::numa_configure() {
     
     Env::nthreads_per_socket.resize(Env::nsockets);
     for(int i = 0; i < Env::nthreads; i++) {
-        printf("tid=%2d cid=%2d sid=%2d\n", i, Env::threads_core_id[i % Env::num_unique_cores], Env::threads_socket_id[i]);
+        //printf("tid=%2d cid=%2d sid=%2d\n", i, Env::threads_core_id[i % Env::num_unique_cores], Env::threads_socket_id[i]);
         Env::nthreads_per_socket[Env::threads_socket_id[i]]++;
     }
-    for(auto nt: Env::nthreads_per_socket)
-        printf("%d ", nt);
-    printf("\n");
+    //for(auto nt: Env::nthreads_per_socket)
+    ///    printf("%d ", nt);
+    //printf("\n");
     //std::exit(0);
     
     if(Env::nthreads != num_unique_cores) {
