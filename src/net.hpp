@@ -156,7 +156,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    //maxLayers = 5;
+    maxLayers = 5;
     
     layers.resize(Env::nsockets);
     biasWeightVecs.resize(Env::nsockets);
