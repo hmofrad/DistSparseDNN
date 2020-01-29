@@ -16,6 +16,9 @@
 enum PARALLELISM_TYPE {_MANAGER_X_WORKER_, _DATA_X_DATA_, _DATA_X_MODEL_, _HYBRID_X_HYBRID_};
 const char* PARALLELISM_TYPES[] = {"_MANAGER_X_WORKER_", "_DATA_X_DATA_", "_DATA_X_MODEL_", "_HYBRID_X_HYBRID_"};
 
+enum SCHEDULING_TYPE {_EARLIEST_FIRST_, _SLOWER_FIRST_, _NEW_};
+const char* SCHEDULING_TYPES[] = {"_EARLIEST_FIRST_", "_SLOWER_FIRST_", "_DATA_X_MODEL_", "_HYBRID_X_HYBRID_"};
+
 template<typename Weight>
 class Net {
     public:
@@ -29,9 +32,9 @@ class Net {
 
         std::unique_ptr<struct Tiling<Weight>> inputFeatures = nullptr;
         std::vector<uint32_t> trueCategories;
-        std::vector<std::unique_ptr<struct Tiling<Weight>>> layers;
+        std::vector<std::vector<std::unique_ptr<struct Tiling<Weight>>>> layers;
         
-        std::vector<std::shared_ptr<struct Data_Block<Weight>>> biasWeightVecs;
+        std::vector<std::vector<std::shared_ptr<struct Data_Block<Weight>>>> biasWeightVecs;
         std::vector<std::shared_ptr<struct Data_Block<Weight>>> spaWeightVec;
         
         std::unique_ptr<struct Tiling<Weight>> output = nullptr;
@@ -44,10 +47,11 @@ class Net {
         
         PARALLELISM_TYPE parallelism_type;
         bool repartition = false;
+        bool replication = true;
         bool greedy = false;
         uint32_t split_factor = 16;
         bool rank_work_sharing = false;
-        bool numa_queues = flase;
+        bool numa_queues = false;
         
         void printTimes();
         void printTimesExcel();
@@ -107,6 +111,10 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
     ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
     
+    if(replication and (Env::nthreads_per_socket[Env::rank_socket_id] == (uint32_t) Env::nthreads)) {
+            replication = false;
+    }
+    
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                                    nnz, nrows, ncols, 
@@ -149,8 +157,14 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
     //maxLayers = 5;
-    layers.resize(maxLayers);
-    biasWeightVecs.resize(maxLayers);
+    
+    layers.resize(Env::nsockets);
+    biasWeightVecs.resize(Env::nsockets);
+    for(int32_t s = 0; s < Env::nsockets; s++) {
+        layers[s].resize(maxLayers);
+        biasWeightVecs[s].resize(maxLayers);
+    }
+    
     for(uint32_t i = 0; i < maxLayers; i++) {
         std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "/n" + std::to_string(Nneurons) + "-l" + std::to_string(i+1);
         layerFile += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
@@ -160,29 +174,66 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
         ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
         
-        if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
-            layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
-                                                                   Env::nthreads, Env::nthreads, 
-                                                                   nnz, nrows, ncols, 
-                                                                   layerFile, input_type, 
-                                                                   TILING_TYPE::_1D_COL_, repartition));
+        if(replication) {        
+            for(int32_t s = 0; s < Env::nsockets; s++) {
+                if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
+                    layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
+                                                                           Env::nthreads, Env::nthreads, 
+                                                                           nnz, nrows, ncols, 
+                                                                           layerFile, input_type, 
+                                                                           TILING_TYPE::_1D_COL_, repartition));
+                }
+                else {
+                    layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
+                                                                           nnz, nrows, ncols, 
+                                                                           layerFile, input_type, 
+                                                                           TILING_TYPE::_1D_COL_, false));
+                }    
+            }
+            
+            for(int32_t s = 0; s < Env::nsockets; s++) {
+                biasWeightVecs[s][i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, s));
+            }
         }
-        else {
-            layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
-                                                                   nnz, nrows, ncols, 
-                                                                   layerFile, input_type, 
-                                                                   TILING_TYPE::_1D_COL_, false));
-        }     
-        biasWeightVecs[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, Env::rank_socket_id));
+        else {                    
+            if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
+                layers[Env::rank_socket_id][i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
+                                                                       Env::nthreads, Env::nthreads, 
+                                                                       nnz, nrows, ncols, 
+                                                                       layerFile, input_type, 
+                                                                       TILING_TYPE::_1D_COL_, repartition));
+            }
+            else {
+                layers[Env::rank_socket_id][i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
+                                                                       nnz, nrows, ncols, 
+                                                                       layerFile, input_type, 
+                                                                       TILING_TYPE::_1D_COL_, false));
+            }    
+            
+            biasWeightVecs[Env::rank_socket_id][i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, Env::rank_socket_id));
+        }
+    
         Logging::enabled = false; 
     }
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
 
-    for(uint32_t i = 0; i < maxLayers; i++) {
-        Weight* b_A = biasWeightVecs[i]->ptr;
-        for(uint32_t i = 0; i < inputFeatures->ncols; i++) {
-            b_A[i] = biasValue;
+    if(replication) {
+        for(int32_t s = 0; s < Env::nsockets; s++) {
+            for(uint32_t i = 0; i < maxLayers; i++) {
+                Weight* b_A = biasWeightVecs[s][i]->ptr;
+                for(uint32_t i = 0; i < inputFeatures->ncols; i++) {
+                    b_A[i] = biasValue;
+                }
+            }
+        }
+    }
+    else {
+        for(uint32_t i = 0; i < maxLayers; i++) {
+            Weight* b_A = biasWeightVecs[Env::rank_socket_id][i]->ptr;
+            for(uint32_t i = 0; i < inputFeatures->ncols; i++) {
+                b_A[i] = biasValue;
+            }
         }
     }
 
@@ -312,6 +363,7 @@ void Net<Weight>::inferenceReLU(const int32_t tid) {
 
 template<typename Weight>
 void Net<Weight>::data_x_model(const int32_t tid) {
+    int32_t sid = Env::threads_socket_id[tid];
     uint32_t leader_rowgroup = Env::rank;
     const int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -322,17 +374,17 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
     const uint32_t nrows = inputFeatures->tile_height;
-    const uint32_t ncols = layers[0]->ncols;
+    const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t B_start_col, B_end_col;
     uint32_t B_sub_start_col, B_sub_end_col;
 
     auto start = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
         std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-        struct Tile<Weight>& B_tile = layers[l]->tiles[0][tid];
+        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
         std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
         std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-        b_bias = biasWeightVecs[l];
+        b_bias = biasWeightVecs[sid][l];
         B_start_col = 0;
         B_end_col = B_CSC->ncols;
         B_sub_start_col = B_tile.start_col;
@@ -352,7 +404,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
 
 template<typename Weight>
 void Net<Weight>::manager_x_worker(const int32_t tid) {
-    
+    int32_t sid = Env::threads_socket_id[tid];
     //if(Env::rank == 1) {sleep(5);}
     //printf("Rank=%d tid=%d\n", Env::rank, tid);
     uint32_t leader_rowgroup = 0;
@@ -365,7 +417,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
     const uint32_t nrows = inputFeatures->tile_height;
-    const uint32_t ncols = layers[0]->ncols;
+    const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t B_start_col, B_end_col;
     const uint32_t B_off_col = 0;
     auto start = std::chrono::high_resolution_clock::now();  
@@ -392,12 +444,12 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
             struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                      : output->tiles[leader_rowgroup][0];
             std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-            struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
+            struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];    
             std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
             struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
                                                      : inputFeatures->tiles[leader_rowgroup][0];
             std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-            b_bias = biasWeightVecs[l];      
+            b_bias = biasWeightVecs[sid][l];      
             B_start_col = 0;
             B_end_col = B_CSC->ncols;
             data_x_data_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
@@ -425,6 +477,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
 
 template<typename Weight>
 void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
+    int32_t sid = Env::threads_socket_id[tid];
     MPI_Request request;
     std::vector<MPI_Request> requests;
     MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();   
@@ -577,7 +630,7 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
         std::shared_ptr<struct Data_Block<Weight>> b_bias;
         
         const uint32_t nrows = inputFeatures->tile_height;
-        const uint32_t ncols = layers[0]->ncols;
+        const uint32_t ncols = layers[sid][0]->ncols;
         uint32_t B_start_col, B_end_col;
         const uint32_t B_off_col = 0;
         
@@ -593,12 +646,12 @@ void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
                     struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                              : output->tiles[leader_rowgroup][0];
                     std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-                    struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
+                    struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];    
                     std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
                     struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
                                                              : inputFeatures->tiles[leader_rowgroup][0];
                     std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-                    b_bias = biasWeightVecs[l];      
+                    b_bias = biasWeightVecs[sid][l];      
                     B_start_col = 0;
                     B_end_col = B_CSC->ncols;
                     data_x_data_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
@@ -725,6 +778,7 @@ void Net<Weight>::add_to_my_follower_ranks_mxw() {
 
 template<typename Weight>
 void Net<Weight>::data_x_data(const int32_t tid) {
+    int32_t sid = Env::threads_socket_id[tid];
     uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -733,7 +787,7 @@ void Net<Weight>::data_x_data(const int32_t tid) {
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
     const uint32_t nrows = inputFeatures->tile_height;
-    const uint32_t ncols = layers[0]->ncols;
+    const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t B_start_col, B_end_col;
     const uint32_t B_off_col = 0;
     
@@ -742,12 +796,12 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                  : output->tiles[leader_rowgroup][0];
         std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-        struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
+        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];    
         std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
         struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
                                                  : inputFeatures->tiles[leader_rowgroup][0];
         std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-        b_bias = biasWeightVecs[l];      
+        b_bias = biasWeightVecs[sid][l];      
         B_start_col = 0;
         B_end_col = B_CSC->ncols;
         
@@ -811,6 +865,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
 
 template<typename Weight>
 uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t tid) {
+    int32_t sid = Env::threads_socket_id[tid];
     uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -823,7 +878,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
     uint32_t nrows;
-    const uint32_t ncols = layers[0]->ncols;
+    const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t B_start_col, B_end_col;
     const uint32_t B_off_col = 0;
     uint32_t l = 0; 
@@ -833,12 +888,12 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
             struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                  : output->tiles[leader_rowgroup][0];
             std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-            struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
+            struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];    
             std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
             struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
                                                      : inputFeatures->tiles[leader_rowgroup][0];
             std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-            b_bias = biasWeightVecs[l];      
+            b_bias = biasWeightVecs[sid][l];      
             B_start_col = 0;
             B_end_col = B_CSC->ncols;
             nrows = A_CSC->nrows;
@@ -858,15 +913,15 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
 
 template<typename Weight>
 void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid) {
-    struct Env::thread_struct& thread_st = Env::threads[tid];
-    
+    int32_t sid = Env::threads_socket_id[tid];
+    struct Env::thread_struct& thread_st = Env::threads[tid];    
     struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
     struct Tile<Weight>& C_tile = output->tiles[leader_rowgroup][0];
     std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
     uint32_t nrows;
-    const uint32_t ncols = layers[0]->ncols;
+    const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t B_start_col, B_end_col;
     const uint32_t B_off_col = 0;   
     double start_time = 0;
@@ -879,10 +934,10 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
         Env::hybrid_probe_time[tid] += Env::toc(start_time);     
   
         std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-        struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
+        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
         std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
         std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
-        b_bias = biasWeightVecs[l];
+        b_bias = biasWeightVecs[sid][l];
         B_start_col = Env::threads[tid].start_col;
         B_end_col = Env::threads[tid].end_col;
         nrows = A_CSC->nrows;
