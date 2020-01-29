@@ -16,7 +16,7 @@ struct Tile{
         Tile() {};
         ~Tile() {};
 
-        void compress(const bool one_rank);
+        void compress(const bool one_rank, const int32_t socket_id);
         
         std::vector<struct Triple<Weight>> triples;
         std::shared_ptr<struct CSC<Weight>> spmat = nullptr;
@@ -38,19 +38,19 @@ struct Tile{
 };
 
 template<typename Weight>
-void Tile<Weight>::compress(const bool one_rank) {  
+void Tile<Weight>::compress(const bool one_rank, const int32_t socket_id) {  
                             
     if(not triples.empty()){        
         const ColSort<Weight> f_col;
         std::sort(triples.begin(), triples.end(), f_col);   
-        spmat = std::make_shared<struct CSC<Weight>>(triples.size(), height, width);
+        spmat = std::make_shared<struct CSC<Weight>>(triples.size(), height, width, socket_id);
         spmat->populate(triples, start_row, end_row, start_col, end_col);
         //spmat->walk_dxm(one_rank, 0, 0);
         triples.clear();
         triples.shrink_to_fit();
     }
    else {
-        spmat = std::make_shared<CSC<Weight>>(0, height, width);
+        spmat = std::make_shared<CSC<Weight>>(0, height, width, socket_id);
     }
 }
 #endif
