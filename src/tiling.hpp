@@ -69,6 +69,7 @@ class Tiling {
         void set_threads_indices();
         void set_rank_indices();
         uint32_t get_tile_info(const std::string field, const int32_t tid);
+        uint32_t get_tile_info_max(const std::string field);
         void     set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles); 
         
         void update_out_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
@@ -1445,6 +1446,20 @@ template<typename Weight>
 void Tiling<Weight>::delete_triples(std::vector<struct Triple<Weight>>& triples){
     triples.clear();
     triples.shrink_to_fit();
+}
+
+template<typename Weight>
+uint32_t Tiling<Weight>::get_tile_info_max(const std::string field) {
+    uint32_t max = 0;
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(field.compare("height") == 0) {
+                max = (tile.height > max) ? tile.height : max;
+            }
+        }
+    }
+    return(max);
 }
 
 template<typename Weight>
