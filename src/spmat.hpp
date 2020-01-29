@@ -17,6 +17,7 @@ template<typename Weight>
 struct CSC {
     public:
         CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_);
+        CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id);
         ~CSC(){};
         
         void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t tile_height, const uint32_t tile_width);
@@ -44,6 +45,18 @@ struct CSC {
         std::shared_ptr<struct Data_Block<uint32_t>> JA_blk;
         std::shared_ptr<struct Data_Block<Weight>>   A_blk;
 };
+
+template<typename Weight>
+CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id) {
+    CSC::nnz = nnz_;
+    CSC::nnz_i = nnz_;
+    CSC::nrows = nrows_; 
+    CSC::ncols = ncols_;
+    
+    CSC::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>((CSC::ncols + 1), socket_id));
+    CSC::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::nnz, socket_id));
+    CSC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSC::nnz, socket_id));
+}
 
 template<typename Weight>
 CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {
