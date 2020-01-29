@@ -1484,7 +1484,7 @@ void Tiling<Weight>::set_tile_info(const std::vector<std::vector<struct Tile<Wei
 }
 
 template<typename Weight>
-void Tiling<Weight>::compress_triples(){//(const REFINE_TYPE refine_type) {
+void Tiling<Weight>::compress_triples(){ //(const REFINE_TYPE refine_type) {
     Env::barrier();
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Start compressing tile using CSC\n");
 
@@ -1492,13 +1492,13 @@ void Tiling<Weight>::compress_triples(){//(const REFINE_TYPE refine_type) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
-                tile.compress(one_rank);
+                tile.compress(one_rank, Env::threads_socket_id[tile.thread]);
             }
         }
     }    
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Done compressing tiles.\n");
-    Env::barrier();      
+    Env::barrier();
 }
 
 template<typename Weight>
