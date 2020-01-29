@@ -47,7 +47,7 @@ class Net {
         
         PARALLELISM_TYPE parallelism_type;
         bool repartition = false;
-        bool replication = true;
+        bool replication = false;
         bool greedy = false;
         uint32_t split_factor = 16;
         bool rank_work_sharing = false;
@@ -156,7 +156,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    maxLayers = 5;
+    //maxLayers = 5;
     
     layers.resize(Env::nsockets);
     biasWeightVecs.resize(Env::nsockets);
@@ -363,7 +363,7 @@ void Net<Weight>::inferenceReLU(const int32_t tid) {
 
 template<typename Weight>
 void Net<Weight>::data_x_model(const int32_t tid) {
-    int32_t sid = Env::threads_socket_id[tid];
+    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     uint32_t leader_rowgroup = Env::rank;
     const int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -404,7 +404,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
 
 template<typename Weight>
 void Net<Weight>::manager_x_worker(const int32_t tid) {
-    int32_t sid = Env::threads_socket_id[tid];
+    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     //if(Env::rank == 1) {sleep(5);}
     //printf("Rank=%d tid=%d\n", Env::rank, tid);
     uint32_t leader_rowgroup = 0;
@@ -477,7 +477,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
 
 template<typename Weight>
 void Net<Weight>::add_to_idle_ranks_mxw(const int32_t tid){
-    int32_t sid = Env::threads_socket_id[tid];
+    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     MPI_Request request;
     std::vector<MPI_Request> requests;
     MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();   
@@ -778,7 +778,7 @@ void Net<Weight>::add_to_my_follower_ranks_mxw() {
 
 template<typename Weight>
 void Net<Weight>::data_x_data(const int32_t tid) {
-    int32_t sid = Env::threads_socket_id[tid];
+    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -865,7 +865,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
 
 template<typename Weight>
 uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t tid) {
-    int32_t sid = Env::threads_socket_id[tid];
+    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -913,7 +913,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
 
 template<typename Weight>
 void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid) {
-    int32_t sid = Env::threads_socket_id[tid];
+    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     struct Env::thread_struct& thread_st = Env::threads[tid];    
     struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
     struct Tile<Weight>& C_tile = output->tiles[leader_rowgroup][0];
