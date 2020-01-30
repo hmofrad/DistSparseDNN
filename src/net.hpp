@@ -52,7 +52,7 @@ class Net {
         //bool greedy = false;
         uint32_t split_factor = 16;
         bool rank_work_sharing = false;
-        bool numa_queues = false;
+        bool numa_queues = true;
         uint32_t schduling_threshold = 5;
         
         
@@ -844,7 +844,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
 template<typename Weight>
 uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t tid) {
     int32_t sid = (replication or numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
-    //int32_t si = (numa_queues) ? Env::threads_socket_id[tid] : 0;
+    int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -881,7 +881,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
                                nrows, ncols, B_start_col, B_end_col, B_off_col, 
                                thread_st, leader_tid, tid); 
             //Env::counters[tid].layer_index++;   
-            Env::scores[sid][tid]++;            
+            Env::scores[sid1][tid]++;            
         }
         else {
             break;
@@ -892,8 +892,9 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
 
 template<typename Weight>
 void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid) {
-    int32_t sid = (replication or numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
-    //int32_t si = (numa_queues) ? Env::threads_socket_id[tid] : 0;
+    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    
     struct Env::thread_struct& thread_st = Env::threads[tid];    
     struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
     struct Tile<Weight>& C_tile = output->tiles[leader_rowgroup][0];
@@ -924,7 +925,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
         data_x_model_hybrid_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                                    nrows, ncols, B_start_col, B_end_col, B_off_col,
                                    my_threads, thread_st, leader_tid, tid);
-       if(tid == leader_tid) Env::scores[sid][tid]++;
+       if(tid == leader_tid) Env::scores[sid1][tid]++;
     }
 }
 /*
@@ -1152,17 +1153,17 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
     if(tid == leader_tid) {
         //if(greedy) {
         //if(numa_queues) {
-            int32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+            int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
             if(numa_queues) {
                 for(int32_t s = 0; s < Env::nsockets; s++) {
                     int32_t si = (s + Env::threads_socket_id[tid]) % Env::nsockets;
-                    if((si == sid) or (Env::numa_follower_threads[si].size() == (uint32_t) Env::nthreads_per_socket[si])) {
+                    if((si == sid1) or (Env::numa_follower_threads[si].size() == (uint32_t) Env::nthreads_per_socket[si])) {
                         found |= thread_scheduling(my_threads, Env::numa_follower_threads[si], si, start_layer, ncols, leader_tid, tid);
                     }
                 }
             }
             else {
-                found = thread_scheduling(my_threads, Env::numa_follower_threads[sid], sid, start_layer, ncols, leader_tid, tid);
+                found = thread_scheduling(my_threads, Env::numa_follower_threads[sid1], sid1, start_layer, ncols, leader_tid, tid);
             }
             
             
@@ -1302,7 +1303,7 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
 
 template<typename Weight>
 bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid) {
-    uint32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    uint32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     bool status = true;
     uint32_t all_done = 0;
     //if(numa_queues) {
@@ -1311,9 +1312,9 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int
         }
         //printf("Rank=%d tid=%d 0.all_done=%d\n", Env::rank, tid, all_done);
         if(all_done != (uint32_t) Env::nthreads) {         
-            pthread_mutex_lock(&Env::numa_thread_mutex[sid]);
+            pthread_mutex_lock(&Env::numa_thread_mutex[sid1]);
             
-            Env::numa_follower_threads[sid].push_back(tid);
+            Env::numa_follower_threads[sid1].push_back(tid);
             my_threads.erase(my_threads.begin(), my_threads.end());
             Env::threads[tid].leader = -1;
             
@@ -1332,7 +1333,7 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int
             
             
             if(Env::finished_threads[tid]) {
-                    Env::numa_num_finished_threads[sid]++;
+                    Env::numa_num_finished_threads[1]++;
                     //Env::num_finished_threads++;
                     Env::finished_threads[tid] = false;
             }
@@ -1343,13 +1344,13 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int
             }
             
             if(all_done != (uint32_t) Env::nthreads) {
-                pthread_cond_wait(&Env::numa_thread_cond[sid], &Env::numa_thread_mutex[sid]); 
+                pthread_cond_wait(&Env::numa_thread_cond[sid1], &Env::numa_thread_mutex[sid1]); 
                 //printf("Rank=%d tid=%2d Waked up\n", Env::rank, tid);
-                pthread_mutex_unlock(&Env::numa_thread_mutex[sid]); 
+                pthread_mutex_unlock(&Env::numa_thread_mutex[sid1]); 
             }
             else {
                 //printf("Rank=%d tid=%2d 1.all_done=%d\n", Env::rank, tid, all_done);
-                pthread_mutex_unlock(&Env::numa_thread_mutex[sid]);   
+                pthread_mutex_unlock(&Env::numa_thread_mutex[sid1]);   
                 for(int32_t s = 0; s < Env::nsockets; s++) {
                     //printf("Rank=%d tid=%d 1.socket=%d\n", Env::rank, tid, s);
                     pthread_mutex_lock(&Env::numa_thread_mutex[s]);
