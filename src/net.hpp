@@ -843,7 +843,8 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
 
 template<typename Weight>
 uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t tid) {
-    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    int32_t sid = (replication or numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    //int32_t si = (numa_queues) ? Env::threads_socket_id[tid] : 0;
     uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -880,7 +881,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
                                nrows, ncols, B_start_col, B_end_col, B_off_col, 
                                thread_st, leader_tid, tid); 
             //Env::counters[tid].layer_index++;   
-            Env::scores[tid]++;            
+            Env::scores[sid][tid]++;            
         }
         else {
             break;
@@ -891,7 +892,8 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
 
 template<typename Weight>
 void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid) {
-    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    int32_t sid = (replication or numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    //int32_t si = (numa_queues) ? Env::threads_socket_id[tid] : 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];    
     struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
     struct Tile<Weight>& C_tile = output->tiles[leader_rowgroup][0];
@@ -922,7 +924,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
         data_x_model_hybrid_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                                    nrows, ncols, B_start_col, B_end_col, B_off_col,
                                    my_threads, thread_st, leader_tid, tid);
-       if(tid == leader_tid) Env::scores[tid]++;
+       if(tid == leader_tid) Env::scores[sid][tid]++;
     }
 }
 /*
@@ -1060,9 +1062,7 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
             //if(not greedy) {
                 //min_score_value = *std::min_element(Env::scores.begin(), Env::scores.end());
             if((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) or (scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_)) { 
-                for(std::vector<uint32_t>::iterator it = Env::scores.begin(); it != Env::scores.end(); it++) {
-                   
-                    
+                for(std::vector<uint32_t>::iterator it = Env::scores[socket_id].begin(); it != Env::scores[socket_id].end(); it++) {
                     if(*it >= maxLayers) continue;
                     
                     if(*it > max_score_value) {
@@ -1079,12 +1079,12 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
             }
             
             bool pick = ((scheduling_type == SCHEDULING_TYPE::_EARLIEST_FIRST_) or 
-                         ((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) and ((Env::scores[tid] - min_score_value) < schduling_threshold)) or
-                         ((scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_) and ((max_score_value  - Env::scores[tid]) < schduling_threshold)));
+                         ((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) and ((Env::scores[socket_id][tid] - min_score_value) < schduling_threshold)) or
+                         ((scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_) and ((max_score_value  - Env::scores[socket_id][tid]) < schduling_threshold)));
             
-            uint32_t nworking = Env::nthreads - Env::num_finished_threads;
-            uint32_t nfinished = Env::num_finished_threads;
-            uint32_t nhelping = Env::num_finished_threads - follower_threads.size();
+            uint32_t nworking = Env::nthreads - Env::numa_num_finished_threads[socket_id];
+            uint32_t nfinished = Env::numa_num_finished_threads[socket_id];
+            uint32_t nhelping = Env::numa_num_finished_threads[socket_id] - follower_threads.size();
             uint32_t nidles = follower_threads.size();
             printf("Rank=%d tid=%2d layer=%d nworking=%d nfinished=%d nhelping=%d nidles=%d min=%d max=%d\n", Env::rank, tid, start_layer, nworking, nfinished, nhelping, nidles, min_score_value, max_score_value);
             
@@ -1152,7 +1152,7 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
     if(tid == leader_tid) {
         //if(greedy) {
         //if(numa_queues) {
-            int32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : 0;
+            int32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
             if(numa_queues) {
                 for(int32_t s = 0; s < Env::nsockets; s++) {
                     int32_t si = (s + Env::threads_socket_id[tid]) % Env::nsockets;
@@ -1302,7 +1302,7 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
 
 template<typename Weight>
 bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid) {
-    uint32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : 0;
+    uint32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     bool status = true;
     uint32_t all_done = 0;
     //if(numa_queues) {
@@ -1332,7 +1332,8 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int
             
             
             if(Env::finished_threads[tid]) {
-                    Env::num_finished_threads++;
+                    Env::numa_num_finished_threads[sid]++;
+                    //Env::num_finished_threads++;
                     Env::finished_threads[tid] = false;
             }
             
