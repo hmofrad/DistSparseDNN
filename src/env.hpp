@@ -42,7 +42,7 @@ namespace Env {
     std::deque<uint32_t> recv_rowgroups;
     std::deque<uint32_t> send_rowgroups;
     std::vector<struct counter_struct> counters; 
-    std::vector<uint32_t> scores;
+    std::vector<std::vector<uint32_t>> scores;
     int iteration = 0;
     
     double io_time;
@@ -68,6 +68,7 @@ namespace Env {
     uint32_t num_finished_threads = 0;
     std::vector<bool> finished_threads;
 
+    std::vector<uint32_t> numa_num_finished_threads;
     std::vector<std::deque<int32_t>> numa_follower_threads;
     std::vector<pthread_cond_t> numa_thread_cond;
     std::vector<pthread_mutex_t> numa_thread_mutex;
@@ -197,9 +198,13 @@ int Env::init() {
     
     thread_rowgroup.resize(Env::nthreads);
     counters.resize(Env::nthreads); 
-    scores.resize(Env::nthreads);
     
     
+    scores.resize(Env::nsockets);
+    for(int32_t s = 0; s < Env::nsockets; s++) {
+        scores[s].resize(Env::nthreads);
+    }
+        
     
     
     spmm_symb_time.resize(Env::nthreads);
@@ -223,6 +228,8 @@ int Env::init() {
         Env::thread_conds[i] = PTHREAD_COND_INITIALIZER;
         pthread_barrier_init(&Env::thread_barriers[i], NULL, 1);
     }
+    
+    numa_num_finished_threads.resize(Env::nsockets);
     numa_follower_threads.resize(Env::nsockets);
     numa_thread_mutex.resize(Env::nsockets);
     numa_thread_cond.resize(Env::nsockets);
