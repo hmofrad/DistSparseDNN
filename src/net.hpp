@@ -822,17 +822,17 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     //printf("Rank=%d tid=%d added to queue\n", Env::rank, tid);
     while(add_to_idle_threads(my_threads, tid)) {
         const int32_t leader = Env::threads[tid].leader;
-        if(leader != -1) {
+        //if(leader != -1) {
             //printf("Rank=%d tid=%d Waked leader=%d\n", Env::rank, tid, leader);
             uint32_t leader_rowgroup = Env::threads[tid].rowgroup;
             uint32_t leader_start_layer = Env::threads[tid].start_layer;
             hybrid_x_model(my_threads, leader_rowgroup, leader_start_layer, leader, tid);
-        }
+        //}
     }
     auto finish = std::chrono::high_resolution_clock::now();
     
     //elapsed_time = Env::clock() - Env::global_time;
-    //printf("Rank=%d tid=%2d time=%2.2f Finished\n", Env::rank, tid, elapsed_time);
+   printf("Rank=%d tid=%2d Finished\n", Env::rank, tid);
     
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
     //printf("Rank=%d tid=%d done\n", Env::rank, tid);
@@ -1303,6 +1303,72 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
 
 template<typename Weight>
 bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid) {
+    
+    uint32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    bool status = true;
+    uint32_t all_done = 0;
+    //if(numa_queues) {
+        
+        pthread_mutex_lock(&Env::numa_thread_mutex[sid1]);
+        Env::numa_follower_threads[sid1].push_back(tid);
+        if(not my_threads.empty()) {
+            my_threads.erase(my_threads.begin(), my_threads.end());
+        }
+        Env::threads[tid].leader = -1;
+            
+        for(std::deque<int32_t>& numa_thread: Env::numa_follower_threads) {
+            all_done += numa_thread.size();
+        }
+        
+        
+        printf("Rank=%d tid=%2d Added to idle queue idle_threads ", Env::rank, tid);
+        for(int32_t s = 0; s < Env::nsockets; s++) {
+            printf("Socket%d=[", s);
+            for(auto t: Env::numa_follower_threads[s]) {
+                printf("%d ", t);
+            }
+            printf("] ");
+        }
+        printf("\n");
+        
+        
+        
+        //printf("Rank=%d tid=%d 0.all_done=%d\n", Env::rank, tid, all_done);
+        if(all_done == (uint32_t) Env::nthreads) {         
+            pthread_mutex_unlock(&Env::numa_thread_mutex[sid1]);   
+            for(int32_t s = 0; s < Env::nsockets; s++) {
+                //printf("Rank=%d tid=%d 1.socket=%d\n", Env::rank, tid, s);
+                pthread_mutex_lock(&Env::numa_thread_mutex[s]);
+                pthread_cond_broadcast(&Env::numa_thread_cond[s]);   
+                pthread_mutex_unlock(&Env::numa_thread_mutex[s]);                     
+            }
+            status = false;
+            printf("Rank=%d tid=%d 0.all_done=%d waked up others and leave\n", Env::rank, tid, all_done);
+        }
+        else {
+            if(Env::finished_threads[tid]) {
+                Env::numa_num_finished_threads[sid1]++;
+                    //Env::num_finished_threads++;
+                Env::finished_threads[tid] = false;
+            }
+            
+            pthread_cond_wait(&Env::numa_thread_cond[sid1], &Env::numa_thread_mutex[sid1]); 
+            pthread_mutex_unlock(&Env::numa_thread_mutex[sid1]); 
+            
+            all_done = 0;
+            for(std::deque<int32_t>& numa_thread: Env::numa_follower_threads) {
+                all_done += numa_thread.size();
+            }
+            
+            if(all_done == (uint32_t) Env::nthreads) {
+                status = false;
+                printf("Rank=%d tid=%d 0.all_done=%d done done\n", Env::rank, tid, all_done);
+            }
+        }
+    
+    
+    
+    /*
     uint32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     bool status = true;
     uint32_t all_done = 0;
@@ -1318,19 +1384,7 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int
             my_threads.erase(my_threads.begin(), my_threads.end());
             Env::threads[tid].leader = -1;
             
-            
-            //double elapsed_time = Env::clock() - Env::global_time;
-            printf("Rank=%d tid=%2d Added to idle queue idle_threads ", Env::rank, tid);
-            for(int32_t s = 0; s < Env::nsockets; s++) {
-                printf("Socket%d=[", s);
-                for(auto t: Env::numa_follower_threads[s]) {
-                    printf("%d ", t);
-                }
-                printf("] ");
-            }
-            printf("\n");
-            
-            
+  
             
             if(Env::finished_threads[tid]) {
                     Env::numa_num_finished_threads[1]++;
@@ -1364,6 +1418,7 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int
             //printf("Rank=%d tid=%2d 2.all_done=%d\n", Env::rank, tid, all_done);
             status = false;
         }
+        */
      /*   
     }
     else {
