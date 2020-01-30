@@ -843,7 +843,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
 
 template<typename Weight>
 uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t tid) {
-    int32_t sid = (replication or numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
