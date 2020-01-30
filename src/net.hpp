@@ -71,7 +71,7 @@ class Net {
         bool add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid);
         //int32_t add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t tid);
         bool    add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid);
-        bool    thread_scheduling(std::deque<int32_t>& my_threads, std::deque<int32_t>& follower_threads, uint32_t socket_id, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid);
+        bool    thread_scheduling(std::deque<int32_t>& my_threads, std::deque<int32_t>& follower_threads, int32_t socket_id, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid);
         
         int32_t add_to_idle_ranks(uint32_t& leader_rowgroup, uint32_t& start_layer, const int32_t tid);
         bool add_to_my_follower_ranks(const uint32_t leader_rowgroup, const uint32_t start_layer, const std::deque<int32_t> my_threads, const int32_t tid);
@@ -832,7 +832,10 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     auto finish = std::chrono::high_resolution_clock::now();
     
     //elapsed_time = Env::clock() - Env::global_time;
-   printf("Rank=%d tid=%2d Finished\n", Env::rank, tid);
+    printf("Rank=%d tid=%2d Finished\n", Env::rank, tid);
+    pthread_barrier_wait(&Env::thread_barrier);
+    
+    printf("Rank=%d tid=%2d Finished\n", Env::rank, tid);
     
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
     //printf("Rank=%d tid=%d done\n", Env::rank, tid);
@@ -1044,16 +1047,17 @@ int32_t Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads,
 //#define UINT32_MAX  ((uint32_t)-1)
 
 template<typename Weight>
-bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<int32_t>& follower_threads, uint32_t socket_id,  const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid) {  
+bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<int32_t>& follower_threads, int32_t socket_id, const uint32_t start_layer, const uint32_t ncols, const int32_t leader, const int32_t tid) {  
     bool found = false;
     uint32_t num_threads = my_threads.size();
-    uint32_t old_num_threads = 0;
+    uint32_t old_num_threads = my_threads.size();
     uint32_t num_new_threads = 0;
     uint32_t min_score_value = UINT32_MAX;
     uint32_t max_score_value = 0;
+    int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     
     
-    old_num_threads = my_threads.size();
+    //old_num_threads = my_threads.size();
     if(!follower_threads.empty()) {
         pthread_mutex_lock(&Env::numa_thread_mutex[socket_id]);  
         if(!follower_threads.empty()) {
@@ -1062,7 +1066,7 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
 //
             //if(not greedy) {
                 //min_score_value = *std::min_element(Env::scores.begin(), Env::scores.end());
-            if((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) or (scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_)) { 
+            if((sid1 == socket_id) and ((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) or (scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_))) { 
                 for(std::vector<uint32_t>::iterator it = Env::scores[socket_id].begin(); it != Env::scores[socket_id].end(); it++) {
                     if(*it >= maxLayers) continue;
                     
@@ -1079,9 +1083,10 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
                 //max_score_value = *min_max.second;
             }
             
-            bool pick = ((scheduling_type == SCHEDULING_TYPE::_EARLIEST_FIRST_) or 
-                         ((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) and ((Env::scores[socket_id][tid] - min_score_value) < schduling_threshold)) or
-                         ((scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_) and ((max_score_value  - Env::scores[socket_id][tid]) < schduling_threshold)));
+            bool pick = (((sid1 == socket_id) and ((scheduling_type == SCHEDULING_TYPE::_EARLIEST_FIRST_) or 
+                                                   ((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) and ((Env::scores[socket_id][tid] - min_score_value) < schduling_threshold)) or
+                                                   ((scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_) and ((max_score_value  - Env::scores[socket_id][tid]) < schduling_threshold)))) or
+                         (sid1 != socket_id));
             
             uint32_t nworking = Env::nthreads - Env::numa_num_finished_threads[socket_id];
             uint32_t nfinished = Env::numa_num_finished_threads[socket_id];
@@ -1134,9 +1139,8 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
                 
                 
             }
-            pthread_mutex_unlock(&Env::numa_thread_mutex[socket_id]);
         }
-
+        pthread_mutex_unlock(&Env::numa_thread_mutex[socket_id]);
     }
     return(found);
 }
