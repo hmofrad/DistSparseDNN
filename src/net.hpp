@@ -114,7 +114,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
     ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
     
-    Env::resize_score_vec(numa_queues);
+    //Env::resize_score_vec(numa_queues);
     
     if(replication and (Env::nthreads_per_socket[Env::rank_socket_id] == (uint32_t) Env::nthreads)) {
             replication = false;
@@ -1070,7 +1070,7 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
                 //min_score_value = *std::min_element(Env::scores.begin(), Env::scores.end());
             if((sid1 == socket_id) and ((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) or (scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_))) { 
                 for(std::vector<uint32_t>::iterator it = Env::scores[socket_id].begin(); it != Env::scores[socket_id].end(); it++) {
-                    if(*it >= maxLayers) continue;
+                    if((*it >= maxLayers) or (*it == maxLayers)) continue;
                     
                     if(*it > max_score_value) {
                         max_score_value = *it;
