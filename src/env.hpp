@@ -202,6 +202,12 @@ int Env::init() {
     thread_rowgroup.resize(Env::nthreads);
     counters.resize(Env::nthreads); 
     
+    scores.resize(Env::nsockets);
+    for(int32_t s = 0; s < Env::nsockets; s++) {
+        scores[s].resize(Env::nthreads);
+    }
+    
+    
     spmm_symb_time.resize(Env::nthreads);
     spmm_real_time.resize(Env::nthreads);
     memory_allocation_time.resize(Env::nthreads);
