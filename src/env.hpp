@@ -140,8 +140,8 @@ namespace Env {
     std::vector<MPI_Comm> thread_communicators;
     std::vector<int32_t> threads_rank;
     std::vector<int32_t> threads_nranks;
+    std::vector<std::pair<uint32_t, uint32_t>> queue_indices;
     
-    void resize_score_vec(bool numa_queues);
     
     int32_t* idle_ranks;
     MPI_Win ranks_window;
@@ -299,19 +299,6 @@ int Env::init() {
     return(status);
 }
 
-void Env::resize_score_vec(bool numa_queues) {    
-    scores.resize(Env::nsockets);
-    if(numa_queues) {
-        for(int32_t s = 0; s < Env::nsockets; s++) {
-            scores[s].resize(Env::nthreads_per_socket[s]);
-        }
-    }
-    else {
-        Env::scores[Env::rank_socket_id].resize(Env::nthreads);
-    }
-}
-
-
 int Env::get_nsockets() {
     const char* command = "lscpu | grep 'Socket(s)' | sed 's/[^0-9]*//g'";
     
@@ -389,9 +376,32 @@ bool Env::numa_configure() {
         Env::nthreads_per_socket[Env::threads_socket_id[i]]++;
     }
     //for(auto nt: Env::nthreads_per_socket)
-    ///    printf("%d ", nt);
+    //    printf("%d ", nt);
     //printf("\n");
     //std::exit(0);
+    
+    queue_indices.resize(Env::nsockets);
+    bool balanced = true;
+    for(uint32_t n_th_per_socket: Env::nthreads_per_socket) {
+        //printf("%d %d\n", n_th_per_socket, Env::ncores_per_socket);
+        if(n_th_per_socket != (uint32_t) Env::ncores_per_socket) {
+            balanced = false;
+            break;
+        }
+    }
+    
+
+    if(balanced) {
+        for(int s = 0; s < Env::nsockets; s++) {
+            queue_indices[s] = {Env::ncores_per_socket * s, Env::ncores_per_socket * (s+1)};
+        }
+    }
+    else {
+        for(int s = 0; s < Env::nsockets; s++) {
+            queue_indices[s] = {0, Env::nthreads};
+        }
+    }
+  
     
     if(Env::nthreads != num_unique_cores) {
         //printf("WARN[rank=%d] CPU oversubscription %d/%d.\n", Env::rank, num_unique_cores, Env::nthreads);
