@@ -16,8 +16,8 @@
 enum PARALLELISM_TYPE {_MANAGER_X_WORKER_, _DATA_X_DATA_, _DATA_X_MODEL_, _HYBRID_X_HYBRID_};
 const char* PARALLELISM_TYPES[] = {"_MANAGER_X_WORKER_", "_DATA_X_DATA_", "_DATA_X_MODEL_", "_HYBRID_X_HYBRID_"};
 
-enum SCHEDULING_TYPE {_EARLIEST_FIRST_, _SLOWER_FIRST_, _FASTER_FIRST_};
-const char* SCHEDULING_TYPES[] = {"_EARLIEST_FIRST_", "_SLOWER_FIRST_", "_FASTER_FIRST_", "_HYBRID_X_HYBRID_"};
+enum SCHEDULING_TYPE {_EARLIEST_FIRST_, _SLOWER_FIRST_, _FASTER_FIRST_, _NONE_};
+const char* SCHEDULING_TYPES[] = {"_EARLIEST_FIRST_", "_SLOWER_FIRST_", "_FASTER_FIRST_", "_NONE_"};
 
 template<typename Weight>
 class Net {
@@ -247,7 +247,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
     output->set_tile_info(inputFeatures->tiles);
     
-    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method [%s].\n", PARALLELISM_TYPES[parallelism_type]); 
+    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method [%s | %s].\n", PARALLELISM_TYPES[parallelism_type], SCHEDULING_TYPES[scheduling_type]); 
     auto finish = std::chrono::high_resolution_clock::now();
     Env::io_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
     Env::barrier();
@@ -1070,7 +1070,7 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
                 //min_score_value = *std::min_element(Env::scores.begin(), Env::scores.end());
             
             if((sid1 == socket_id) and ((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) or (scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_))) { 
-                for(std::vector<uint32_t>::iterator it = Env::scores[socket_id].begin(); it != Env::scores[socket_id].end(); it++) {
+                for(std::vector<uint32_t>::iterator it = Env::scores[socket_id].begin() + Env::queue_indices[socket_id].first ; it != Env::scores[socket_id].begin() + Env::queue_indices[socket_id].second ; it++) {
                     if((*it >= maxLayers) or (*it == 0)) continue;
                     
                     if(*it > max_score_value) {
@@ -1164,7 +1164,7 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
             if(numa_queues) {
                 for(int32_t s = 0; s < Env::nsockets; s++) {
                     int32_t si = (s + Env::threads_socket_id[tid]) % Env::nsockets;
-                    if((si == sid1) or (Env::numa_follower_threads[si].size() == (uint32_t) Env::nthreads_per_socket[si])) {
+                    if((si == sid1) or (Env::nthreads_per_socket[si] and (Env::numa_follower_threads[si].size() == (uint32_t) Env::nthreads_per_socket[si]))) {
                         found |= thread_scheduling(my_threads, Env::numa_follower_threads[si], si, start_layer, ncols, leader_tid, tid);
                     }
                 }
