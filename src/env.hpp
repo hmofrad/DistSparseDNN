@@ -43,6 +43,7 @@ namespace Env {
     std::deque<uint32_t> send_rowgroups;
     std::vector<struct counter_struct> counters; 
     std::vector<std::vector<uint32_t>> scores;
+    
     int iteration = 0;
     
     double io_time;
@@ -140,6 +141,8 @@ namespace Env {
     std::vector<int32_t> threads_rank;
     std::vector<int32_t> threads_nranks;
     
+    void resize_score_vec(bool numa_queues);
+    
     int32_t* idle_ranks;
     MPI_Win ranks_window;
     pthread_mutex_t thread_mutex_q;
@@ -198,14 +201,6 @@ int Env::init() {
     
     thread_rowgroup.resize(Env::nthreads);
     counters.resize(Env::nthreads); 
-    
-    
-    scores.resize(Env::nsockets);
-    for(int32_t s = 0; s < Env::nsockets; s++) {
-        scores[s].resize(Env::nthreads);
-    }
-        
-    
     
     spmm_symb_time.resize(Env::nthreads);
     spmm_real_time.resize(Env::nthreads);
@@ -296,6 +291,18 @@ int Env::init() {
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
+}
+
+void Env::resize_score_vec(bool numa_queues) {    
+    scores.resize(Env::nsockets);
+    if(numa_queues) {
+        for(int32_t s = 0; s < Env::nsockets; s++) {
+            scores[s].resize(Env::nthreads_per_socket[s]);
+        }
+    }
+    else {
+        Env::scores[Env::rank_socket_id].resize(Env::nthreads);
+    }
 }
 
 
