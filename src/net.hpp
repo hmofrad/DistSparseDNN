@@ -114,6 +114,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
     ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
     
+    Env::resize_score_vec(numa_queues);
+    
     if(replication and (Env::nthreads_per_socket[Env::rank_socket_id] == (uint32_t) Env::nthreads)) {
             replication = false;
     }
