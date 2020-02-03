@@ -1091,7 +1091,7 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
                                                    ((scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_) and ((max_score_value  - Env::scores[socket_id][tid]) < schduling_threshold)))) or
                          (sid1 != socket_id));
             
-            uint32_t nworking = Env::nthreads - Env::numa_num_finished_threads[socket_id];
+            uint32_t nworking = Env::nthreads_per_socket[socket_id] - Env::numa_num_finished_threads[socket_id];
             uint32_t nfinished = Env::numa_num_finished_threads[socket_id];
             uint32_t nhelping = Env::numa_num_finished_threads[socket_id] - follower_threads.size();
             uint32_t nidles = follower_threads.size();
