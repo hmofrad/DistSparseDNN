@@ -450,6 +450,109 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
+                       const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+                       const TILING_TYPE tiling_type_, const bool repartition)
+                     : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
+                       nnz(nnz_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
+                           
+    if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    if (tiling_type == TILING_TYPE::_1D_ROW_) {
+        rowgrp_nranks = 1;
+        colgrp_nranks = nranks;
+        if(rowgrp_nranks * colgrp_nranks != nranks) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+            std::exit(Env::finalize()); 
+        }
+    }
+    else {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    rank_nrowgrps = nrowgrps / colgrp_nranks;
+    rank_ncolgrps = ncolgrps / rowgrp_nranks;        
+    if(rank_nrowgrps * rank_ncolgrps != rank_ntiles) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    
+    threads_ntiles = nthreads;
+    thread_ntiles = threads_ntiles/nthreads;
+    threads_nrowgrps = nthreads;
+    threads_ncolgrps = 1;
+
+    if((thread_ntiles * nthreads != threads_ntiles) or (threads_nrowgrps * threads_ncolgrps != threads_ntiles)) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+
+    if (tiling_type == TILING_TYPE::_1D_ROW_) {
+        rowgrp_nthreads = 1;
+        colgrp_nthreads = nthreads;
+    }
+    else if (tiling_type == TILING_TYPE::_1D_COL_) {
+        rowgrp_nthreads =  nthreads;
+        colgrp_nthreads = 1;
+    }
+
+    if(rowgrp_nthreads * colgrp_nthreads != nthreads) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+    thread_nrowgrps = threads_nrowgrps / colgrp_nthreads;
+    thread_ncolgrps = threads_ncolgrps / rowgrp_nthreads;
+    if(thread_nrowgrps * thread_ncolgrps != thread_ntiles) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
+        std::exit(Env::finalize()); 
+    }
+
+    tiles.resize(nrowgrps);
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        tiles[i].resize(ncolgrps);
+    }
+
+    int32_t gcd_r = std::gcd(rowgrp_nranks, colgrp_nranks);
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            tile.rank = (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
+            tile.start_row = i*tile_height;
+            tile.end_row = (i+1)*tile_height;
+            tile.height = tile_height;
+            tile.start_col = j*tile_width;
+            tile.end_col = (j+1)*tile_width;
+            tile.width = tile_width;
+        }
+    }
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: Thread-based%s\n", TILING_TYPES[tiling_type]);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrowgrps      x ncolgrps      = [%d x %d]\n", nrowgrps, ncolgrps);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rowgrp_nranks x colgrp_nranks = [%d x %d]\n", rowgrp_nranks, colgrp_nranks);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows            x ncols            = [%d x %d]\n", nrows, ncols);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height      x tile_width       = [%d x %d]\n", tile_height, tile_width);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                                 = [%d]\n", nnz);
+    
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            tiles[i][j].nedges = 0;
+            tiles[i][j].thread = 0;
+        }
+    }
+    
+    print_tiling("rank");
+    print_tiling("nedges");
+
+    compress_triples();  
+}
+
+
+template<typename Weight>
+Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                        const uint32_t rank_nthreads_, const uint32_t nthreads_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const TILING_TYPE tiling_type_, const bool repartition)
@@ -559,108 +662,6 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 
     print_tiling("rank");
     print_tiling("thread");
-    print_tiling("nedges");
-
-    compress_triples();  
-}
-
-
-template<typename Weight>
-Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
-                       const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
-                       const TILING_TYPE tiling_type_, const bool repartition)
-                     : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
-                       nnz(nnz_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
-                           
-    if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-        std::exit(Env::finalize()); 
-    }
-    
-    if (tiling_type == TILING_TYPE::_1D_ROW_) {
-        rowgrp_nranks = 1;
-        colgrp_nranks = nranks;
-        if(rowgrp_nranks * colgrp_nranks != nranks) {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-            std::exit(Env::finalize()); 
-        }
-    }
-    else {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-        std::exit(Env::finalize()); 
-    }
-    
-    rank_nrowgrps = nrowgrps / colgrp_nranks;
-    rank_ncolgrps = ncolgrps / rowgrp_nranks;        
-    if(rank_nrowgrps * rank_ncolgrps != rank_ntiles) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-        std::exit(Env::finalize()); 
-    }
-    
-    threads_ntiles = nthreads;
-    thread_ntiles = threads_ntiles/nthreads;
-    threads_nrowgrps = nthreads;
-    threads_ncolgrps = 1;
-
-    if((thread_ntiles * nthreads != threads_ntiles) or (threads_nrowgrps * threads_ncolgrps != threads_ntiles)) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-        std::exit(Env::finalize()); 
-    }
-
-    if (tiling_type == TILING_TYPE::_1D_ROW_) {
-        rowgrp_nthreads = 1;
-        colgrp_nthreads = nthreads;
-    }
-    else if (tiling_type == TILING_TYPE::_1D_COL_) {
-        rowgrp_nthreads =  nthreads;
-        colgrp_nthreads = 1;
-    }
-
-    if(rowgrp_nthreads * colgrp_nthreads != nthreads) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-        std::exit(Env::finalize()); 
-    }
-    thread_nrowgrps = threads_nrowgrps / colgrp_nthreads;
-    thread_ncolgrps = threads_ncolgrps / rowgrp_nthreads;
-    if(thread_nrowgrps * thread_ncolgrps != thread_ntiles) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
-        std::exit(Env::finalize()); 
-    }
-
-    tiles.resize(nrowgrps);
-    for (uint32_t i = 0; i < nrowgrps; i++) {
-        tiles[i].resize(ncolgrps);
-    }
-
-    int32_t gcd_r = std::gcd(rowgrp_nranks, colgrp_nranks);
-    for (uint32_t i = 0; i < nrowgrps; i++) {
-        for (uint32_t j = 0; j < ncolgrps; j++) {
-            auto& tile = tiles[i][j];
-            tile.rank = (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
-            tile.start_row = i*tile_height;
-            tile.end_row = (i+1)*tile_height;
-            tile.height = tile_height;
-            tile.start_col = j*tile_width;
-            tile.end_col = (j+1)*tile_width;
-            tile.width = tile_width;
-        }
-    }
-    
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: Thread-based%s\n", TILING_TYPES[tiling_type]);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrowgrps      x ncolgrps      = [%d x %d]\n", nrowgrps, ncolgrps);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rowgrp_nranks x colgrp_nranks = [%d x %d]\n", rowgrp_nranks, colgrp_nranks);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows            x ncols            = [%d x %d]\n", nrows, ncols);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height      x tile_width       = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                                 = [%d]\n", nnz);
-    
-    for (uint32_t i = 0; i < nrowgrps; i++) {
-        for (uint32_t j = 0; j < ncolgrps; j++) {
-            tiles[i][j].nedges = 0;
-        }
-    }
-    
-    print_tiling("rank");
     print_tiling("nedges");
 
     compress_triples();  
@@ -965,7 +966,6 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
     std::vector<MPI_Request> recv_requests;  
     
     uint64_t balanced_nnz_per_tile = nnz/ntiles; 
-
     std::vector<std::vector<uint32_t>> nnz_local;
     std::vector<uint32_t> nnz_global;    
 
@@ -974,7 +974,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
         for (uint32_t i = 0; i < nrowgrps; i++) {
             for (uint32_t j = 0; j < ncolgrps; j++) {
                 auto& tile = tiles[i][j];
-                if(tile.rank == Env::rank) {
+                if((tile.rank == Env::rank) and (not tile.triples.empty())) {
                     std::sort(tile.triples.begin(), tile.triples.end(), f_row); 
                 }
             }
@@ -984,7 +984,6 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
         for(uint32_t k = 0; k < rank_nrowgrps; k++) {
             nnz_local[k].resize(tile_height);
         }
-        nnz_global.resize(nrows);
         
         uint32_t k = 0;
         for (uint32_t i = 0; i < nrowgrps; i++) {
@@ -992,23 +991,15 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                 auto& tile = tiles[i][j];
                 if(tile.rank == Env::rank) {
                     auto& triples = tile.triples;
-                    uint32_t height = tile.height;
-                    uint32_t width = tile.width;
-                    bool b = false;
-                    uint64_t n = 0;
-                    uint32_t row = triples[0].row;
-                    uint32_t col = 0;
-                    for(auto triple: triples) {
-                        while((row != triple.row) and (row < ((i+1) * height))) {
-                            nnz_local[k][row%height] = col;
-                            row++;
-                            col = 0;
+                    if(not triples.empty()) {
+                        uint32_t height = tile.height;
+                        for(auto triple: triples) {
+                            nnz_local[k][triple.row%height]++;
                         }
-                        col++;
                     }
-                    nnz_local[k][row%height] = col;
                     k++;
                 }
+                
             }
         }
         
@@ -1029,11 +1020,11 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                 }
             }
         }
-                
-        if (not one_rank) {   
-            if(Env::rank == 0) {        
-                for(uint32_t r = 1; r < nranks; r++) { 
 
+        if(not one_rank) {   
+            if(Env::rank == 0) {
+                nnz_global.resize(nrows);                
+                for(uint32_t r = 1; r < nranks; r++) { 
                     for(uint32_t k = 0; k < rank_nrowgrps; k++) {
                         MPI_Irecv(nnz_global.data() + offsets[(r*rank_nrowgrps)+k], tile_height, MPI_UNSIGNED, r, r, MPI_COMM_WORLD, &request);
                         requests.push_back(request);
@@ -1056,7 +1047,6 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
         std::vector<uint32_t> partitions_start(ntiles);
         std::vector<uint32_t> partitions_end(ntiles);
         std::vector<uint32_t> partitions_nnz(ntiles);
-    
         if(((not one_rank) and Env::rank == 0) or (one_rank)) {
             for(uint32_t k = 0; k < rank_nrowgrps; k++) {
                 if(one_rank) {
@@ -1071,7 +1061,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                 Logging::print(Logging::LOG_LEVEL::ERROR, "Repartitioning error\n");
                 std::exit(Env::finalize()); 
             }
-            
+
             uint64_t m = 0;
             uint32_t n = 0;
             uint32_t start = 0;
@@ -1189,7 +1179,6 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
         }
     }
     else if (tiling_type == TILING_TYPE::_1D_COL_) {
-        
         const ColSort<Weight> f_col;        
         for (uint32_t i = 0; i < nrowgrps; i++) {
             for (uint32_t j = 0; j < ncolgrps; j++) {
@@ -1212,21 +1201,12 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                 auto& tile = tiles[i][j];
                 if(tile.rank == Env::rank) {
                     auto& triples = tile.triples;
-                    uint32_t height = tile.height;
-                    uint32_t width = tile.width;
-                    bool b = false;
-                    uint64_t n = 0;
-                    uint32_t row = 0;
-                    uint32_t col = triples[0].col;
-                    for(auto triple: triples) {
-                        while((col != triple.col) and (col < ((j+1) * width))) {
-                            nnz_local[k][col%width] = row;
-                            col++;
-                            row = 0;
+                    if(not triples.empty()) {
+                        uint32_t width = tile.width;
+                        for(auto triple: triples) {
+                            nnz_local[k][triple.col%width]++;
                         }
-                        row++;
-                    }
-                    nnz_local[k][col%width] = row;                        
+                    }                     
                     k++;
                 }
             }
