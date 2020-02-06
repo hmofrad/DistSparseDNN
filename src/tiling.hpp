@@ -62,12 +62,15 @@ class Tiling {
         uint32_t tile_height, tile_width;
         TILING_TYPE tiling_type;
         
+        uint64_t nedges = 0;
+        
         std::vector<std::vector<struct Tile<Weight>>> tiles;
         std::vector<uint32_t> bounds;
         
         bool one_rank = false;
         void set_threads_indices();
         void set_rank_indices();
+        uint64_t get_info(const std::string field);
         uint32_t get_tile_info(const std::string field, const int32_t tid);
         uint32_t get_tile_info_max(const std::string field);
         void     set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles); 
@@ -253,11 +256,20 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
             for (uint32_t j = 0; j < ncolgrps; j++) {
                 auto& tile = tiles[i][j];
                 if(tile.rank == Env::rank) {
-                    tiles[i][j].nedges = tiles[i][j].triples.size();
+                    tile.nedges = tile.triples.size();
                 }
             }
         }
     }
+    
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            nedges += tile.nedges;
+        }
+    }
+    
+    
     
     print_tiling("rank");
     print_tiling("nedges");
@@ -429,9 +441,17 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
             for (uint32_t j = 0; j < ncolgrps; j++) {
                 auto& tile = tiles[i][j];
                 if(tile.rank == Env::rank) {
-                    tiles[i][j].nedges = tiles[i][j].triples.size();
+                    tile.nedges = tile.triples.size();
+                    nedges += tile.nedges;
                 }
             }
+        }
+    }
+    
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            nedges += tile.nedges;
         }
     }
     
@@ -1426,6 +1446,14 @@ template<typename Weight>
 void Tiling<Weight>::delete_triples(std::vector<struct Triple<Weight>>& triples){
     triples.clear();
     triples.shrink_to_fit();
+}
+
+template<typename Weight>
+uint64_t Tiling<Weight>::get_info(const std::string field) {
+    if(field.compare("nedges") == 0) {    
+        return(nedges);
+    }
+    return(0);
 }
 
 template<typename Weight>
