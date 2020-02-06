@@ -292,8 +292,11 @@ void Net<Weight>::printTimesExcel() {
     Logging::print(Logging::LOG_LEVEL::VOID, "          %.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
     */
     
+    Logging::print(Logging::LOG_LEVEL::VOID, "           mean, std_dev, min, max\n");
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "exec time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
+    double max_exec_time = max;
+    Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
+    /*
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_sym_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_time);
@@ -302,6 +305,18 @@ void Net<Weight>::printTimesExcel() {
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(hybrid_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", mean);
+    */
+    
+    uint64_t DNNedges = inputFeatures->get_info("nedges");
+    uint64_t DNNConns = NinputInstanses * DNNedges;
+    double inference_rate = (double) DNNConns / exec_time;
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(inference_rate/1e9);
+    //Logging::print(Logging::LOG_LEVEL::VOID, "Infe time: %.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
+    
+    //double min_exec_rate = (double) (NinputInstanses * DNNedges) /max_exec_time;
+    //Logging::print(Logging::LOG_LEVEL::VOID, "Run time: %f (sec), run rate: %f (1e9 edges/sec)\n", max_exec_time, min_exec_rate/1e9);
+    
 }
 
 template<typename Weight>
