@@ -418,6 +418,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
             }
         }
     }
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
     */
 
     /* It's ugly but I have to :-/ */
@@ -436,7 +437,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         //pthread_cond_wait(&Env::thread_conds[leader_tid], &Env::thread_mutexes[leader_tid]);  
         //pthread_mutex_unlock(&Env::thread_mutexes[leader_tid]);
     //}
-    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+    //pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
     
     const uint32_t start_col = Env::threads[tid].start_col;// Env::follower_threads_info[leader_tid][tid].start_col;
     const uint32_t end_col   = Env::threads[tid].end_col; //Env::follower_threads_info[leader_tid][tid].end_col;
