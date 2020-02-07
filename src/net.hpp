@@ -27,7 +27,7 @@ class Net {
         
         Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, 
             const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
-            const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_DATA_X_DATA_,
+            const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
             const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_);
 
         std::unique_ptr<struct Tiling<Weight>> inputFeatures = nullptr;
@@ -38,7 +38,8 @@ class Net {
         std::vector<std::shared_ptr<struct Data_Block<Weight>>> spaWeightVec;
         
         std::unique_ptr<struct Tiling<Weight>> output = nullptr;
-
+        
+        uint64_t nedges;
         uint32_t NinputInstanses;        
         uint32_t Nneurons;
         Weight biasValue;
@@ -105,7 +106,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     
     std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(feature_file)
                                                                      : IO::binary_file_stat<Weight>(feature_file);
-
+    Net::nedges = nnz;
+    
     nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
     ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
     ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
@@ -307,7 +309,8 @@ void Net<Weight>::printTimesExcel() {
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", mean);
     */
     
-    uint64_t DNNedges = inputFeatures->get_info("nedges");
+    //uint64_t DNNedges = inputFeatures->get_info("nedges");
+    uint64_t DNNedges = Net::nedges;
     uint64_t DNNConns = NinputInstanses * DNNedges;
     double inference_rate = (double) DNNConns / exec_time;
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(inference_rate/1e9);
