@@ -1,5 +1,5 @@
 #!/bin/bash
-# (c) Mohammad Hasanzadeh Mofrad, 2019
+# (c) Mohammad Hasanzadeh Mofrad, 2020
 # (e) m.hasanzadeh.mofrad@gmail.com
 # Run: chmod +x text2bin.sh && ./text2bin.sh
 
@@ -19,8 +19,8 @@ BIN_DIR=bin
 
 mkdir -p ${DATA_DIR}
 
-#NEURONS=(1024 4096 16384 65536)
-NEURONS=(1024)
+NEURONS=(1024 4096 16384 65536)
+
 TXT_DIR_MNIST=${DATA_DIR}/${TXT_DIR}/MNIST
 mkdir -p ${TXT_DIR_MNIST}
 MNIST_FILE_PREFIX="sparse-images"
@@ -36,9 +36,6 @@ for N in "${NEURONS[@]}"; do
 		gunzip ${FILE_GZ}
 	fi
 done
-
-
-
 
 TXT_DIR_DNN=${DATA_DIR}/${TXT_DIR}/DNN
 mkdir -p ${TXT_DIR_DNN}
