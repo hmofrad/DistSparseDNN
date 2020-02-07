@@ -11,7 +11,7 @@
 
 /* mode: 1 = Single column input text file
          2 = Two columns input text file
-         3 = Three columns input text file (3rd column as double weights)
+         3 = Three columns input text file (3rd column as double/float weights)
  */
 
 int main(int argc, char **argv) {
@@ -41,7 +41,8 @@ int main(int argc, char **argv) {
     uint32_t num_rows = 0;
     uint32_t num_cols = 0;
     uint32_t i, j;
-    double w;
+    //double w;
+    float w;
     std::string line;
     std::istringstream iss;
     while (std::getline(fin, line)) {
@@ -63,7 +64,8 @@ int main(int argc, char **argv) {
             iss >> i >> j >> w;
             fout.write(reinterpret_cast<const char*>(&i), sizeof(uint32_t));
             fout.write(reinterpret_cast<const char*>(&j), sizeof(uint32_t));
-            fout.write(reinterpret_cast<const char*>(&w), sizeof(double));
+            //fout.write(reinterpret_cast<const char*>(&w), sizeof(double));
+            fout.write(reinterpret_cast<const char*>(&w), sizeof(float));
             //std::cout << "i=" << i << " j=" << j << " w=" << w << std::endl;
         }
         
