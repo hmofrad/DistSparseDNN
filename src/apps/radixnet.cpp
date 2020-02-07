@@ -1,6 +1,6 @@
 /*
  * radixnet.cpp: Radix-Net sparse DNN inference for MNIST dataset
- * (c) Mohammad Hasanzadeh Mofrad, 2019
+ * (c) Mohammad Hasanzadeh Mofrad, 2020
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
  
@@ -14,15 +14,15 @@
 #include <iostream>
 #include <memory>
 
-#include "radixnet.h"
 #include "env.hpp"
 #include "log.hpp"
 #include "triple.hpp"
 #include "io.hpp"
-
 #include "tiling.hpp"
 #include "net.hpp"
 #include "allocator.hpp"
+
+using WGT = double;
 
 int main(int argc, char **argv) {
     Logging::enabled = true;
