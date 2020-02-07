@@ -403,6 +403,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     uint32_t* IA = CSC::IA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
     
+    /*
     if(tid == leader_tid) {
         JA[0] = 0;
         JA[1] = 0;
@@ -417,6 +418,14 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
             }
         }
     }
+    */
+
+    /* It's ugly but I have to :-/ */
+    for(uint32_t j = 0; j < Env::threads[tid].index; j++) {
+        int32_t tt = Env::my_threads[leader_tid][j];
+        JA[Env::threads[tid].start_col+1] += (Env::threads[tt].idx_nnz - Env::threads[tt].off_nnz);
+    }
+ 
     
         
         
