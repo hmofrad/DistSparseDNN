@@ -43,6 +43,7 @@ namespace Env {
     std::deque<uint32_t> send_rowgroups;
     std::vector<struct counter_struct> counters; 
     std::vector<std::vector<uint32_t>> scores;
+    std::deque<std::deque<int32_t>> my_threads;
     
     int iteration = 0;
     
@@ -93,7 +94,7 @@ namespace Env {
     struct thread_struct {
         thread_struct(){};
         ~thread_struct(){};
-        int32_t thread_id;
+        uint32_t index;
         int32_t leader;
         uint32_t rowgroup;
         uint32_t start_layer;
@@ -220,6 +221,8 @@ int Env::init() {
     
     Env::thread_mutex_q = PTHREAD_MUTEX_INITIALIZER;
     Env::manager_mutex = PTHREAD_MUTEX_INITIALIZER;
+    
+    Env::my_threads.resize(Env::nthreads);
     
     Env::thread_mutexes.resize(Env::nthreads);
     Env::thread_conds.resize(Env::nthreads);
