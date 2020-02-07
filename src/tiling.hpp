@@ -1450,7 +1450,7 @@ void Tiling<Weight>::delete_triples(std::vector<struct Triple<Weight>>& triples)
 
 template<typename Weight>
 uint64_t Tiling<Weight>::get_info(const std::string field) {
-    if(field.compare("nedges") == 0) {    
+    if(field.compare("nedges") == 0) {
         return(nedges);
     }
     return(0);
