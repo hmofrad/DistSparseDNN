@@ -143,10 +143,25 @@ void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
     const Weight* b = bias;
     
     /* ReLU activation function thresholds */
-    Weight YMIN = 0; 
-    Weight YMAX = 32;
+    const Weight YMIN = 0; 
+    const Weight YMAX = 32;
     
+    for(uint32_t i = 0; i < CSC::nrows; i++) {
+        if(s[i]) {
+            s[i] += b[c];
+            s[i] = (s[i] < YMIN) ? YMIN : (s[i] > YMAX) ? YMAX : s[i];
+            if(s[i]) {
+                IA[k] = i;
+                A[k] = s[i];
+                k++;
+                s[i] = 0;
+            }
+        }
+    }
     JA[c] = k;
+    
+    
+    /*
     for(uint32_t i = 0; i < CSC::nrows; i++) {
         if(s[i]) {
             s[i] += b[c];
@@ -165,6 +180,7 @@ void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
             }
         }
     }
+    */
 }
 
 template<typename Weight>
@@ -442,10 +458,26 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
     const uint32_t start_col = Env::threads[tid].start_col;// Env::follower_threads_info[leader_tid][tid].start_col;
     const uint32_t end_col   = Env::threads[tid].end_col; //Env::follower_threads_info[leader_tid][tid].end_col;
 
+
+    for(uint32_t i = o_JA[start_col] + Env::threads[tid].dis_nnz; i < o_JA[start_col + 1]; i++) {
+        IA[JA[start_col+1]] = o_IA[i];
+        A[JA[start_col+1]]  = o_A[i];
+        JA[start_col+1]++;
+    }
+    
+    for(uint32_t j = start_col; j < end_col; j++) {
+        JA[j+1] = JA[j];
+        for(uint32_t i = o_JA[j]; i < o_JA[j + 1]; i++) {
+            IA[JA[j+1]] = o_IA[i];
+            A[JA[j+1]]  = o_A[i];
+            JA[j+1]++;
+        }
+    }
+
+    /*
     for(uint32_t j = start_col; j < end_col; j++) {
         JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
         uint32_t& k = JA[j+1];
-        //uint32_t m = (j == start_col) ? Env::displacement_nnz[tid] : 0;
         uint32_t m = (j == start_col) ? Env::threads[tid].dis_nnz : 0;
         for(uint32_t i = o_JA[j] + m; i < o_JA[j + 1]; i++) {
             IA[k] = o_IA[i];
@@ -453,6 +485,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
             k++;
         }
     }
+    */
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
 }
 
