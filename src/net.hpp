@@ -47,7 +47,7 @@ class Net {
         int32_t nCategories;
         
         PARALLELISM_TYPE parallelism_type;
-        SCHEDULING_TYPE scheduling_type = _SLOWER_FIRST_;
+        SCHEDULING_TYPE scheduling_type = _EARLIEST_FIRST_;
         bool repartition = false;
         bool replication = false;
         uint32_t split_factor = 16;
@@ -1004,8 +1004,7 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
 template<typename Weight>
 bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader_tid, const int32_t tid) {  
     double start_time = 0;
-    start_time = Env::tic();
-    
+    if(tid ==leader_tid) start_time = Env::tic();
     bool found = false;
     if(tid == leader_tid) {
         int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
@@ -1022,7 +1021,7 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
         }
     }
     
-    Env::hybrid_probe_time[tid] += Env::toc(start_time);  
+    if(tid ==leader_tid) Env::hybrid_probe_time[tid] += Env::toc(start_time);  
     return(found);
 }
 
