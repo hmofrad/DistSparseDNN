@@ -298,7 +298,7 @@ void Net<Weight>::printTimesExcel() {
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
     double max_exec_time = max;
     Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
-    /*
+    
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_sym_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_time);
@@ -307,8 +307,9 @@ void Net<Weight>::printTimesExcel() {
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(hybrid_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", mean);
-    */
     
+    
+    /*
     //uint64_t DNNedges = inputFeatures->get_info("nedges");
     uint64_t DNNedges = Net::nedges;
     uint64_t DNNConns = NinputInstanses * DNNedges;
@@ -316,7 +317,7 @@ void Net<Weight>::printTimesExcel() {
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(inference_rate/1e9);
     //Logging::print(Logging::LOG_LEVEL::VOID, "Infe time: %.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
-    
+    */
     //double min_exec_rate = (double) (NinputInstanses * DNNedges) /max_exec_time;
     //Logging::print(Logging::LOG_LEVEL::VOID, "Run time: %f (sec), run rate: %f (1e9 edges/sec)\n", max_exec_time, min_exec_rate/1e9);
     
@@ -903,8 +904,9 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
     double start_time = 0;
 
     for (uint32_t l = leader_start_layer; l < maxLayers; l++) {
+        
+        (void)add_to_my_follower_threads(my_threads, l, ncols, leader_tid, tid);
         start_time = Env::tic();   
-            (void)add_to_my_follower_threads(my_threads, l, ncols, leader_tid, tid);
             Env::decrease_num_threads(1, leader_tid, tid);
             Env::init_num_threads(my_threads.size(), leader_tid, tid);
         Env::hybrid_probe_time[tid] += Env::toc(start_time);     
@@ -1001,6 +1003,9 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
 
 template<typename Weight>
 bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t ncols, const int32_t leader_tid, const int32_t tid) {  
+    double start_time = 0;
+    start_time = Env::tic();
+    
     bool found = false;
     if(tid == leader_tid) {
         int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
@@ -1016,6 +1021,8 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
             found = thread_scheduling(my_threads, Env::numa_follower_threads[sid1], sid1, start_layer, ncols, leader_tid, tid);
         }
     }
+    
+    Env::hybrid_probe_time[tid] += Env::toc(start_time);  
     return(found);
 }
 
