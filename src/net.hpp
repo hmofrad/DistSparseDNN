@@ -300,13 +300,13 @@ void Net<Weight>::printTimesExcel() {
     Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
     
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_sym_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", max);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", max);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(memory_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", mean);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", max);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(hybrid_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", mean);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", max);
     
     
     /*
