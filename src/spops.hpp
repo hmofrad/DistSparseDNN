@@ -363,28 +363,28 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct CSC<Weight>> A_CSC
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
     double start_time = 0;
-    start_time = Env::tic(); 
+    if(tid ==leader_tid) start_time = Env::tic(); 
         std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_CSC, B_CSC, s_spa, B_start_col, B_end_col, tid);
         pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
-    Env::spmm_symb_time[tid] += Env::toc(start_time);   
+    if(tid ==leader_tid) Env::spmm_symb_time[tid] += Env::toc(start_time);   
     
-    start_time = Env::tic();
+    if(tid ==leader_tid) start_time = Env::tic();
         uint64_t nnz = Env::adjust_nnz(my_threads, leader_tid, tid);
         C_CSC->reallocate(nnz, nrows, ncols, leader_tid, tid);
-    Env::memory_allocation_time[tid] += Env::toc(start_time);
+    if(tid ==leader_tid) Env::memory_allocation_time[tid] += Env::toc(start_time);
     
-    start_time = Env::tic();
+    if(tid ==leader_tid) start_time = Env::tic();
         pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
         spmm_real(A_CSC, B_CSC, C_CSC, s_spa, b_bias, B_start_col, B_end_col, B_off_col, thread_st.idx_nnz, tid);
         pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
         Env::adjust_displacement(my_threads, leader_tid, tid);
         C_CSC->adjust(my_threads, leader_tid, tid);	
-    Env::spmm_real_time[tid] += Env::toc(start_time);
+    if(tid ==leader_tid) Env::spmm_real_time[tid] += Env::toc(start_time);
     
-    start_time = Env::tic();
+    if(tid ==leader_tid) start_time = Env::tic();
         pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
         A_CSC->repopulate(C_CSC, my_threads, leader_tid, tid);
-    Env::memory_allocation_time[tid] += Env::toc(start_time);
+    if(tid ==leader_tid) Env::memory_allocation_time[tid] += Env::toc(start_time);
 }
 
 
