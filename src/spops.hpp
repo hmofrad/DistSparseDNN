@@ -42,18 +42,22 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
     uint64_t nnzmax = 0;
     uint32_t nrows = A_nrows;
     uint32_t ncols = B_ncols; 
-    
+
     for(uint32_t j = start_col; j < end_col; j++) {
+        bool touched = false;
         for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
             uint32_t l = B_IA[k];
             for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                 s_A[A_IA[n]] = 1;
+                touched = true;
             }
         }
-        for(uint32_t i = 0; i < A_nrows; i++) {
-            if(s_A[i]){
-                nnzmax++;
-                s_A[i] = 0;
+        if(touched) {
+            for(uint32_t i = 0; i < A_nrows; i++) {
+                if(s_A[i]){
+                    nnzmax++;
+                    s_A[i] = 0;
+                }
             }
         }
     }
@@ -101,16 +105,18 @@ inline void spmm_real(std::shared_ptr<struct CSC<Weight>> A_CSC,
         Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
         std::exit(1); 
     }
-        
+
     for(uint32_t j = start_col; j < end_col; j++) {
+        bool touched = false;
         for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
             uint32_t l = B_IA[k];
             for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                 s_A[A_IA[n]] += (B_A[k] * A_A[n]);
+                touched = true;
             }
         }
-        C_CSC->populate_spa(&s_A, b_A, off_col + j, idx_nnz, tid);
-    }    
+        C_CSC->populate_spa(&s_A, b_A, off_col + j, idx_nnz, touched, tid);
+    }
 }
 
 template<typename Weight>
