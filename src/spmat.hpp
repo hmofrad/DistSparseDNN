@@ -22,7 +22,7 @@ struct CSC {
         
         void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t tile_height, const uint32_t tile_width);
         void populate(const std::vector<struct Triple<Weight>> triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
-        void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, bool touched, const int32_t tid);
+        void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
         void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid);
@@ -133,12 +133,7 @@ void CSC<Weight>::populate(const std::vector<struct Triple<Weight>> triples, con
 }
 
 template<typename Weight>
-void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t col, uint64_t& index, bool touched, const int32_t tid) {
-    //if(not touched) {
-    //    CSC::JA_blk->ptr[col+1] = index;
-    //    return;
-    //}
-    
+void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t col, uint64_t& index, const int32_t tid) {
     uint64_t&  k = index;
     uint32_t   c = col + 1;
     uint32_t* IA = CSC::IA_blk->ptr;
