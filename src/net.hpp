@@ -58,7 +58,7 @@ class Net {
         
         void printTimes();
         void printTimesExcel();
-        void stats(const std::vector<Weight> vec, Weight& sum, Weight& mean, Weight& std_dev, Weight& min, Weight& max);
+        //void stats(const std::vector<Weight> vec, Weight& sum, Weight& mean, Weight& std_dev, Weight& min, Weight& max);
         void printTimesExcel1();
         void execute();
         void inferenceReLU(const int32_t tid);
@@ -182,7 +182,6 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
            
         for(int32_t s = 0; s < Env::nsockets; s++) {
             if(replication or (s == Env::rank_socket_id)) {
-                /*
                 if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
                     layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
                                                                            Env::nthreads, Env::nthreads, 
@@ -191,12 +190,11 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                            TILING_TYPE::_1D_COL_, repartition));
                 }
                 else {
-                */    
                     layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
                                                                            nnz, nrows, ncols, 
                                                                            layerFile, input_type, 
                                                                            TILING_TYPE::_1D_COL_, false));
-                //}    
+                }    
                 
                 biasWeightVecs[s][i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, s));
             }
@@ -262,11 +260,11 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     printTimesExcel();
 }
 
-template<typename Weight>
-void Net<Weight>::stats(const std::vector<Weight> vec, Weight& sum, Weight& mean, Weight& std_dev, Weight& min, Weight& max) {
+
+void stats(const std::vector<double> vec, double& sum, double& mean, double& std_dev, double& min, double& max) {
     sum = std::accumulate(vec.begin(), vec.end(), 0.0);
     mean = sum / vec.size();
-    Weight sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
+    double sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
     std_dev = std::sqrt(sq_sum / vec.size() - mean * mean);
     std::pair bounds = std::minmax_element(vec.begin(), vec.end());
     min = *bounds.first;
@@ -411,6 +409,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     uint32_t B_start_col, B_end_col;
     uint32_t B_sub_start_col, B_sub_end_col;
     
+    /*
     if(tid == leader_tid) {
         for(int32_t i = 0; i < Env::nthreads; i++) {
             Env::threads[i].start_col = ((ncols/Env::nthreads) * i);
@@ -418,25 +417,25 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         }
     }
     pthread_barrier_wait(&Env::thread_barrier);
-
+    */
     auto start = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
         std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-        //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
-        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
+        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
+        //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
         std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
         std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
         b_bias = biasWeightVecs[sid][l];
         nrows = A_CSC->nrows;
-        //B_start_col = 0;
-        //B_end_col = B_CSC->ncols;
-        //B_sub_start_col = B_tile.start_col;
-        //B_sub_end_col   = B_tile.end_col;
-        B_start_col = Env::threads[tid].start_col;
-        B_end_col = Env::threads[tid].end_col;
-        B_sub_start_col = 0; //Env::threads[tid].start_col;
-        B_sub_end_col   = 0; //Env::threads[tid].end_col;
-    //printf("Rank=%d tid=%d [%d %d] [%d %d]\n", Env::rank, tid, B_start_col, B_end_col, B_sub_start_col, B_sub_end_col);
+        B_start_col = 0;
+        B_end_col = B_CSC->ncols;
+        B_sub_start_col = B_tile.start_col;
+        B_sub_end_col   = B_tile.end_col;
+        //B_start_col = Env::threads[tid].start_col;
+        //B_end_col = Env::threads[tid].end_col;
+        //B_sub_start_col = 0;
+        //B_sub_end_col   = 0;
+        
         data_x_model_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                             nrows, ncols, B_start_col, B_end_col, 
                             B_sub_start_col, B_sub_end_col, 
