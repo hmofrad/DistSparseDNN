@@ -13,8 +13,8 @@
 #include <deque>
 
 /* Input x layers */
-enum PARALLELISM_TYPE {_MANAGER_X_WORKER_, _DATA_X_DATA_, _DATA_X_MODEL_, _HYBRID_X_HYBRID_};
-const char* PARALLELISM_TYPES[] = {"_MANAGER_X_WORKER_", "_DATA_X_DATA_", "_DATA_X_MODEL_", "_HYBRID_X_HYBRID_"};
+enum PARALLELISM_TYPE {_DATA_X_MODEL_, _DATA_X_DATA_, _HYBRID_X_HYBRID_ , _MANAGER_X_WORKER_, _SIZE_};
+const char* PARALLELISM_TYPES[] = {"_DATA_X_MODEL_", "_DATA_X_DATA_", "_MANAGER_X_WORKER_", "_HYBRID_X_HYBRID_"};
 
 enum SCHEDULING_TYPE {_EARLIEST_FIRST_, _SLOWER_FIRST_, _FASTER_FIRST_, _NONE_};
 const char* SCHEDULING_TYPES[] = {"_EARLIEST_FIRST_", "_SLOWER_FIRST_", "_FASTER_FIRST_", "_NONE_"};
@@ -58,6 +58,8 @@ class Net {
         
         void printTimes();
         void printTimesExcel();
+        void stats(const std::vector<Weight> vec, Weight& sum, Weight& mean, Weight& std_dev, Weight& min, Weight& max);
+        void printTimesExcel1();
         void execute();
         void inferenceReLU(const int32_t tid);
         
@@ -180,6 +182,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
            
         for(int32_t s = 0; s < Env::nsockets; s++) {
             if(replication or (s == Env::rank_socket_id)) {
+                /*
                 if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
                     layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
                                                                            Env::nthreads, Env::nthreads, 
@@ -188,11 +191,12 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                            TILING_TYPE::_1D_COL_, repartition));
                 }
                 else {
+                */    
                     layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
                                                                            nnz, nrows, ncols, 
                                                                            layerFile, input_type, 
                                                                            TILING_TYPE::_1D_COL_, false));
-                }    
+                //}    
                 
                 biasWeightVecs[s][i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, s));
             }
@@ -259,7 +263,40 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
 }
 
 template<typename Weight>
+void Net<Weight>::stats(const std::vector<Weight> vec, Weight& sum, Weight& mean, Weight& std_dev, Weight& min, Weight& max) {
+    sum = std::accumulate(vec.begin(), vec.end(), 0.0);
+    mean = sum / vec.size();
+    Weight sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
+    std_dev = std::sqrt(sq_sum / vec.size() - mean * mean);
+    std::pair bounds = std::minmax_element(vec.begin(), vec.end());
+    min = *bounds.first;
+    max = *bounds.second;
+}
+
+template<typename Weight>
 void Net<Weight>::printTimesExcel() {
+    Env::barrier();
+    
+    double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+    stats(Env::execution_time, sum, mean, std_dev, min, max);
+    Logging::print(Logging::LOG_LEVEL::VOID, "exec time: %.3f %.3f %.3f ", min, max, sum);
+    
+    stats(Env::spmm_symb_time, sum, mean, std_dev, min, max);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f ", min, max, sum);
+    
+    stats(Env::spmm_real_time, sum, mean, std_dev, min, max);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f ", min, max, sum);
+    
+    stats(Env::memory_allocation_time, sum, mean, std_dev, min, max);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f ", min, max, sum);
+
+    stats(Env::hybrid_probe_time, sum, mean, std_dev, min, max);
+    Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f\n", min, max, sum);
+
+}
+
+template<typename Weight>
+void Net<Weight>::printTimesExcel1() {
     Env::barrier();
     
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
@@ -323,6 +360,7 @@ void Net<Weight>::printTimesExcel() {
     
 }
 
+
 template<typename Weight>
 void Net<Weight>::execute() {
     std::vector<std::thread> threads;
@@ -372,20 +410,33 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t B_start_col, B_end_col;
     uint32_t B_sub_start_col, B_sub_end_col;
+    
+    if(tid == leader_tid) {
+        for(int32_t i = 0; i < Env::nthreads; i++) {
+            Env::threads[i].start_col = ((ncols/Env::nthreads) * i);
+            Env::threads[i].end_col = (i == (Env::nthreads-1)) ? ncols : ((ncols/Env::nthreads) * (i+1));
+        }
+    }
+    pthread_barrier_wait(&Env::thread_barrier);
 
     auto start = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
         std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
+        //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
+        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
         std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
         std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
         b_bias = biasWeightVecs[sid][l];
         nrows = A_CSC->nrows;
-        B_start_col = 0;
-        B_end_col = B_CSC->ncols;
-        B_sub_start_col = B_tile.start_col;
-        B_sub_end_col   = B_tile.end_col;
-
+        //B_start_col = 0;
+        //B_end_col = B_CSC->ncols;
+        //B_sub_start_col = B_tile.start_col;
+        //B_sub_end_col   = B_tile.end_col;
+        B_start_col = Env::threads[tid].start_col;
+        B_end_col = Env::threads[tid].end_col;
+        B_sub_start_col = 0; //Env::threads[tid].start_col;
+        B_sub_end_col   = 0; //Env::threads[tid].end_col;
+    //printf("Rank=%d tid=%d [%d %d] [%d %d]\n", Env::rank, tid, B_start_col, B_end_col, B_sub_start_col, B_sub_end_col);
         data_x_model_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                             nrows, ncols, B_start_col, B_end_col, 
                             B_sub_start_col, B_sub_end_col, 
@@ -847,6 +898,7 @@ template<typename Weight>
 uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t tid) {
     int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    
     uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
