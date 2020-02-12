@@ -55,7 +55,7 @@ int main(int argc, char **argv) {
         std::exit(Env::finalize());
     }
         
-    printf("%d %s %d %d\n", x, argv[9], p_type, PARALLELISM_TYPE::_SIZE_);
+    //printf("%d %s %d %d\n", x, argv[9], p_type, PARALLELISM_TYPE::_SIZE_);
     //std::exit(0);
     //if(
     /*
