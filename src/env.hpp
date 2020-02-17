@@ -515,6 +515,15 @@ void Env::adjust_displacement(const int32_t tid) {
 }
 
 void Env::adjust_displacement(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {
+    Env::threads[tid].dis_nnz = 0;
+   for(uint32_t j = 1; j < Env::threads[tid].index; j++) {
+        int32_t t_minus_1 = Env::my_threads[leader_tid][j-1];
+        int32_t t         = Env::my_threads[leader_tid][j];
+        Env::threads[t].dis_nnz = Env::threads[t].off_nnz - Env::threads[t_minus_1].idx_nnz;
+
+    }
+ 
+    /*
     if(tid == leader_tid) {
         Env::threads[tid].dis_nnz = 0;
         for(uint32_t i = 1; i < my_threads.size(); i++) {    
@@ -523,6 +532,7 @@ void Env::adjust_displacement(const std::deque<int32_t> my_threads, const int32_
             Env::threads[t].dis_nnz = Env::threads[t].off_nnz - Env::threads[t_minus_1].idx_nnz;
         }
     }
+    */
 }
 
 void Env::init_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid) {
