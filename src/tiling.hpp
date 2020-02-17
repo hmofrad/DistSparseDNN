@@ -500,6 +500,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         std::exit(Env::finalize()); 
     }
     
+    /*
     threads_ntiles = nthreads;
     thread_ntiles = threads_ntiles/nthreads;
     threads_nrowgrps = nthreads;
@@ -529,7 +530,8 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
     }
-
+    */
+    
     tiles.resize(nrowgrps);
     for (uint32_t i = 0; i < nrowgrps; i++) {
         tiles[i].resize(ncolgrps);
