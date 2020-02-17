@@ -149,7 +149,6 @@ inline void data_x_model_1_iter(std::shared_ptr<struct CSC<Weight>> A_CSC,
     
     start_time = Env::tic();
         pthread_barrier_wait(&Env::thread_barrier);
-        //A_CSC->repopulate(C_CSC, B_start_col, B_end_col, thread_st.dis_nnz, leader_tid, tid);
         A_CSC->repopulate(C_CSC, B_sub_start_col, B_sub_end_col, thread_st.dis_nnz, leader_tid, tid);
     Env::memory_allocation_time[tid] += Env::toc(start_time);
     
@@ -235,7 +234,6 @@ inline void data_x_data_1_iter(std::shared_ptr<struct CSC<Weight>> A_CSC,
         Env::adjust_displacement(tid);
         
     Env::spmm_real_time[tid] += Env::toc(start_time);                              
-    
     //leader_tid = 0;
     //C_CSC->adjust(tid);
     //C_CSC->walk_dxd(false, leader_tid, tid);
