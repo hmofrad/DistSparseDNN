@@ -317,9 +317,17 @@ void CSC<Weight>::adjust(const int32_t leader_tid, const int32_t tid){
     //pthread_barrier_wait(&Env::thread_barrier);
     if((leader_tid == -1) or (tid == leader_tid)) {
         CSC::nnz_i = 0;
+        /*
         for(auto it = Env::threads.begin(); it != Env::threads.end(); it++) {
             CSC::nnz_i += ((*it).idx_nnz - (*it).off_nnz);
-        }        
+        } 
+        */        
+        for(uint32_t i = 0; i < Env::threads.size(); i++) {    
+            CSC::nnz_i += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
+            //printf("%lu ", (Env::threads[i].idx_nnz - Env::threads[i].off_nnz));
+        }
+        //printf("\n");
+        
     }
     pthread_barrier_wait(&Env::thread_barrier);
 }
