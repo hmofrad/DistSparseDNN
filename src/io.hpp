@@ -264,7 +264,7 @@ std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputF
         end_offset = filesize;
         share_tripels = share/sizeof(struct Triple<Weight>);
     }
-    
+
     std::vector<struct Triple<Weight>> triples(share_tripels);    
     #pragma omp parallel
     {
@@ -294,9 +294,8 @@ std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputF
         }
         fin_t.close();
     }
-
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done reading the input file %s\n", inputFile.c_str());
-    Env::barrier();
+    Env::barrier();    
 
     return(triples);
 }
