@@ -4,7 +4,7 @@
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
  
-// make clean && make && time mpirun.mpich -np 4 bin/./radixnet -m 60000 -n 1024 -l 120 data1/bin/MNIST data1/bin/DNN 
+// make clean && make && time mpirun.mpich -np 4 bin/./radixnet -m 60000 -n 1024 -l 120 data1/bin/MNIST data1/bin/DNN -p 0
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,7 +22,7 @@
 #include "net.hpp"
 #include "allocator.hpp"
 
-using WGT = double;
+using WGT = float;
 
 int main(int argc, char **argv) {
     Logging::enabled = true;
