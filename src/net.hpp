@@ -58,7 +58,7 @@ class Net {
         
         void printTimes();
         void printTimesExcel();
-        //void stats(const std::vector<Weight> vec, Weight& sum, Weight& mean, Weight& std_dev, Weight& min, Weight& max);
+
         void printTimesExcel1();
         void execute();
         void inferenceReLU(const int32_t tid);
@@ -162,7 +162,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         nCategories = IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
     }
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    //maxLayers = 5;
+    //maxLayers = 1;
     
     layers.resize(Env::nsockets);
     biasWeightVecs.resize(Env::nsockets);
@@ -408,21 +408,11 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t B_start_col, B_end_col;
     uint32_t B_sub_start_col, B_sub_end_col;
-    
-    /*
-    if(tid == leader_tid) {
-        for(int32_t i = 0; i < Env::nthreads; i++) {
-            Env::threads[i].start_col = ((ncols/Env::nthreads) * i);
-            Env::threads[i].end_col = (i == (Env::nthreads-1)) ? ncols : ((ncols/Env::nthreads) * (i+1));
-        }
-    }
-    pthread_barrier_wait(&Env::thread_barrier);
-    */
+
     auto start = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
         std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
         struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
-        //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
         std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
         std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
         b_bias = biasWeightVecs[sid][l];
@@ -431,11 +421,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         B_end_col = B_CSC->ncols;
         B_sub_start_col = B_tile.start_col;
         B_sub_end_col   = B_tile.end_col;
-        //B_start_col = Env::threads[tid].start_col;
-        //B_end_col = Env::threads[tid].end_col;
-        //B_sub_start_col = 0;
-        //B_sub_end_col   = 0;
-        
+
         data_x_model_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                             nrows, ncols, B_start_col, B_end_col, 
                             B_sub_start_col, B_sub_end_col, 
@@ -853,6 +839,26 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         B_start_col = 0;
         B_end_col = B_CSC->ncols;
         
+        /*
+        if(tid == 0)
+            printf("%lu ", C_CSC->nnz);
+        pthread_barrier_wait(&Env::thread_barrier);
+        if(tid == 1)
+            printf("%lu ", C_CSC->nnz);
+        pthread_barrier_wait(&Env::thread_barrier);
+        if(tid == 2)
+            printf("%lu ", C_CSC->nnz);        
+        pthread_barrier_wait(&Env::thread_barrier);
+        if(tid == 3)
+            printf("%lu ", C_CSC->nnz);
+        pthread_barrier_wait(&Env::thread_barrier);
+        if(tid == 4)
+            printf("%lu ", C_CSC->nnz);
+        pthread_barrier_wait(&Env::thread_barrier);
+        if(tid == 5)
+            printf("%lu\n", C_CSC->nnz);        
+        */
+        pthread_barrier_wait(&Env::thread_barrier);
         data_x_data_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                            nrows, ncols, B_start_col, B_end_col, B_off_col, 
                            thread_st, leader_tid, tid);       
