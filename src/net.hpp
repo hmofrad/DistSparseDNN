@@ -13,8 +13,8 @@
 #include <deque>
 
 /* Input x layers */
-enum PARALLELISM_TYPE {_DATA_X_MODEL_, _DATA_X_DATA_, _HYBRID_X_HYBRID_ , _MANAGER_X_WORKER_, _SIZE_};
-const char* PARALLELISM_TYPES[] = {"_DATA_X_MODEL_", "_DATA_X_DATA_", "_HYBRID_X_HYBRID_", "_MANAGER_X_WORKER_"};
+enum PARALLELISM_TYPE {_MANAGER_X_WORKER_, _DATA_X_MODEL_, _DATA_X_DATA_, _HYBRID_X_HYBRID_ , _SIZE_};
+const char* PARALLELISM_TYPES[] = {"_MANAGER_X_WORKER_", "_DATA_X_MODEL_", "_DATA_X_DATA_", "_HYBRID_X_HYBRID_"};
 
 enum SCHEDULING_TYPE {_EARLIEST_FIRST_, _SLOWER_FIRST_, _FASTER_FIRST_, _NONE_};
 const char* SCHEDULING_TYPES[] = {"_EARLIEST_FIRST_", "_SLOWER_FIRST_", "_FASTER_FIRST_", "_NONE_"};
@@ -257,7 +257,11 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     finish = std::chrono::high_resolution_clock::now();
     Env::end_to_end_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
     Env::barrier();
-    printTimesExcel();
+    if(Env::nranks == 1)
+        printTimesExcel();
+    else 
+        printTimesExcel1();
+        
 }
 
 
@@ -277,8 +281,9 @@ void Net<Weight>::printTimesExcel() {
     
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
     stats(Env::execution_time, sum, mean, std_dev, min, max);
-    Logging::print(Logging::LOG_LEVEL::VOID, "exec time: %.3f %.3f %.3f ", min, max, sum);
+    Logging::print(Logging::LOG_LEVEL::VOID, "exec time: %.3f %.3f %.3f\n", min, max, sum);
     
+    /*
     stats(Env::spmm_symb_time, sum, mean, std_dev, min, max);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f ", min, max, sum);
     
@@ -290,7 +295,13 @@ void Net<Weight>::printTimesExcel() {
 
     stats(Env::hybrid_probe_time, sum, mean, std_dev, min, max);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f\n", min, max, sum);
-
+    */
+    /*
+    for(auto t: Env::execution_time) {
+        printf("%f\n", t);
+    }
+    printf("\n");
+    */
 }
 
 template<typename Weight>
@@ -305,6 +316,12 @@ void Net<Weight>::printTimesExcel1() {
     */
     int index = std::distance(Env::execution_time.begin(), std::max_element(Env::execution_time.begin(), Env::execution_time.end()));
     double exec_time = Env::execution_time[index];
+    
+    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
+    Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f\n", min, max, sum);
+    return;
+    
+    
     double spmm_sym_time = Env::spmm_symb_time[index];
     double spmm_time = Env::spmm_real_time[index];
     double memory_time = Env::memory_allocation_time[index];
