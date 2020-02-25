@@ -37,6 +37,7 @@ namespace Env {
     bool NUMA_ALLOC = true;
     
     std::vector<uint32_t> thread_rowgroup;
+    std::vector<std::deque<uint32_t>> threads_rowgroups;
     std::deque<uint32_t> rank_rowgroups;
     std::deque<uint32_t> processed_rowgroups;
     std::deque<uint32_t> recv_rowgroups;
@@ -147,6 +148,7 @@ namespace Env {
     int32_t* idle_ranks;
     MPI_Win ranks_window;
     pthread_mutex_t thread_mutex_q;
+    std::vector<pthread_mutex_t> thread_mutexes_qs;
     pthread_mutex_t manager_mutex;
     bool manager = true;
     int count = 0;
@@ -201,6 +203,7 @@ int Env::init() {
     }
     
     thread_rowgroup.resize(Env::nthreads);
+    threads_rowgroups.resize(Env::nthreads);
     counters.resize(Env::nthreads); 
     
     scores.resize(Env::nsockets);
@@ -221,6 +224,12 @@ int Env::init() {
     
     Env::thread_mutex_q = PTHREAD_MUTEX_INITIALIZER;
     Env::manager_mutex = PTHREAD_MUTEX_INITIALIZER;
+    
+    Env::thread_mutexes_qs.resize(Env::nthreads);
+    for(int32_t i = 0; i < Env::nthreads; i++) {
+        Env::thread_mutexes_qs[i] = PTHREAD_MUTEX_INITIALIZER;
+    }
+    
     
     Env::my_threads.resize(Env::nthreads);
     
