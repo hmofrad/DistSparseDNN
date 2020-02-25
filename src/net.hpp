@@ -568,7 +568,7 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
                     pthread_mutex_lock(&Env::thread_mutexes_qs[t]);
                     if(!Env::threads_rowgroups[t].empty()) {                    
                         leader_rowgroup = Env::threads_rowgroups[t].front();
-                        Env::processed_rowgroups.push_back(leader_rowgroup);
+                        Env::processed_rowgroups_per_thread[t].push_back(leader_rowgroup);
                         Env::threads_rowgroups[t].pop_front();
                         found = true;
                     }
@@ -602,8 +602,8 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
     auto finish = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
 
-    manager_x_worker_validate_prediction(inputFeatures->tiles, trueCategories, nCategories, leader_tid, tid);
-    
+
+    work_x_stealing_validate_prediction(inputFeatures->tiles, trueCategories, nCategories, leader_tid, tid);
 }
 
 
