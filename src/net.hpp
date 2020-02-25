@@ -320,8 +320,8 @@ void Net<Weight>::printTimesExcel1() {
     double exec_time = Env::execution_time[index];
     
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f\n", min, max, sum);
-    return;
+    Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f ", min, max, sum);
+    //return;
     
     
     double spmm_sym_time = Env::spmm_symb_time[index];
@@ -347,12 +347,12 @@ void Net<Weight>::printTimesExcel1() {
     Logging::print(Logging::LOG_LEVEL::VOID, "run time: mean, std_dev, min, max\n");
     Logging::print(Logging::LOG_LEVEL::VOID, "          %.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
     */
-    
+    /*
     Logging::print(Logging::LOG_LEVEL::VOID, "           mean, std_dev, min, max\n");
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
     double max_exec_time = max;
     Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
-    
+    */
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_sym_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", max);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_time);
@@ -518,7 +518,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
 
     manager_x_worker_validate_prediction(inputFeatures->tiles, trueCategories, nCategories, leader_tid, tid);
     
-    /*
+    
     if (!Env::rank and !tid) {
         printf("RMA: [ ");
         for(int i = 0; i < Env::nranks+1; i++) {
@@ -527,7 +527,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
         }
         printf("]\n");
     }
-    */
+    
 }
 
 
@@ -549,6 +549,7 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
     bool tiles_left = true;
     auto start = std::chrono::high_resolution_clock::now();  
     while(tiles_left) {
+        /*
         if(!Env::threads_rowgroups[tid].empty()) {            
             pthread_mutex_lock(&Env::thread_mutexes_qs[tid]);      
             if(!Env::threads_rowgroups[tid].empty()) {
@@ -559,8 +560,9 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
             pthread_mutex_unlock(&Env::thread_mutexes_qs[tid]);      
         }
         else {
+            */
             bool found = false;
-            for(int32_t i = 1; i < Env::nthreads; i++) {
+            for(int32_t i = 0; i < Env::nthreads; i++) {
                 uint32_t t = (tid+i) % Env::nthreads;
                 if(!Env::threads_rowgroups[t].empty()) {
                     pthread_mutex_lock(&Env::thread_mutexes_qs[t]);
@@ -576,7 +578,7 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
             }
             tiles_left &= found;
             if(!tiles_left) continue;
-        }
+        //}
         
         for (uint32_t l = 0; l < maxLayers; l++) {
             struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
@@ -955,7 +957,7 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         if(tid == 5)
             printf("%lu\n", C_CSC->nnz);        
         */
-        pthread_barrier_wait(&Env::thread_barrier);
+        //pthread_barrier_wait(&Env::thread_barrier);
         data_x_data_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                            nrows, ncols, B_start_col, B_end_col, B_off_col, 
                            thread_st, leader_tid, tid);       
