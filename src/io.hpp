@@ -295,7 +295,7 @@ std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputF
         fin_t.close();
     }
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done reading the input file %s\n", inputFile.c_str());
-    Env::barrier();    
+    Env::barrier(); 
 
     return(triples);
 }
