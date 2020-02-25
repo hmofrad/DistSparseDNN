@@ -68,6 +68,7 @@ class Tiling {
         std::vector<uint32_t> bounds;
         
         bool one_rank = false;
+        void set_thread_index();
         void set_threads_indices();
         void set_rank_indices();
         uint64_t get_info(const std::string field);
@@ -431,7 +432,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     }
     insert_triples(triples);
     delete_triples(triples);
-    
+
     if(not one_rank) {
         exchange_triples();
         tile_load();
@@ -690,12 +691,24 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 }
 
 template<typename Weight>
-void Tiling<Weight>::set_threads_indices() {
+void Tiling<Weight>::set_thread_index() {
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
                 Env::thread_rowgroup[tile.thread] = i;
+            }
+        }
+    } 
+}
+
+template<typename Weight>
+void Tiling<Weight>::set_threads_indices() {
+    for (uint32_t i = 0; i < nrowgrps; i++) {
+        for (uint32_t j = 0; j < ncolgrps; j++) {
+            auto& tile = tiles[i][j];
+            if(tile.rank == Env::rank) {
+                Env::threads_rowgroups[tile.thread].push_back(i);
             }
         }
     } 
