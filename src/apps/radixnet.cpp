@@ -22,7 +22,7 @@
 #include "net.hpp"
 #include "allocator.hpp"
 
-using WGT = float;
+using WGT = double;
 
 int main(int argc, char **argv) {
     Logging::enabled = true;
@@ -48,24 +48,12 @@ int main(int argc, char **argv) {
     }
     
     int x = atoi(argv[10]);
-    //if(x > 
+
     PARALLELISM_TYPE p_type = (PARALLELISM_TYPE)x;
     if(p_type >= (PARALLELISM_TYPE::_SIZE_)) {
         Logging::print(Logging::LOG_LEVEL::FATAL, "Incorrect parallelism type\n");
         std::exit(Env::finalize());
     }
-        
-    //printf("%d %s %d %d\n", x, argv[9], p_type, PARALLELISM_TYPE::_SIZE_);
-    //std::exit(0);
-    //if(
-    /*
-    switch(x) {
-        case 0: p_type = PARALLELISM_TYPE::_DATA_X_MODEL_; break;
-        case 1: p_type = PARALLELISM_TYPE::_DATA_X_DATA_; break;
-        case 2: p_type = PARALLELISM_TYPE::_HYBRID_X_HYBRID_; break;
-        default: Logging::print(Logging::LOG_LEVEL::FATAL, "Wrong parallelism type\n"); std::exit(0);
-    }
-    */
     
     Net<WGT> N(atoi(argv[2]), atoi(argv[4]), 
                ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]), p_type);//PARALLELISM_TYPE::_HYBRID_X_HYBRID_);//_MANAGER_X_WORKER_);
