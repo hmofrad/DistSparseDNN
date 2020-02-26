@@ -40,6 +40,7 @@ namespace Env {
     std::vector<std::deque<uint32_t>> threads_rowgroups;
     std::deque<uint32_t> rank_rowgroups;
     std::deque<uint32_t> processed_rowgroups;
+    std::vector<std::deque<uint32_t>> processed_rowgroups_per_thread;
     std::deque<uint32_t> recv_rowgroups;
     std::deque<uint32_t> send_rowgroups;
     std::vector<struct counter_struct> counters; 
@@ -204,6 +205,7 @@ int Env::init() {
     
     thread_rowgroup.resize(Env::nthreads);
     threads_rowgroups.resize(Env::nthreads);
+    processed_rowgroups_per_thread.resize(Env::nthreads);
     counters.resize(Env::nthreads); 
     
     scores.resize(Env::nsockets);
