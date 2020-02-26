@@ -345,6 +345,23 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
     Env::barrier();
 }
 
+template<typename Weight>
+inline void work_x_stealing_validate_prediction(std::vector<std::vector<struct Tile<Weight>>> tiles,
+                                const std::vector<uint32_t> trueCategories,
+                                const int32_t nCategories,
+                                const int32_t leader_tid, 
+                                const int32_t tid) {
+    pthread_barrier_wait(&Env::thread_barrier);     
+    if(tid == leader_tid) {
+        for(auto p: Env::processed_rowgroups_per_thread) {
+            Env::processed_rowgroups.insert(Env::processed_rowgroups.end(), p.begin(), p.end());
+
+        }
+    }
+    pthread_barrier_wait(&Env::thread_barrier);   
+    manager_x_worker_validate_prediction(tiles, trueCategories, nCategories, leader_tid, tid);
+}
+
 
 template<typename Weight>
 inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct CSC<Weight>> A_CSC, 
