@@ -320,7 +320,7 @@ void Net<Weight>::printTimesExcel1() {
     double exec_time = Env::execution_time[index];
     
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f ", min, max, sum);
+    //Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f ", min, max, sum);
     //return;
     
     
@@ -328,6 +328,10 @@ void Net<Weight>::printTimesExcel1() {
     double spmm_time = Env::spmm_real_time[index];
     double memory_time = Env::memory_allocation_time[index];
     double hybrid_time = Env::hybrid_probe_time[index];
+    
+    if(!Env::rank) {
+        Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f %.3f %.3f\n", exec_time, spmm_sym_time, spmm_time, memory_time, exec_time-(spmm_sym_time + spmm_time + memory_time));
+    }
     
     /*
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
@@ -353,6 +357,8 @@ void Net<Weight>::printTimesExcel1() {
     double max_exec_time = max;
     Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f %.3f ", mean, std_dev, min, max);
     */
+    
+    /*
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_sym_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", max);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(spmm_time);
@@ -361,7 +367,7 @@ void Net<Weight>::printTimesExcel1() {
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f ", max);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(hybrid_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f\n", max);
-    
+    */
     
     /*
     //uint64_t DNNedges = inputFeatures->get_info("nedges");
