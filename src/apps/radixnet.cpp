@@ -38,8 +38,8 @@ int main(int argc, char **argv) {
     }
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Radix-Net sparse DNN for MNIST dataset Implementation\n");
-    Logging::print(Logging::LOG_LEVEL::INFO, "Machines = %d, MPI ranks = %d, Threads per rank = %d\n", Env::nmachines, Env::nranks, Env::nthreads);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Sockets   = %d, Processors = %d\n", Env::nsockets, Env::ncores);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Machines = %d, MPI ranks  = %d, Threads per rank = %d\n", Env::nmachines, Env::nranks, Env::nthreads);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Sockets  = %d, Processors = %d\n", Env::nsockets, Env::ncores);
     if(Env::NUMA_ALLOC) {
         Logging::print(Logging::LOG_LEVEL::INFO, "NUMA is enabled.\n", Env::NUMA_ALLOC);
     }
@@ -57,6 +57,6 @@ int main(int argc, char **argv) {
     
     Net<WGT> N(atoi(argv[2]), atoi(argv[4]), 
                ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]), p_type);//PARALLELISM_TYPE::_HYBRID_X_HYBRID_);//_MANAGER_X_WORKER_);
-
+    
     return(Env::finalize());
 }
