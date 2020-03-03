@@ -26,6 +26,8 @@ namespace Env {
     int ncores = 0;
     int nsockets = 0;
     int ncores_per_socket = 0;
+    int nmachines = 0;;
+    int nranks_per_machine = 0;
     //int nthreads_per_socket = 0;
     std::vector<uint32_t> nthreads_per_socket;
     int rank_core_id = 0;
@@ -92,6 +94,8 @@ namespace Env {
     bool numa_configure();
     bool set_thread_affinity(const int32_t tid);
     int32_t get_socket_id(const int32_t tid);
+    
+    int get_num_machines();
     
     struct thread_struct {
         thread_struct(){};
@@ -292,6 +296,8 @@ int Env::init() {
     
     create_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, Env::nranks+1, &Env::ranks_window, MPI_COMM_WORLD);
     
+    Env::nmachines = Env::get_num_machines();
+    Env::nranks_per_machine = Env::nranks / Env::nmachines; 
     
     /*
     if(Env::rank == 3) {
@@ -311,6 +317,44 @@ int Env::init() {
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
+}
+
+int Env::get_num_machines() {
+    int num_machines = 0;
+    char core_name[MPI_MAX_PROCESSOR_NAME];
+    memset(core_name, '\0', MPI_MAX_PROCESSOR_NAME*sizeof(char));
+
+    int cpu_name_len;
+    MPI_Get_processor_name(core_name, &cpu_name_len);
+
+    int total_length = MPI_MAX_PROCESSOR_NAME * Env::nranks; 
+    std::string total_string(total_length, '\0');
+    MPI_Allgather(core_name, MPI_MAX_PROCESSOR_NAME, MPI_CHAR, (void*) total_string.data(), MPI_MAX_PROCESSOR_NAME, MPI_CHAR, MPI_COMM_WORLD);
+    /*
+    if(!Env::rank) {
+        printf("[");
+        for(auto c: total_string) {
+            printf("%c", c);
+        }
+        printf("]\n");
+    }
+    */
+    
+    // Tokenizing the string!
+    int offset = 0;
+    std::vector<std::string> machines_all;
+    for(int i = 0; i < nranks; i++) {
+        machines_all.push_back(total_string.substr(offset, MPI_MAX_PROCESSOR_NAME));
+        offset += MPI_MAX_PROCESSOR_NAME;
+    }
+
+    // Find unique machines
+    std::vector<std::string> machines = machines_all; 
+    sort(machines.begin(), machines.end());
+    machines.erase(unique(machines.begin(), machines.end()), machines.end()); 
+    num_machines = machines.size();
+
+    return(num_machines);
 }
 
 int Env::get_nsockets() {
