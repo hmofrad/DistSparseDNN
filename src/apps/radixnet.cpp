@@ -22,7 +22,7 @@
 #include "net.hpp"
 #include "allocator.hpp"
 
-using WGT = double;
+using WGT = float;
 
 int main(int argc, char **argv) {
     Logging::enabled = true;
@@ -38,7 +38,7 @@ int main(int argc, char **argv) {
     }
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Radix-Net sparse DNN for MNIST dataset Implementation\n");
-    Logging::print(Logging::LOG_LEVEL::INFO, "MPI ranks = %d, Threads per rank = %d\n", Env::nranks, Env::nthreads);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Machines = %d, MPI ranks = %d, Threads per rank = %d\n", Env::nmachines, Env::nranks, Env::nthreads);
     Logging::print(Logging::LOG_LEVEL::INFO, "Sockets   = %d, Processors = %d\n", Env::nsockets, Env::ncores);
     if(Env::NUMA_ALLOC) {
         Logging::print(Logging::LOG_LEVEL::INFO, "NUMA is enabled.\n", Env::NUMA_ALLOC);
