@@ -47,13 +47,13 @@ class Net {
         int32_t nCategories;
         
         PARALLELISM_TYPE parallelism_type;
-        SCHEDULING_TYPE scheduling_type = _EARLIEST_FIRST_;
+        SCHEDULING_TYPE scheduling_type = _SLOWER_FIRST_;
         bool repartition = false;
         bool replication = false;
-        uint32_t split_factor = 16;
+        uint32_t split_factor = 8;
         bool rank_work_sharing = false;
         bool numa_queues = true;
-        uint32_t schduling_threshold = 8;
+        uint32_t schduling_threshold = 4;
         
         
         void printTimes();
@@ -202,10 +202,12 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             }
         }    
         Logging::enabled = false; 
+        if((i%10==0) and !Env::rank) printf("|"); 
     }
     Logging::enabled = true;
-    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
-
+    Logging::print(Logging::LOG_LEVEL::INFO, "\nNeural network: Done reading %d layer files.\n", maxLayers); 
+    Env::barrier();
+    
     for(int32_t s = 0; s < Env::nsockets; s++) {
         if(replication or (s == Env::rank_socket_id)) {
             for(uint32_t i = 0; i < maxLayers; i++) {
@@ -329,8 +331,8 @@ void Net<Weight>::printTimesExcel1() {
     double memory_time = Env::memory_allocation_time[index];
     double hybrid_time = Env::hybrid_probe_time[index];
     
-    if(!Env::rank) {
-        Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f %.3f %.3f\n", exec_time, spmm_sym_time, spmm_time, memory_time, exec_time-(spmm_sym_time + spmm_time + memory_time));
+    if(exec_time == max) {
+        printf("time: %.3f %.3f %.3f %.3f %.3f %.3f\n", exec_time, spmm_sym_time, spmm_time, memory_time, hybrid_time, exec_time-(spmm_sym_time + spmm_time + memory_time + hybrid_time));
     }
     
     /*
@@ -524,7 +526,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
 
     manager_x_worker_validate_prediction(inputFeatures->tiles, trueCategories, nCategories, leader_tid, tid);
     
-    
+    /*
     if (!Env::rank and !tid) {
         printf("RMA: [ ");
         for(int i = 0; i < Env::nranks+1; i++) {
@@ -533,6 +535,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
         }
         printf("]\n");
     }
+    */
     
 }
 
