@@ -202,10 +202,11 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             }
         }    
         Logging::enabled = false; 
-        if((i%10==0) and !Env::rank) printf("|"); 
+        if(i%10==0) printf("|"); 
     }
     Logging::enabled = true;
-    Logging::print(Logging::LOG_LEVEL::INFO, "\nNeural network: Done reading %d layer files.\n", maxLayers); 
+    Logging::print(Logging::LOG_LEVEL::VOID, "\n"); 
+    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
     Env::barrier();
     
     for(int32_t s = 0; s < Env::nsockets; s++) {
