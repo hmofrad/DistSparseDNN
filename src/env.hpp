@@ -18,7 +18,6 @@
 #include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
 #include "types.hpp"
 
-
 namespace Env {
     int nranks = 0;
     int rank = 0;
@@ -35,8 +34,12 @@ namespace Env {
     std::vector<int> threads_core_id;
     std::vector<int> threads_socket_id;
     int num_unique_cores = 0;
-    const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);
-    bool NUMA_ALLOC = true;
+    const uint64_t PAGE_SIZE = sysconf(_SC_PAGESIZE);  
+    const uint64_t L1_ICACHE_SIZE = sysconf(_SC_LEVEL1_ICACHE_SIZE);
+    const uint64_t L1_DCACHE_SIZE = sysconf(_SC_LEVEL1_DCACHE_SIZE);
+    const uint64_t L2_CACHE_SIZE = sysconf(_SC_LEVEL2_CACHE_SIZE);
+    const uint64_t L3_CACHE_SIZE = sysconf(_SC_LEVEL3_CACHE_SIZE);
+    bool NUMA_ALLOC = true;  
     
     std::vector<uint32_t> thread_rowgroup;
     std::vector<std::deque<uint32_t>> threads_rowgroups;
@@ -314,6 +317,7 @@ int Env::init() {
     Env::barrier();
     std::exit(0);
     */
+
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
