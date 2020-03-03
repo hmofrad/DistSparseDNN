@@ -22,7 +22,7 @@
 #include "net.hpp"
 #include "allocator.hpp"
 
-using WGT = double;
+using WGT = float;
 
 int main(int argc, char **argv) {
     Logging::enabled = true;
