@@ -164,7 +164,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         nCategories = IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
     }
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    //maxLayers = 5;
+    //maxLayers = 1;
     
     layers.resize(Env::nsockets);
     biasWeightVecs.resize(Env::nsockets);
@@ -184,6 +184,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
            
         for(int32_t s = 0; s < Env::nsockets; s++) {
             if(replication or (s == Env::rank_socket_id)) {
+                /*
                 if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
                     layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
                                                                            Env::nthreads, Env::nthreads, 
@@ -192,11 +193,13 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                            TILING_TYPE::_1D_COL_, repartition));
                 }
                 else {
+                */
                     layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
                                                                            nnz, nrows, ncols, 
                                                                            layerFile, input_type, 
                                                                            TILING_TYPE::_1D_COL_, false));
-                }    
+                
+                //}    
                 
                 biasWeightVecs[s][i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, s));
             }
@@ -208,6 +211,23 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     Logging::print(Logging::LOG_LEVEL::VOID, "\n"); 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
     Env::barrier();
+    
+    /*
+    if(!Env::rank) {
+        int sid = Env::rank_socket_id;
+        int i = 0;
+        struct Tile<Weight>& B_tile = layers[sid][i]->tiles[0][0];
+        std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
+        printf("JA=%lu,IA=%lu,A=%lu, %lu %lu %lu\n", B_CSC->JA_blk->nbytes, B_CSC->IA_blk->nbytes, B_CSC->A_blk->nbytes, (B_CSC->JA_blk->nbytes/Env::PAGE_SIZE), (B_CSC->IA_blk->nbytes/Env::PAGE_SIZE), (B_CSC->A_blk->nbytes/Env::PAGE_SIZE));
+        
+        printf("L1_ICACHE_SIZE=%lu\n", Env::L1_ICACHE_SIZE);
+        printf("L1_DCACHE_SIZE=%lu\n", Env::L1_DCACHE_SIZE);
+        printf("L2_CACHE_SIZE=%lu\n", Env::L2_CACHE_SIZE);
+        printf("L3_CACHE_SIZE=%lu\n", Env::L3_CACHE_SIZE);
+    }
+    Env::barrier();
+    std::exit(0);
+    */
     
     for(int32_t s = 0; s < Env::nsockets; s++) {
         if(replication or (s == Env::rank_socket_id)) {
@@ -439,19 +459,38 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t B_start_col, B_end_col;
     uint32_t B_sub_start_col, B_sub_end_col;
+    
+    if(tid == leader_tid) {	
+        for(int32_t i = 0; i < Env::nthreads; i++) {	
+            Env::threads[i].start_col = ((ncols/Env::nthreads) * i);	
+            Env::threads[i].end_col = (i == (Env::nthreads-1)) ? ncols : ((ncols/Env::nthreads) * (i+1));	
+        }	
+    }	
+    pthread_barrier_wait(&Env::thread_barrier);
 
     auto start = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
         std::shared_ptr<struct CSC<Weight>> A_CSC = A_tile.spmat;
-        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
+        
+        //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
+        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
+        
         std::shared_ptr<struct CSC<Weight>> B_CSC = B_tile.spmat;
         std::shared_ptr<struct CSC<Weight>> C_CSC = C_tile.spmat;
         b_bias = biasWeightVecs[sid][l];
         nrows = A_CSC->nrows;
+        /*
         B_start_col = 0;
         B_end_col = B_CSC->ncols;
         B_sub_start_col = B_tile.start_col;
         B_sub_end_col   = B_tile.end_col;
+        */
+        
+        B_start_col = Env::threads[tid].start_col;	
+        B_end_col = Env::threads[tid].end_col;	
+        B_sub_start_col = 0;	
+        B_sub_end_col   = 0;
+        
 
         data_x_model_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                             nrows, ncols, B_start_col, B_end_col, 
