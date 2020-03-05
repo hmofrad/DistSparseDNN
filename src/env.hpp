@@ -183,6 +183,7 @@ namespace Env {
                                       MPI_Comm*  thread_communicators);
                                       
     double global_time;
+    std::vector<std::vector<int>> nnzs;
 }
 
 int Env::init() {
@@ -318,6 +319,7 @@ int Env::init() {
     std::exit(0);
     */
 
+    nnzs.resize(Env::nthreads);
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
