@@ -14,7 +14,7 @@
 #include "env.hpp"
 #include "log.hpp"
 #include "tile.hpp"
-
+#include "hashers.hpp"
 enum INPUT_TYPE {_TEXT_, _BINARY_};
 
 namespace IO {
@@ -27,8 +27,8 @@ namespace IO {
     template<typename Weight>
     std::tuple<uint64_t, uint32_t, uint32_t> binary_file_stat(const std::string inputFile);
     template<typename Weight>
-    std::vector<struct Triple<Weight>> binary_file_read(const std::string inputFile, bool one_rank);
-    int32_t binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height);
+    std::vector<struct Triple<Weight>> binary_file_read(const std::string inputFile, bool one_rank, ReversibleHasher* hasher);
+    int32_t binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height, ReversibleHasher* hasher);
 }
 
 template<typename Weight>
@@ -226,9 +226,9 @@ std::tuple<uint64_t, uint32_t, uint32_t> IO::binary_file_stat(const std::string 
     Env::barrier();
     return std::make_tuple(nnz, nrows + 1, ncols + 1);
 } 
- 
+
 template<typename Weight>
-std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputFile, bool one_rank) {
+std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputFile, bool one_rank, ReversibleHasher* hasher) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the input file %s\n", inputFile.c_str());
     
     std::ifstream fin(inputFile.c_str(), std::ios_base::binary);
@@ -264,7 +264,7 @@ std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputF
         end_offset = filesize;
         share_tripels = share/sizeof(struct Triple<Weight>);
     }
-
+    
     std::vector<struct Triple<Weight>> triples(share_tripels);    
     #pragma omp parallel
     {
@@ -289,6 +289,7 @@ std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputF
         while(offset_t < end_offset_t) {
             fin_t.read(reinterpret_cast<char*>(&triple), sizeof(struct Triple<Weight>));
             index = ((offset_t - start_offset) / sizeof(struct Triple<Weight>));
+            triple.row = hasher->hash(triple.row);
             triples[index] = triple;
             offset_t += sizeof(struct Triple<Weight>);
         }
@@ -300,7 +301,7 @@ std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputF
     return(triples);
 }
 
-int32_t IO::binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height) {
+int32_t IO::binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height, ReversibleHasher* hasher) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the category file %s\n", inputFile.c_str());
     
     std::ifstream fin(inputFile.c_str(), std::ios_base::binary);
@@ -325,8 +326,9 @@ int32_t IO::binary_file_categories(const std::string inputFile, std::vector<uint
     while(offset < filesize) {
         fin.read(reinterpret_cast<char*>(&category), sizeof(uint32_t));
         offset += sizeof(uint32_t);
-            categories[category] = 1;
-            nCategories++;
+        category = hasher->hash(category);
+        categories[category] = 1;
+        nCategories++;
     }
     fin.close();
 
