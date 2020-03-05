@@ -335,12 +335,12 @@ void Net<Weight>::printTimesExcel() {
     stats(Env::hybrid_probe_time, sum, mean, std_dev, min, max);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f\n", min, max, sum);
     */
-    /*
+    
     for(auto t: Env::execution_time) {
         printf("%f\n", t);
     }
     printf("\n");
-    */
+    
     
     for(auto nnz: Env::nnzs) {
         for(auto n: nnz)
