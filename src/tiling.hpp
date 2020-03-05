@@ -30,22 +30,22 @@ class Tiling {
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
                const std::string input_file, const INPUT_TYPE input_type, 
-               const TILING_TYPE tiling_type_, const bool repartition = false);
+               const TILING_TYPE tiling_type_, ReversibleHasher* hasher, const bool repartition = false);
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, 
                const uint32_t nranks_, const uint32_t rank_nthreads_, const uint32_t nthreads_,
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
                const std::string input_file, const INPUT_TYPE input_type, 
-               const TILING_TYPE tiling_type_, const bool repartition = false);               
+               const TILING_TYPE tiling_type_, ReversibleHasher* hasher, const bool repartition = false);               
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
-               const TILING_TYPE tiling_type_, const bool repartition = false);
+               const TILING_TYPE tiling_type_, ReversibleHasher* hasher, const bool repartition = false);
                 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_,
                const uint32_t rank_nthreads_, const uint32_t nthreads_, 
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
-               const TILING_TYPE tiling_type_, const bool repartition = false);
+               const TILING_TYPE tiling_type_, ReversibleHasher* hasher, const bool repartition = false);
 
         uint32_t ntiles, nrowgrps, ncolgrps;
         uint32_t nranks, rank_ntiles, rank_nrowgrps, rank_ncolgrps;
@@ -100,7 +100,7 @@ class Tiling {
         void delete_triples(std::vector<struct Triple<Weight>>& triples);
         void compress_triples();
         
-        void repartition_tiles(const std::string input_file, const INPUT_TYPE input_type);
+        void repartition_tiles(const std::string input_file, const INPUT_TYPE input_type, ReversibleHasher* hasher);
         
         
         void tile_load();
@@ -112,7 +112,7 @@ template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
-                       const TILING_TYPE tiling_type_,
+                       const TILING_TYPE tiling_type_, ReversibleHasher* hasher,
                        const bool repartition) 
         : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
           nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
@@ -243,7 +243,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         triples = IO::text_file_read<Weight>(input_file, one_rank);
     }
     else {
-        triples = IO::binary_file_read<Weight>(input_file, one_rank);
+        triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher);
     }
     insert_triples(triples);
     delete_triples(triples);
@@ -276,7 +276,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     print_tiling("nedges");
 
     if(repartition) {        
-        repartition_tiles(input_file, input_type);
+        repartition_tiles(input_file, input_type, hasher);
         print_tiling("nedges");
         print_tiling("height");
     }
@@ -288,7 +288,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                        const uint32_t rank_nthreads_, const uint32_t nthreads_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
-                       const TILING_TYPE tiling_type_, 
+                       const TILING_TYPE tiling_type_, ReversibleHasher* hasher,
                        const bool repartition)
                      : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        rank_nthreads(rank_nthreads_), nthreads(nthreads_),
@@ -428,7 +428,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         triples = IO::text_file_read<Weight>(input_file, one_rank);
     }
     else {
-        triples = IO::binary_file_read<Weight>(input_file, one_rank);
+        triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher);
     }
     insert_triples(triples);
     delete_triples(triples);
@@ -461,7 +461,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     print_tiling("nedges");
    
     if(repartition) {
-        repartition_tiles(input_file, input_type);
+        repartition_tiles(input_file, input_type, hasher);
         print_tiling("nedges");
         print_tiling("width");
     }
@@ -472,7 +472,8 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
-                       const TILING_TYPE tiling_type_, const bool repartition)
+                       const TILING_TYPE tiling_type_, ReversibleHasher* hasher,
+                       const bool repartition)
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        nnz(nnz_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
                            
@@ -578,7 +579,8 @@ template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                        const uint32_t rank_nthreads_, const uint32_t nthreads_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
-                       const TILING_TYPE tiling_type_, const bool repartition)
+                       const TILING_TYPE tiling_type_, ReversibleHasher* hasher,
+                       const bool repartition)
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        nthreads(nthreads_),
                        nnz(nnz_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
@@ -986,7 +988,7 @@ void Tiling<Weight>::tile_load_print(const std::vector<uint64_t> nedges_vec, con
 }
 
 template<typename Weight>
-void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT_TYPE input_type) {
+void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT_TYPE input_type, ReversibleHasher* hasher) {
     Env::barrier();
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile repartitioning: Start repartitioning tiles\n");
         
@@ -1189,7 +1191,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             triples = IO::text_file_read<Weight>(input_file, one_rank);
         }
         else {
-            triples = IO::binary_file_read<Weight>(input_file, one_rank);
+            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher);
         }
         
         insert_triples(triples);
@@ -1399,7 +1401,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             triples = IO::text_file_read<Weight>(input_file, one_rank);
         }
         else {
-            triples = IO::binary_file_read<Weight>(input_file, one_rank);
+            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher);
         }
         
         insert_triples(triples);
