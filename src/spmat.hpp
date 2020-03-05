@@ -324,6 +324,7 @@ void CSC<Weight>::adjust(const int32_t leader_tid, const int32_t tid){
         */        
         for(uint32_t i = 0; i < Env::threads.size(); i++) {    
             CSC::nnz_i += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
+            Env::nnzs[i].push_back(Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
             //printf("%lu ", (Env::threads[i].idx_nnz - Env::threads[i].off_nnz));
         }
         //printf("\n");
@@ -339,6 +340,7 @@ void CSC<Weight>::adjust(const std::deque<int32_t> my_threads, const int32_t lea
         for(uint32_t i = 0; i < my_threads.size(); i++) {    
             int32_t t = my_threads[i];
             CSC::nnz_i += (Env::threads[t].idx_nnz - Env::threads[t].off_nnz);
+            Env::nnzs[t].push_back(Env::threads[t].idx_nnz - Env::threads[t].off_nnz);
         }
     }
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
