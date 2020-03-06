@@ -29,6 +29,7 @@ class Net {
         Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, 
             const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
             const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
+            const HASHING_TYPE hashing_type_ = HASHING_TYPE::_BUCKET_,
             const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_);
 
         std::unique_ptr<struct Tiling<Weight>> inputFeatures = nullptr;
@@ -56,12 +57,23 @@ class Net {
         bool numa_queues = true;
         uint32_t schduling_threshold = 4;
         
-        ReversibleHasher* input_hasher  = nullptr;
-        ReversibleHasher* input_hasher1 = nullptr;
-        ReversibleHasher* input_hasher2 = nullptr;
-        ReversibleHasher* layer_hasher  = nullptr;
-        ReversibleHasher* layer_hasher1 = nullptr;
-        ReversibleHasher* layer_hasher2 = nullptr;
+        HASHING_TYPE hashing_type;
+        
+        //ReversibleHasher* input_hasher  = nullptr;
+        //ReversibleHasher* input_hasher1 = nullptr;
+        //ReversibleHasher* input_hasher2 = nullptr;
+        //ReversibleHasher* layer_hasher  = nullptr;
+        //ReversibleHasher* layer_hasher1 = nullptr;
+        //ReversibleHasher* layer_hasher2 = nullptr;
+        
+        std::shared_ptr<struct TwoDHasher> input_hasher;
+        std::shared_ptr<struct TwoDHasher> layer_hasher;
+        
+        //std::pair<std::shared_ptr<struct ReversibleHasher>, std::shared_ptr<struct ReversibleHasher>> input_hasher = nullptr;
+        //std::pair<std::shared_ptr<struct ReversibleHasher>, std::shared_ptr<struct ReversibleHasher>> layer_hasher = nullptr;
+        
+        //std::shared_ptr<struct ReversibleHasher> input_hasher = nullptr;
+        //std::shared_ptr<struct ReversibleHasher> layer_hasher = nullptr;
         
         
         void printTimes();
@@ -93,9 +105,9 @@ class Net {
 template<typename Weight>
 Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, 
                  const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
-                 const PARALLELISM_TYPE parallelism_type_, const INPUT_TYPE input_type) 
+                 const PARALLELISM_TYPE parallelism_type_, const HASHING_TYPE hashing_type_,const INPUT_TYPE input_type) 
                      : NinputInstanses(NinputInstanses_), Nneurons(Nneurons_), 
-                       maxLayers(maxLayers_), parallelism_type(parallelism_type_) {
+                       maxLayers(maxLayers_), parallelism_type(parallelism_type_), hashing_type(hashing_type_) {
     
     auto start = std::chrono::high_resolution_clock::now();
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing input feature file for %d neurons and %s\n", Nneurons, PARALLELISM_TYPES[parallelism_type]);  
@@ -131,21 +143,28 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             replication = false;
     }
     
-    input_hasher1 = new SimpleBucketHasher(nrows, 1);
-    input_hasher2 = new SimpleBucketHasher(ncols, 1);
+    //input_hasher = TwoDHasher(hashing_type, nrows, ncols);
+    input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, nrows, ncols));
+    //if(HASHING_TYPE::_BUCKET_) 
+    //else 
+    
+    //printf("%d %d %lu %lu\n", nrows, ncols, input_hasher->hasher_r->hash(60000), input_hasher->hasher_c->hash(1024));
+    //std::exit(0);
+    //input_hasher1 = new SimpleBucketHasher(nrows, 1);
+    //input_hasher2 = new SimpleBucketHasher(ncols, 1);
     
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                                    nnz, nrows, ncols, 
                                                                    feature_file, input_type, 
-                                                                   TILING_TYPE::_1D_ROW_, input_hasher1, input_hasher2, repartition));
+                                                                   TILING_TYPE::_1D_ROW_, input_hasher, repartition));
     }
     else if((parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) or (parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_)) {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads * split_factor, Env::nranks * Env::nthreads * split_factor, 1, Env::nranks,
                                                                    Env::nthreads, Env::nranks * Env::nthreads, 
                                                                    nnz, nrows, ncols, 
                                                                    feature_file, input_type, 
-                                                                   TILING_TYPE::_1D_ROW_, input_hasher1, input_hasher2, repartition));        
+                                                                   TILING_TYPE::_1D_ROW_, input_hasher, repartition));        
        inputFeatures->set_threads_indices();
        inputFeatures->set_rank_indices();  
     }
@@ -154,7 +173,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                    Env::nthreads, Env::nranks * Env::nthreads, 
                                                                    nnz, nrows, ncols, 
                                                                    feature_file, input_type, 
-                                                                   TILING_TYPE::_1D_ROW_, input_hasher1, input_hasher2, repartition));
+                                                                   TILING_TYPE::_1D_ROW_, input_hasher, repartition));
         inputFeatures->set_thread_index();                                                           
     }
     
@@ -177,7 +196,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         nCategories = IO::text_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
     }
     else {
-        nCategories = IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows, input_hasher1);
+        nCategories = IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows, input_hasher);
     }
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
     //maxLayers = 2;
@@ -188,17 +207,21 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         layers[s].resize(maxLayers);
         biasWeightVecs[s].resize(maxLayers);
     }
+    //layer_hasher = new TwoDHasher(hashing_type);
     //layer_hasher = new NullHasher();
-    layer_hasher1 = new SimpleBucketHasher(ncols, 1);
-    layer_hasher2 = new SimpleBucketHasher(ncols, 1);
+    //layer_hasher1 = new SimpleBucketHasher(ncols, 1);
+    //layer_hasher2 = new SimpleBucketHasher(ncols, 1);
     for(uint32_t i = 0; i < maxLayers; i++) {
         std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "/n" + std::to_string(Nneurons) + "-l" + std::to_string(i+1);
         layerFile += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
-
-        std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(layerFile)
-                                                                     : IO::binary_file_stat<Weight>(layerFile);                                                                     
-        nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
-        ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
+        if(i == 0) {
+            std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(layerFile)
+                                                                         : IO::binary_file_stat<Weight>(layerFile);                                                                     
+            nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
+            ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
+            
+            layer_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, nrows, ncols));
+        }
            
         for(int32_t s = 0; s < Env::nsockets; s++) {
             if(replication or (s == Env::rank_socket_id)) {
@@ -215,7 +238,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                     layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
                                                                            nnz, nrows, ncols, 
                                                                            layerFile, input_type, 
-                                                                           TILING_TYPE::_1D_COL_, layer_hasher1, layer_hasher2, false));
+                                                                           TILING_TYPE::_1D_COL_, layer_hasher, false));
                 
                 //}    
                 
@@ -275,19 +298,19 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                             0, inputFeatures->nrows, inputFeatures->ncols, 
-                                                            TILING_TYPE::_1D_ROW_, input_hasher1, input_hasher2, repartition));
+                                                            TILING_TYPE::_1D_ROW_, input_hasher, repartition));
     }
     else if((parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) or (parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_)) {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads * split_factor, Env::nranks * Env::nthreads * split_factor, 1, Env::nranks, 
                                                             Env::nthreads, Env::nranks * Env::nthreads, 
                                                             0, inputFeatures->nrows, inputFeatures->ncols, 
-                                                            TILING_TYPE::_1D_ROW_, input_hasher1, input_hasher2, repartition));
+                                                            TILING_TYPE::_1D_ROW_, input_hasher, repartition));
     }
     else {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks, 
                                                             Env::nthreads, Env::nranks * Env::nthreads, 
                                                             0, inputFeatures->nrows, inputFeatures->ncols, 
-                                                            TILING_TYPE::_1D_ROW_, input_hasher1, input_hasher2, repartition));
+                                                            TILING_TYPE::_1D_ROW_, input_hasher, repartition));
     }
     output->set_tile_info(inputFeatures->tiles);
 
@@ -306,10 +329,12 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     else 
         printTimesExcel1();
     
+    /*
     delete(input_hasher1);    
     delete(input_hasher2);    
     delete(layer_hasher1);
     delete(layer_hasher2);
+    */
 }
 
 
@@ -345,6 +370,7 @@ void Net<Weight>::printTimesExcel() {
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f\n", min, max, sum);
     */
     
+    /*
     for(auto t: Env::execution_time) {
         printf("%f\n", t);
     }
@@ -357,7 +383,7 @@ void Net<Weight>::printTimesExcel() {
         printf("\n");
     }
     printf("\n");
-    
+    */
 }
 
 template<typename Weight>
@@ -374,7 +400,7 @@ void Net<Weight>::printTimesExcel1() {
     double exec_time = Env::execution_time[index];
     
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
-    //Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f ", min, max, sum);
+    Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f ", min, max, sum);
     //return;
     
     
@@ -383,9 +409,11 @@ void Net<Weight>::printTimesExcel1() {
     double memory_time = Env::memory_allocation_time[index];
     double hybrid_time = Env::hybrid_probe_time[index];
     
+    /*
     if(exec_time == max) {
         printf("time: %.3f %.3f %.3f %.3f %.3f %.3f\n", exec_time, spmm_sym_time, spmm_time, memory_time, hybrid_time, exec_time-(spmm_sym_time + spmm_time + memory_time + hybrid_time));
     }
+    */
     
     /*
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
@@ -1041,7 +1069,7 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         data_x_data_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                            nrows, ncols, B_start_col, B_end_col, B_off_col, 
                            thread_st, leader_tid, tid);  
-        Env::nnzs[tid].push_back(C_CSC->nnz);                                
+        //Env::nnzs[tid].push_back(C_CSC->nnz);                                
     }
     auto finish = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
