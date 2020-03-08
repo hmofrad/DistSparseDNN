@@ -29,7 +29,7 @@ class Net {
         Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, 
             const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
             const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
-            const HASHING_TYPE hashing_type_ = HASHING_TYPE::_BUCKET_,
+            const HASHING_TYPE hashing_type_ = HASHING_TYPE::_BOTH_,
             const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_);
 
         std::unique_ptr<struct Tiling<Weight>> inputFeatures = nullptr;
@@ -143,8 +143,23 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             replication = false;
     }
     
+    input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, nrows, ncols));
+    
+    /*
     //input_hasher = TwoDHasher(hashing_type, nrows, ncols);
-    input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, nrows, ncols));
+    if(hashing_type == HASHING_TYPE::_NO_) {
+        input_hasher = std::move(std::make_shared<struct TwoDHasher>(HASHER_TYPE::_EMPTY_, nrows, HASHER_TYPE::_EMPTY_ ncols));
+    }
+    if(hashing_type == HASHING_TYPE::_INPUT_) {
+        input_hasher = std::move(std::make_shared<struct TwoDHasher>(HASHER_TYPE::_BUCKET_, nrows, HASHER_TYPE::_EMPTY_ ncols));
+    }
+    else if(hashing_type == HASHING_TYPE::_LAYER_) {
+        input_hasher = std::move(std::make_shared<struct TwoDHasher>(HASHER_TYPE::_EMPTY_, nrows, HASHER_TYPE::_BUCKET_ ncols));
+    }
+    else if(hashing_type == HASHING_TYPE::_BOTH_) {
+        input_hasher = std::move(std::make_shared<struct TwoDHasher>(HASHER_TYPE::_BUCKET_, nrows, HASHER_TYPE::_BUCKET_ ncols));
+    }
+    */
     //if(HASHING_TYPE::_BUCKET_) 
     //else 
     
@@ -220,7 +235,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
             ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
             
-            layer_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, nrows, ncols));
+            layer_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, false, nrows, ncols));
         }
            
         for(int32_t s = 0; s < Env::nsockets; s++) {
@@ -314,7 +329,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
     output->set_tile_info(inputFeatures->tiles);
 
-    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method [%s | %s].\n", PARALLELISM_TYPES[parallelism_type], SCHEDULING_TYPES[scheduling_type]); 
+    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method [%s | %s | %s].\n", PARALLELISM_TYPES[parallelism_type], SCHEDULING_TYPES[scheduling_type], HASHING_TYPES[hashing_type]); 
     auto finish = std::chrono::high_resolution_clock::now();
     Env::io_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
     Env::barrier();
