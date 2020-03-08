@@ -10,7 +10,9 @@
 #ifndef HASHERS_HPP
 #define HASHERS_HPP
 
-enum HASHING_TYPE {_EMPTY_, _BUCKET_};
+enum HASHER_TYPE {_EMPTY_, _BUCKET_};
+enum HASHING_TYPE {_NO_, _INPUT_, _LAYER_, _BOTH_};
+const char* HASHING_TYPES[] = {"_NO_", "_INPUT_", "_LAYER_", "_BOTH_"};
 
 class ReversibleHasher {
     public:
@@ -64,29 +66,61 @@ class SimpleBucketHasher : public ReversibleHasher {
 
 struct TwoDHasher {
     public:
-        TwoDHasher(HASHING_TYPE hashing_type_, long nrows, long ncols) : hashing_type(hashing_type_) {
-            if(hashing_type == HASHING_TYPE::_EMPTY_) {
+        //TwoDHasher(HASHER_TYPE hasher_type_rows, HASHER_TYPE hasher_type_cols, long nrows, long ncols) {
+        TwoDHasher(HASHING_TYPE hashing_type, bool is_input, long nrows, long ncols) {
+            
+            if(hashing_type == HASHING_TYPE::_NO_) {
                 hasher_r = std::move(std::make_unique<NullHasher>());
                 hasher_c = std::move(std::make_unique<NullHasher>());
-                //hasher_x = new NullHasher();
-                //hasher_y = new NullHasher();
             }
-            else if(hashing_type == HASHING_TYPE::_BUCKET_) {
+            if(hashing_type == HASHING_TYPE::_INPUT_) {
+                if(is_input) {
+                    hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, 1));
+                    hasher_c = std::move(std::make_unique<NullHasher>());
+                }
+                else {
+                    hasher_r = std::move(std::make_unique<NullHasher>());
+                    hasher_c = std::move(std::make_unique<NullHasher>());
+                }
+            }
+            else if(hashing_type == HASHING_TYPE::_LAYER_) {
+                if(is_input) {
+                    hasher_r = std::move(std::make_unique<NullHasher>());
+                    hasher_c = std::move(std::make_unique<SimpleBucketHasher>(ncols, 1));
+                }
+                else {
+                    hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, 1));
+                    hasher_c = std::move(std::make_unique<SimpleBucketHasher>(ncols, 1));
+                }
+            }
+            else if(hashing_type == HASHING_TYPE::_BOTH_) {
                 hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, 1));
                 hasher_c = std::move(std::make_unique<SimpleBucketHasher>(ncols, 1));
-                //hasher_x = new SimpleBucketHasher(nrows, 1);
-                //hasher_y = new SimpleBucketHasher(ncols, 1);
-                
-                //hasher_x = std::move(new SimpleBucketHasher(nrows, 1));
-                //hasher_y = std::move(new SimpleBucketHasher(ncols, 1));
             }
+            
+            
+            /*
+            if(hashing_type_rows == HASHER_TYPE::_EMPTY_) {
+                hasher_r = std::move(std::make_unique<NullHasher>());
+            }
+            else {
+                hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, 1));
+            }
+            
+            if(hashing_type_cols == HASHER_TYPE::_EMPTY_) {
+                hasher_c = std::move(std::make_unique<NullHasher>());
+            }
+            else {
+                hasher_c = std::move(std::make_unique<SimpleBucketHasher>(ncols, 1));
+            }
+            */
         };
         
         ~TwoDHasher(){
             //delete(hasher_x);
             //delete(hasher_y);
         };
-        HASHING_TYPE hashing_type;
+        //HASHING_TYPE hashing_type;
         std::unique_ptr<ReversibleHasher> hasher_r = nullptr;
         std::unique_ptr<ReversibleHasher> hasher_c = nullptr;
         //ReversibleHasher* hasher_x = nullptr;
