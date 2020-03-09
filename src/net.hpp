@@ -29,7 +29,7 @@ class Net {
         Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, 
             const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
             const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
-            const HASHING_TYPE hashing_type_ = HASHING_TYPE::_BOTH_,
+            const HASHING_TYPE hashing_type_ = HASHING_TYPE::_LAYER_,
             const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_);
 
         std::unique_ptr<struct Tiling<Weight>> inputFeatures = nullptr;
@@ -144,16 +144,20 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     }
     
     long nbuckets_rows = 1;
+    long nbuckets_cols = 1;
+    
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         nbuckets_rows = Env::nranks;
     }
-    else if(parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) {
+    else if((parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) or (parallelism_type == PARALLELISM_TYPE::_HYBRID_X_HYBRID_)) {
         nbuckets_rows = Env::nranks * Env::nthreads;
     }
     else if((parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) or (parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_)) {
         nbuckets_rows = Env::nranks * Env::nthreads * split_factor;
     }
-    long nbuckets_cols = Env::nthreads;
+    nbuckets_cols = Env::nthreads;
+    
+    
     
     input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, nrows, ncols, nbuckets_rows, nbuckets_cols));
     
@@ -246,7 +250,10 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                          : IO::binary_file_stat<Weight>(layerFile);                                                                     
             nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
             ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
-                       
+
+            //nbuckets_rows = 1;
+            //nbuckets_cols = 1;            
+            
             nbuckets_rows = Env::nthreads;
             nbuckets_cols = Env::nthreads;
 
