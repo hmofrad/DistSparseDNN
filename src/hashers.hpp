@@ -73,7 +73,7 @@ struct TwoDHasher {
                 hasher_r = std::move(std::make_unique<NullHasher>());
                 hasher_c = std::move(std::make_unique<NullHasher>());
             }
-            if(hashing_type == HASHING_TYPE::_INPUT_) {
+            else if(hashing_type == HASHING_TYPE::_INPUT_) {
                 if(is_input) {
                     hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, nbuckets_rows));
                     hasher_c = std::move(std::make_unique<NullHasher>());
