@@ -67,7 +67,7 @@ class SimpleBucketHasher : public ReversibleHasher {
 struct TwoDHasher {
     public:
         //TwoDHasher(HASHER_TYPE hasher_type_rows, HASHER_TYPE hasher_type_cols, long nrows, long ncols) {
-        TwoDHasher(HASHING_TYPE hashing_type, bool is_input, long nrows, long ncols) {
+        TwoDHasher(HASHING_TYPE hashing_type, bool is_input, long nrows, long ncols, long nbuckets_rows, long nbuckets_cols) {
             
             if(hashing_type == HASHING_TYPE::_NO_) {
                 hasher_r = std::move(std::make_unique<NullHasher>());
@@ -75,7 +75,7 @@ struct TwoDHasher {
             }
             if(hashing_type == HASHING_TYPE::_INPUT_) {
                 if(is_input) {
-                    hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, 1));
+                    hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, nbuckets_rows));
                     hasher_c = std::move(std::make_unique<NullHasher>());
                 }
                 else {
@@ -86,16 +86,16 @@ struct TwoDHasher {
             else if(hashing_type == HASHING_TYPE::_LAYER_) {
                 if(is_input) {
                     hasher_r = std::move(std::make_unique<NullHasher>());
-                    hasher_c = std::move(std::make_unique<SimpleBucketHasher>(ncols, 1));
+                    hasher_c = std::move(std::make_unique<SimpleBucketHasher>(ncols, nbuckets_cols));
                 }
                 else {
-                    hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, 1));
-                    hasher_c = std::move(std::make_unique<SimpleBucketHasher>(ncols, 1));
+                    hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, nbuckets_rows));
+                    hasher_c = std::move(std::make_unique<SimpleBucketHasher>(ncols, nbuckets_cols));
                 }
             }
             else if(hashing_type == HASHING_TYPE::_BOTH_) {
-                hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, 1));
-                hasher_c = std::move(std::make_unique<SimpleBucketHasher>(ncols, 1));
+                hasher_r = std::move(std::make_unique<SimpleBucketHasher>(nrows, nbuckets_rows));
+                hasher_c = std::move(std::make_unique<SimpleBucketHasher>(ncols, nbuckets_cols));
             }
             
             
