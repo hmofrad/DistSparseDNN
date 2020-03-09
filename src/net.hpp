@@ -143,7 +143,19 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             replication = false;
     }
     
-    input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, nrows, ncols));
+    long nbuckets_rows = 1;
+    if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
+        nbuckets_rows = Env::nranks;
+    }
+    else if(parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) {
+        nbuckets_rows = Env::nranks * Env::nthreads;
+    }
+    else if((parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) or (parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_)) {
+        nbuckets_rows = Env::nranks * Env::nthreads * split_factor;
+    }
+    long nbuckets_cols = Env::nthreads;
+    
+    input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, nrows, ncols, nbuckets_rows, nbuckets_cols));
     
     /*
     //input_hasher = TwoDHasher(hashing_type, nrows, ncols);
@@ -234,8 +246,11 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                          : IO::binary_file_stat<Weight>(layerFile);                                                                     
             nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
             ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
-            
-            layer_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, false, nrows, ncols));
+                       
+            nbuckets_rows = Env::nthreads;
+            nbuckets_cols = Env::nthreads;
+
+            layer_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, false, nrows, ncols, nbuckets_rows, nbuckets_cols));
         }
            
         for(int32_t s = 0; s < Env::nsockets; s++) {
@@ -415,7 +430,7 @@ void Net<Weight>::printTimesExcel1() {
     double exec_time = Env::execution_time[index];
     
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f ", min, max, sum);
+    Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f\n", min, max, sum);
     //return;
     
     
