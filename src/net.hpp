@@ -145,7 +145,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     
     long nbuckets_rows = 1;
     long nbuckets_cols = 1;
-    
+    /*
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         nbuckets_rows = Env::nranks;
     }
@@ -156,7 +156,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         nbuckets_rows = Env::nranks * Env::nthreads * split_factor;
     }
     nbuckets_cols = Env::nthreads;
-    
+   */ 
     
     
     input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, nrows, ncols, nbuckets_rows, nbuckets_cols));
@@ -251,11 +251,11 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
             ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
 
-            //nbuckets_rows = 1;
-            //nbuckets_cols = 1;            
+            nbuckets_rows = 1;
+            nbuckets_cols = 1;            
             
-            nbuckets_rows = Env::nthreads;
-            nbuckets_cols = Env::nthreads;
+            //nbuckets_rows = Env::nthreads;
+            //nbuckets_cols = Env::nthreads;
 
             layer_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, false, nrows, ncols, nbuckets_rows, nbuckets_cols));
         }
