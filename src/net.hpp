@@ -131,7 +131,11 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                      : IO::binary_file_stat<Weight>(feature_file);
     Net::nedges = nnz;
     
-    nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
+    Env::max_row = NinputInstanses + 2;
+    nrows = Env::max_row;
+    
+    //nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
+    
     ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
     ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
     
@@ -158,44 +162,21 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     nbuckets_cols = Env::nthreads;
    */ 
     
-    
     input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, nrows, ncols, nbuckets_rows, nbuckets_cols));
-    
-    /*
-    //input_hasher = TwoDHasher(hashing_type, nrows, ncols);
-    if(hashing_type == HASHING_TYPE::_NO_) {
-        input_hasher = std::move(std::make_shared<struct TwoDHasher>(HASHER_TYPE::_EMPTY_, nrows, HASHER_TYPE::_EMPTY_ ncols));
-    }
-    if(hashing_type == HASHING_TYPE::_INPUT_) {
-        input_hasher = std::move(std::make_shared<struct TwoDHasher>(HASHER_TYPE::_BUCKET_, nrows, HASHER_TYPE::_EMPTY_ ncols));
-    }
-    else if(hashing_type == HASHING_TYPE::_LAYER_) {
-        input_hasher = std::move(std::make_shared<struct TwoDHasher>(HASHER_TYPE::_EMPTY_, nrows, HASHER_TYPE::_BUCKET_ ncols));
-    }
-    else if(hashing_type == HASHING_TYPE::_BOTH_) {
-        input_hasher = std::move(std::make_shared<struct TwoDHasher>(HASHER_TYPE::_BUCKET_, nrows, HASHER_TYPE::_BUCKET_ ncols));
-    }
-    */
-    //if(HASHING_TYPE::_BUCKET_) 
-    //else 
-    
-    //printf("%d %d %lu %lu\n", nrows, ncols, input_hasher->hasher_r->hash(60000), input_hasher->hasher_c->hash(1024));
-    //std::exit(0);
-    //input_hasher1 = new SimpleBucketHasher(nrows, 1);
-    //input_hasher2 = new SimpleBucketHasher(ncols, 1);
+
     
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                                    nnz, nrows, ncols, 
                                                                    feature_file, input_type, 
-                                                                   TILING_TYPE::_1D_ROW_, input_hasher, repartition));
+                                                                   TILING_TYPE::_1D_ROW_, input_hasher, true, repartition));
     }
     else if((parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) or (parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_)) {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads * split_factor, Env::nranks * Env::nthreads * split_factor, 1, Env::nranks,
                                                                    Env::nthreads, Env::nranks * Env::nthreads, 
                                                                    nnz, nrows, ncols, 
                                                                    feature_file, input_type, 
-                                                                   TILING_TYPE::_1D_ROW_, input_hasher, repartition));        
+                                                                   TILING_TYPE::_1D_ROW_, input_hasher, true, repartition));        
        inputFeatures->set_threads_indices();
        inputFeatures->set_rank_indices();  
     }
@@ -204,13 +185,13 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                    Env::nthreads, Env::nranks * Env::nthreads, 
                                                                    nnz, nrows, ncols, 
                                                                    feature_file, input_type, 
-                                                                   TILING_TYPE::_1D_ROW_, input_hasher, repartition));
+                                                                   TILING_TYPE::_1D_ROW_, input_hasher, true, repartition));
         inputFeatures->set_thread_index();                                                           
     }
     
-       
-   // Env::barrier();
-   // std::exit(0);
+    //printf("Rank=%d\n", Env::rank);   
+    //Env::barrier();
+    //std::exit(0);
     
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", Nneurons, maxLayers); 
@@ -227,9 +208,11 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         nCategories = IO::text_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
     }
     else {
-        nCategories = IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows, input_hasher);
+        //nCategories = IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows, input_hasher);
+        nCategories = IO::binary_file_categories1(categoryFile, trueCategories, inputFeatures->nrows, input_hasher);
     }
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
+    
     //maxLayers = 2;
     
     layers.resize(Env::nsockets);
@@ -258,6 +241,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             //nbuckets_cols = Env::nthreads;
 
             layer_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, false, nrows, ncols, nbuckets_rows, nbuckets_cols));
+            Env::barrier();
         }
            
         for(int32_t s = 0; s < Env::nsockets; s++) {
@@ -275,7 +259,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                     layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
                                                                            nnz, nrows, ncols, 
                                                                            layerFile, input_type, 
-                                                                           TILING_TYPE::_1D_COL_, layer_hasher, false));
+                                                                           TILING_TYPE::_1D_COL_, layer_hasher, false, false));
                 
                 //}    
                 
@@ -289,6 +273,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     Logging::print(Logging::LOG_LEVEL::VOID, "\n"); 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
     Env::barrier();
+
     
     /*
     if(!Env::rank) {
