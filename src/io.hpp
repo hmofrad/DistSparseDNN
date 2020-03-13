@@ -29,6 +29,10 @@ namespace IO {
     template<typename Weight>
     std::vector<struct Triple<Weight>> binary_file_read(const std::string inputFile, bool one_rank, std::shared_ptr<struct TwoDHasher> hasher);
     int32_t binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height, std::shared_ptr<struct TwoDHasher> hasher);
+    
+    template<typename Weight>
+    std::vector<struct Triple<Weight>> binary_file_read1(const std::string inputFile, bool one_rank, std::shared_ptr<struct TwoDHasher> hasher);
+    int32_t binary_file_categories1(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height, std::shared_ptr<struct TwoDHasher> hasher);
 }
 
 template<typename Weight>
@@ -264,7 +268,7 @@ std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputF
         end_offset = filesize;
         share_tripels = share/sizeof(struct Triple<Weight>);
     }
-    
+
     std::vector<struct Triple<Weight>> triples(share_tripels);    
     #pragma omp parallel
     {
@@ -338,6 +342,137 @@ int32_t IO::binary_file_categories(const std::string inputFile, std::vector<uint
         Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", inputFile.c_str());
         std::exit(Env::finalize());
     }
+    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done  reading the category file %s\n", inputFile.c_str());
+    Env::barrier();
+    return(nCategories);
+}  
+
+template<typename Weight>
+std::vector<struct Triple<Weight>> IO::binary_file_read1(const std::string inputFile, bool one_rank, std::shared_ptr<struct TwoDHasher> hasher) {
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the input file %s\n", inputFile.c_str());
+    
+    std::ifstream fin(inputFile.c_str(), std::ios_base::binary);
+    if(not fin.is_open()) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
+        std::exit(Env::finalize());
+    }
+    
+    uint64_t filesize, offset = 0;
+    fin.seekg (0, std::ios_base::end);
+    filesize = (uint64_t) fin.tellg();
+    fin.clear();
+    fin.close();
+    
+    if(filesize % sizeof(struct Triple<Weight>)) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", inputFile.c_str());
+        std::exit(Env::finalize());
+    }
+    
+    uint64_t nTriples = filesize / sizeof(struct Triple<Weight>);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: File size is %lu bytes with %lu triples\n", filesize, nTriples);
+    
+    uint64_t share = (nTriples / Env::nranks) * sizeof(struct Triple<Weight>);
+    
+    uint64_t start_offset = Env::rank * share;
+    uint64_t end_offset = (Env::rank != Env::nranks - 1) ? ((Env::rank + 1) * share) : filesize;
+    share = (Env::rank == Env::nranks - 1) ? end_offset - start_offset : share;
+    uint64_t share_tripels = share/sizeof(struct Triple<Weight>);
+
+    if(one_rank) {
+        share = filesize;
+        start_offset = 0;
+        end_offset = filesize;
+        share_tripels = share/sizeof(struct Triple<Weight>);
+    }
+    
+    //std::vector<struct Triple<Weight>> triples(share_tripels);    
+    std::vector<struct Triple<Weight>> triples;
+    std::vector<std::vector<struct Triple<Weight>>> triples1(Env::nthreads);
+    #pragma omp parallel
+    {
+        int nthreads = Env::nthreads; 
+        int tid = omp_get_thread_num();
+        uint64_t nTriples_t = share / sizeof(struct Triple<Weight>);
+        uint64_t share_t = (nTriples_t / nthreads) * sizeof(struct Triple<Weight>); 
+        uint64_t start_offset_t = start_offset + (tid * share_t);
+        uint64_t end_offset_t = (tid != Env::nthreads - 1) ? start_offset + ((tid + 1) * share_t) : end_offset;
+        share_t = (tid == Env::nthreads - 1) ? end_offset_t - start_offset_t : share_t;
+        uint64_t offset_t = start_offset_t;
+
+        std::ifstream fin_t(inputFile.c_str(), std::ios_base::binary);
+        if(not fin_t.is_open()) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
+            std::exit(Env::finalize());
+        }
+        fin_t.seekg(offset_t, std::ios_base::beg);
+        
+        struct Triple<Weight> triple;
+        uint64_t index = 0;
+        while(offset_t < end_offset_t) {
+            fin_t.read(reinterpret_cast<char*>(&triple), sizeof(struct Triple<Weight>));
+            index = ((offset_t - start_offset) / sizeof(struct Triple<Weight>));
+            triple.row = hasher->hasher_r->hash(triple.row);
+            triple.col = hasher->hasher_c->hash(triple.col);
+            
+            if(triple.row < Env::max_row)
+                triples1[tid].push_back(triple);
+            
+            //triples[index] = triple;
+            offset_t += sizeof(struct Triple<Weight>);
+        }
+        fin_t.close();
+    }
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done reading the input file %s\n", inputFile.c_str());
+    Env::barrier(); 
+    
+    for(auto triple1: triples1) {
+        triples.insert(triples.end(), triple1.begin(), triple1.end());
+    }
+
+    return(triples);
+}
+
+
+int32_t IO::binary_file_categories1(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height, std::shared_ptr<struct TwoDHasher> hasher) {
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the category file %s\n", inputFile.c_str());
+    
+    std::ifstream fin(inputFile.c_str(), std::ios_base::binary);
+    if(not fin.is_open()) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", inputFile.c_str());
+        std::exit(Env::finalize());
+    }
+    
+    uint64_t filesize, offset = 0;
+    fin.seekg (0, std::ios_base::end);
+    filesize = (uint64_t) fin.tellg();
+    fin.seekg(0, std::ios_base::beg);
+    
+    if(filesize % sizeof(uint32_t)) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", inputFile.c_str());
+        std::exit(Env::finalize());
+    }
+
+    uint32_t nCategories = 0;
+    uint32_t category = 0;
+    categories.resize(tile_height);
+    while(offset < filesize) {
+        fin.read(reinterpret_cast<char*>(&category), sizeof(uint32_t));
+        offset += sizeof(uint32_t);
+        category = hasher->hasher_r->hash(category);
+        
+        if(category < Env::max_row) {
+            categories[category] = 1;
+            nCategories++;
+        }
+    }
+    fin.close();
+
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Total number of categories %d\n", nCategories);
+    //if((filesize / sizeof(uint32_t)) != nCategories) {
+      //  Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", inputFile.c_str());
+        //std::exit(Env::finalize());
+    //}
     
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Done  reading the category file %s\n", inputFile.c_str());
     Env::barrier();
