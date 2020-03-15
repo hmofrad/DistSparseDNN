@@ -309,6 +309,7 @@ void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
 template<typename Weight>
 void CSC<Weight>::adjust(const int32_t tid){
     CSC::nnz_i = Env::threads[tid].idx_nnz;
+    Env::nnzs[tid].push_back(Env::threads[tid].idx_nnz);
 }
 
 template<typename Weight>
@@ -324,7 +325,7 @@ void CSC<Weight>::adjust(const int32_t leader_tid, const int32_t tid){
         */        
         for(uint32_t i = 0; i < Env::threads.size(); i++) {    
             CSC::nnz_i += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
-            //Env::nnzs[i].push_back(Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
+            Env::nnzs[i].push_back(Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
             //printf("%lu ", (Env::threads[i].idx_nnz - Env::threads[i].off_nnz));
         }
         //printf("\n");
