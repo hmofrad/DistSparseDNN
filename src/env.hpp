@@ -124,6 +124,17 @@ namespace Env {
         uint32_t score;
     };
     
+    struct data_counter {
+        double time;
+        int rank;
+        int tid;
+        uint32_t layer;
+        uint64_t b_bytes;
+        uint64_t c_bytes;
+    };
+    
+    std::vector<std::vector<struct data_counter>> data_counters;
+    
     uint64_t adjust_nnz(const int32_t leader_tid, const int32_t tid);
     uint64_t adjust_nnz(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
     void adjust_displacement(const int32_t tid);
@@ -305,6 +316,8 @@ int Env::init() {
     Env::nmachines = Env::get_num_machines();
     Env::nranks_per_machine = Env::nranks / Env::nmachines; 
     
+    
+    data_counters.resize(Env::nthreads);
     /*
     if(Env::rank == 3) {
         for(auto t : threads_rank) {
