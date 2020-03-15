@@ -57,7 +57,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
             }
         }
     }
-    
+
     return std::make_tuple(nnzmax, nrows, ncols);
 }
 
@@ -133,7 +133,7 @@ inline void data_x_model_1_iter(std::shared_ptr<struct CSC<Weight>> A_CSC,
         std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_CSC, B_CSC, s_spa, B_start_col, B_end_col, tid);
         pthread_barrier_wait(&Env::thread_barrier);
     Env::spmm_symb_time[tid] += Env::toc(start_time);   
-    
+
     start_time = Env::tic();
         uint64_t nnz = Env::adjust_nnz(leader_tid, tid);
         C_CSC->reallocate(nnz, nrows, ncols, leader_tid, tid);
@@ -154,6 +154,8 @@ inline void data_x_model_1_iter(std::shared_ptr<struct CSC<Weight>> A_CSC,
     Env::memory_allocation_time[tid] += Env::toc(start_time);
     
     //A_CSC->walk_dxm(false, leader_tid, tid);
+    //pthread_barrier_wait(&Env::thread_barrier);
+    //std::exit(0);
 }
 
 template<typename Weight>
@@ -228,16 +230,18 @@ inline void data_x_data_1_iter(std::shared_ptr<struct CSC<Weight>> A_CSC,
         uint64_t nnz = thread_st.off_nnz;
         C_CSC->reallocate(thread_st.off_nnz, nrows, ncols, leader_tid, tid);
     Env::memory_allocation_time[tid] += Env::toc(start_time);
-
+    
     start_time = Env::tic();
         thread_st.idx_nnz = 0;
         spmm_real(A_CSC, B_CSC, C_CSC, s_spa, b_bias, B_start_col, B_end_col, B_off_col, thread_st.idx_nnz, tid);
         Env::adjust_displacement(tid);
-        
+        C_CSC->adjust(tid);
     Env::spmm_real_time[tid] += Env::toc(start_time);                              
+    
     //leader_tid = 0;
-    //C_CSC->adjust(tid);
     //C_CSC->walk_dxd(false, leader_tid, tid);
+    //pthread_barrier_wait(&Env::thread_barrier);
+    //std::exit(0);
 }
 
 template<typename Weight>
