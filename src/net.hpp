@@ -413,7 +413,12 @@ void annotate() {
     l.push_back(annotated.front().layer);
     uint64_t b_nbytes = annotated.front().b_bytes;
     uint64_t c_nbytes = annotated.front().c_bytes;
+    int r = 100;
+    bool p = true;
     for(uint32_t i = 1; i < annotated.size(); i++) {
+        if(i%r == 0) {
+            p = true;
+        }
         uint32_t t1 = (uint32_t) ceil(annotated[i].time/1e6);
         if(t == t1) {
             //if(std::find(l.begin(), l.end(), annotated[i].layer) == l.end()) {
@@ -426,7 +431,10 @@ void annotate() {
             auto last = std::unique(l.begin(), l.end());
             l.erase(last, l.end());
             //printf("i=%d time=%d b_nbyets=%lu c_bytes=%lu\n", i, t, l.size() * b_nbytes, c_nbytes);
-            printf("%d %lu %lu\n", i, l.size() * b_nbytes, c_nbytes);
+            if(p) {
+                printf("%d %lu %lu\n", i, l.size() * b_nbytes, c_nbytes);
+                p = false;
+            }
             //for(auto ll: l) {printf("%d ", ll);} printf("\n");
             t = (uint32_t) ceil(annotated[i].time/1e6);
             l.clear();
@@ -435,9 +443,17 @@ void annotate() {
             c_nbytes = annotated[i].c_bytes;
         }
     }
-    printf("%lu\n", b_nbytes);
     
     
+}
+
+void annotate1() {
+    
+    for(uint32_t i = 0; i < Env::data_counters[0].size(); i++) {
+        uint64_t b_nbytes = Env::data_counters[0][i].b_bytes;
+        uint64_t c_nbytes = Env::data_counters[0][i].c_bytes;
+        printf("%d %lu %lu\n", i, b_nbytes, c_nbytes);
+    }
 }
 
 template<typename Weight>
@@ -511,8 +527,13 @@ void Net<Weight>::printTimesExcel() {
     Logging::print(Logging::LOG_LEVEL::VOID, "Front: mean=%.3f stdev=%.3f sum=%.3f min=%.3f max=%.3f\n", mean, std_dev, sum, min, max);
     */
     
-    
-    annotate();
+    if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
+        annotate1();
+        
+    }
+    if(parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) {
+        annotate();
+    }
     
 }
 
@@ -686,7 +707,16 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         data_x_model_1_iter(A_CSC, B_CSC, C_CSC, s_spa, b_bias, 
                             nrows, ncols, B_start_col, B_end_col, 
                             B_sub_start_col, B_sub_end_col, 
-                            thread_st, leader_tid, tid);                 
+                            thread_st, leader_tid, tid); 
+
+        auto now = std::chrono::high_resolution_clock::now();
+        double elapsed = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(now - start).count());
+        uint64_t B_SIZE = B_CSC->JA_blk->nbytes + B_CSC->IA_blk->nbytes + B_CSC->A_blk->nbytes;
+        uint64_t C_SIZE = C_CSC->JA_blk->nbytes + C_CSC->IA_blk->nbytes + C_CSC->A_blk->nbytes;
+        //printf("time %f: Rank=%d tid=%2d layer=%3d nnz=%d B=%lu C=%lu\n", elapsed, Env::rank, tid, l, Env::nnzs[tid][l], B_SIZE, C_SIZE);
+        if(tid == leader_tid)
+            Env::data_counters[tid].push_back({elapsed, Env::rank, tid, l, (B_CSC->IA_blk->nitems*4*2+ncols*4), (uint64_t) (C_CSC->IA_blk->nitems*4*2+ncols*4)});
+                            
     }
     auto finish = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish - start).count())/1e9;
@@ -1187,7 +1217,7 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         uint64_t B_SIZE = B_CSC->JA_blk->nbytes + B_CSC->IA_blk->nbytes + B_CSC->A_blk->nbytes;
         uint64_t C_SIZE = C_CSC->JA_blk->nbytes + C_CSC->IA_blk->nbytes + C_CSC->A_blk->nbytes;
         //printf("time %f: Rank=%d tid=%2d layer=%3d nnz=%d B=%lu C=%lu\n", elapsed, Env::rank, tid, l, Env::nnzs[tid][l], B_SIZE, C_SIZE);
-        Env::data_counters[tid].push_back({elapsed, Env::rank, tid, l, (B_CSC->IA_blk->nitems*4*2+ncols*4), (uint64_t) (Env::nnzs[tid][l]*4*2+ncols*4)});
+        Env::data_counters[tid].push_back({elapsed, Env::rank, tid, l, (B_CSC->IA_blk->nitems*4*2+ncols*4), (uint64_t) (C_CSC->IA_blk->nitems*4*2+ncols*4)});
     }
     auto finish = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish - start).count())/1e9;
