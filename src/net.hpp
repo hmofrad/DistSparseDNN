@@ -298,12 +298,12 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     Env::end_to_end_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
     Env::barrier();
     
-    if(Env::nranks == 1) {
+    
         if(Env::nranks == 1)
             printTimesExcel();
         else 
             printTimesExcel1();
-    }
+    
 }
 
 
