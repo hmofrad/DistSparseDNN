@@ -127,8 +127,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             replication = false;
     }
     
-    long nbuckets_rows = Env::nranks * Env::nthreads * 2;
-    long nbuckets_cols = 128;
+    long nbuckets_rows = 1;
+    long nbuckets_cols = 1;
     
     /*
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
