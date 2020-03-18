@@ -33,7 +33,7 @@ class NullHasher : public ReversibleHasher {
 
 class SimpleBucketHasher : public ReversibleHasher {
     private:
-        const long multiplier = 1u; // For fine-granular load balance
+        const long multiplier = 128u; // For fine-granular load balance
         long nparts = 0;
         long height = 0;
         long max_range = 0;
