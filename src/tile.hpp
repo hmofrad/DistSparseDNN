@@ -16,10 +16,13 @@ struct Tile{
         Tile() {};
         ~Tile() {};
 
-        void compress(const bool one_rank, const int32_t socket_id);
+        void compress(const COMPRESSED_FORMAT compression_type_, const bool one_rank, const int32_t socket_id);
         
         std::vector<struct Triple<Weight>> triples;
+        //std::shared_ptr<struct Compressed_Format<Weight>> spmat = nullptr;
         std::shared_ptr<struct CSC<Weight>> spmat = nullptr;
+        
+        COMPRESSED_FORMAT compression_type;
         
         int32_t rank;
         int32_t thread;
@@ -30,27 +33,30 @@ struct Tile{
         uint32_t end_col   = 0;
         uint32_t height    = 0;
         uint32_t width     = 0;
-        
-        bool partitioned = false;
-        std::vector<struct Tile<Weight>> subtiles;
-        std::vector<struct Tile<Weight>> out_subtiles;
-        std::vector<struct Tile<Weight>> in_subtiles;
 };
 
 template<typename Weight>
-void Tile<Weight>::compress(const bool one_rank, const int32_t socket_id) {  
-                            
-    if(not triples.empty()){        
-        const ColSort<Weight> f_col;
-        std::sort(triples.begin(), triples.end(), f_col);   
+void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type_, const bool one_rank, const int32_t socket_id) {  
+
+    compression_type = compression_type_;
+    
+    if(compression_type == COMPRESSED_FORMAT::_CSC_) {
         spmat = std::make_shared<struct CSC<Weight>>(triples.size(), height, width, socket_id);
+    }
+    //else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+    //    spmat = std::make_shared<struct CSC<Weight>>(triples.size(), height, width, socket_id);
+    //}
+    else {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
+        std::exit(Env::finalize());
+    }
+    
+    
+    if(not triples.empty()){
         spmat->populate(triples, start_row, end_row, start_col, end_col);
-        //spmat->walk_dxm(one_rank, 0, 0);
+        spmat->walk_dxm(one_rank, 0, 0);
         triples.clear();
         triples.shrink_to_fit();
-    }
-   else {
-        spmat = std::make_shared<CSC<Weight>>(0, height, width, socket_id);
     }
 }
 #endif
