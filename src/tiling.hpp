@@ -30,13 +30,13 @@ class Tiling {
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
                const std::string input_file, const INPUT_TYPE input_type, 
-               const TILING_TYPE tiling_type_, std::shared_ptr<struct TwoDHasher> hasher, bool slice_rows, const bool repartition = false);
+               const TILING_TYPE tiling_type_, std::shared_ptr<struct TwoDHasher> hasher, const bool repartition = false);
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, 
                const uint32_t nranks_, const uint32_t rank_nthreads_, const uint32_t nthreads_,
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
                const std::string input_file, const INPUT_TYPE input_type, 
-               const TILING_TYPE tiling_type_, std::shared_ptr<struct TwoDHasher> hasher, bool slice_rows, const bool repartition = false);               
+               const TILING_TYPE tiling_type_, std::shared_ptr<struct TwoDHasher> hasher, const bool repartition = false);               
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
@@ -75,19 +75,6 @@ class Tiling {
         uint32_t get_tile_info(const std::string field, const int32_t tid);
         uint32_t get_tile_info_max(const std::string field);
         void     set_tile_info(const std::vector<std::vector<struct Tile<Weight>>> other_tiles); 
-        
-        void update_out_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
-                                      std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
-                                      std::vector<struct Tile<Weight>>& subtiles,
-                                      std::vector<std::shared_ptr<struct CSC<Weight>>>& subcscs,
-                                      std::vector<int32_t>& follower_ranks,
-                                      const uint32_t nthreads_local, const int32_t tid);
-        
-        void update_in_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
-                                         std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
-                                         const uint64_t csc_nedges, const uint32_t csc_start_row, 
-                                         const uint32_t csc_height, const uint32_t csc_width, 
-                                         const int32_t tid);
 
     private:
         void integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b);
@@ -113,7 +100,6 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
                        const TILING_TYPE tiling_type_, std::shared_ptr<struct TwoDHasher> hasher,
-                       bool slice_rows,
                        const bool repartition) 
         : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
           nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
@@ -244,10 +230,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         triples = IO::text_file_read<Weight>(input_file, one_rank);
     }
     else {
-        if(slice_rows)
-            triples = IO::binary_file_read1<Weight>(input_file, one_rank, hasher);
-        else
-            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher);
+        triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows);
     }
     insert_triples(triples);
     delete_triples(triples);
@@ -293,7 +276,6 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
                        const TILING_TYPE tiling_type_, std::shared_ptr<struct TwoDHasher> hasher,
-                       bool slice_rows,
                        const bool repartition)
                      : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        rank_nthreads(rank_nthreads_), nthreads(nthreads_),
@@ -433,10 +415,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         triples = IO::text_file_read<Weight>(input_file, one_rank);
     }
     else {
-        if(slice_rows)
-            triples = IO::binary_file_read1<Weight>(input_file, one_rank, hasher);
-        else 
-            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher);
+        triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows);
     }
     insert_triples(triples);
     delete_triples(triples);
@@ -1199,7 +1178,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             triples = IO::text_file_read<Weight>(input_file, one_rank);
         }
         else {
-            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher);
+            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows);
         }
         
         insert_triples(triples);
@@ -1409,7 +1388,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             triples = IO::text_file_read<Weight>(input_file, one_rank);
         }
         else {
-            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher);
+            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows);
         }
         
         insert_triples(triples);
@@ -1547,101 +1526,6 @@ void Tiling<Weight>::compress_triples(){ //(const REFINE_TYPE refine_type) {
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Done compressing tiles.\n");
     Env::barrier();
-}
-
-template<typename Weight>
-void Tiling<Weight>::update_in_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
-                     std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
-                     const uint64_t csc_nedges, const uint32_t csc_start_row, 
-                     const uint32_t csc_height, const uint32_t csc_width, 
-                     const int32_t tid) {
-                         
-    MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
-    
-    struct Tile<Weight>& this_tile = tiles[leader_rowgroup][0];
-    struct Tile<Weight>& other_tile = other_tiles[leader_rowgroup][0];
-
-    struct Tile<Weight> subtile;
-    subtile.nedges = (uint64_t) csc_nedges;
-    subtile.start_row = csc_start_row;
-    subtile.end_row = csc_start_row + csc_height;
-    subtile.start_col = 0;
-    subtile.end_col = csc_width;
-    subtile.height = csc_height;
-    subtile.width = csc_width; 
-    /*
-    this_tile.nedges = other_tile.nedges = subtile.nedges;
-    this_tile.start_row =  other_tile.start_row = subtile.start_row;
-    this_tile.end_row = other_tile.end_row = subtile.end_row;
-    this_tile.start_col = other_tile.start_col = subtile.start_col;
-    this_tile.end_col = other_tile.end_col = subtile.end_col;
-    this_tile.height = other_tile.height = subtile.height;
-    this_tile.width = other_tile.width = subtile.width;
-    */
-    this_tile.in_subtiles.push_back(subtile);  
-    other_tile.in_subtiles.push_back(subtile); 
-    
-    //std::shared_ptr<struct CSC<Weight>>& csc = this_tile.spmat;
-    //this_tile.spmat = std::move(std::make_shared<struct CSC<Weight>>(this_tile.nedges, this_tile.height, this_tile.width));
-    //other_tile.spmat = std::move(std::make_shared<struct CSC<Weight>>(0, this_tile.height, this_tile.width));
-    
-    
-    //subtile.spmat = std::move(std::make_shared<struct CSC<Weight>>(nedges, height, width));
-     
-     
-    this_tile.in_subtiles.back().spmat = std::move(std::make_shared<struct CSC<Weight>>(csc_nedges, csc_height, csc_width));
-    other_tile.in_subtiles.back().spmat = std::move(std::make_shared<struct CSC<Weight>>(0, csc_height, csc_width)); 
-
-}
-
-template<typename Weight>
-void Tiling<Weight>::update_out_subtiles(const uint32_t leader_rowgroup, const uint32_t start_layer, 
-                std::vector<std::vector<struct Tile<Weight>>>& other_tiles,
-                std::vector<struct Tile<Weight>>& subtiles,
-                std::vector<std::shared_ptr<struct CSC<Weight>>>& subcscs,
-                std::vector<int32_t>& follower_ranks,
-                const uint32_t nthreads_local, const int32_t tid) {
-                    
-    MPI_Datatype WEIGHT_TYPE = MPI_Types::get_mpi_data_type<Weight>();
-    
-    struct Tile<Weight>& this_tile = tiles[leader_rowgroup][0];
-    struct Tile<Weight>& other_tile = other_tiles[leader_rowgroup][0];
-    
-    uint32_t nparts_local  = nthreads_local;
-    uint32_t nparts_remote = follower_ranks.size();   
-    std::shared_ptr<struct CSC<Weight>>& csc = this_tile.spmat;
-    csc->split_and_overwrite(subcscs, nparts_local, nparts_remote);
-    
-    uint32_t nparts = 1 + nparts_remote;
-    subtiles.resize(nparts);
-    uint32_t my_start_row = this_tile.start_row;
-    for(uint32_t k = 0; k < nparts; k++) {
-        struct Tile<Weight>& subtile = subtiles[k];
-        std::shared_ptr<struct CSC<Weight>>& subcsc = subcscs[k];  
-        subtile.rank = (k == 0) ? Env::rank : follower_ranks[k-1]; 
-        subtile.thread = tid;
-        subtile.nedges = subcsc->nnz;
-        subtile.start_row = my_start_row;
-        subtile.end_row = my_start_row + subcsc->nrows;
-        subtile.start_col = 0;
-        subtile.end_col = subcsc->ncols;
-        subtile.height = subcsc->nrows;
-        subtile.width = subcsc->ncols;
-        my_start_row += subcsc->nrows;
-    }
-    
-    struct Tile<Weight> subtile = subtiles[0];
-    
-    this_tile.nedges = other_tile.nedges = subtile.nedges;
-    this_tile.start_row =  other_tile.start_row = subtile.start_row;
-    this_tile.end_row = other_tile.end_row = subtile.end_row;
-    this_tile.start_col = other_tile.start_col = subtile.start_col;
-    this_tile.end_col = other_tile.end_col = subtile.end_col;
-    this_tile.height = other_tile.height = subtile.height;
-    this_tile.width = other_tile.width = subtile.width;
-    
-    this_tile.out_subtiles.insert(this_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());
-    other_tile.out_subtiles.insert(other_tile.out_subtiles.end(), subtiles.begin(), subtiles.end());    
 }
 
 #endif
