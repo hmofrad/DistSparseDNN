@@ -637,7 +637,6 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t start, end;
     uint32_t sub_start = 0, sub_end = 0;
-    printf("%d\n", nrows);
     
     if(tid == leader_tid) {	
         for(int32_t i = 0; i < Env::nthreads; i++) {	
@@ -883,7 +882,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
     std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
-    uint32_t nrows = inputFeatures->tiles[leader_rowgroup][0].spmat->nrows;
+    uint32_t nrows = A_tile.spmat->nrows;
     const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t start, end;
     const uint32_t off = 0;   
@@ -911,6 +910,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
             start = Env::threads[tid].start_row;
             end = Env::threads[tid].end_row;
         }
+        //printf("R=%d t=%d nr=%d nc=%d [%d %d]\n", Env::rank, tid, nrows, ncols, start, end);
 
         //B_start = Env::threads[tid].start_col;
         //B_end = Env::threads[tid].end_col;
@@ -973,6 +973,7 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
                 num_threads += follower_threads.size();
                 my_threads.insert(my_threads.end(), follower_threads.begin(), follower_threads.end());
                 follower_threads.erase(follower_threads.begin(), follower_threads.end());
+                
                 if(compression_type == COMPRESSED_FORMAT::_CSC_) {
                     for(uint32_t i = 0; i < num_threads; i++) {
                         int32_t t = my_threads[i];
