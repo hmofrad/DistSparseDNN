@@ -15,9 +15,13 @@ template<typename Weight>
 inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
                                                           std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT,
                                                           std::shared_ptr<struct Data_Block<Weight>> s,
-                                                          const uint32_t start_col,
-                                                          const uint32_t end_col,
+                                                          const uint32_t start,
+                                                          const uint32_t end,
                                                           const int32_t tid) {
+    
+    uint64_t nnzmax = 0;
+    uint32_t nrows;
+    uint32_t ncols;
     
     uint64_t A_nnz;
     uint32_t A_nrows;
@@ -33,54 +37,90 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
     uint32_t* B_JA;
     Weight*    B_A;
     
-    if((A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) and 
-       (B_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_)) {
-            const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
-            A_nnz   = A_CSC->nnz;
-            A_nrows = A_CSC->nrows;
-            A_ncols = A_CSC->ncols;
-            A_IA   = A_CSC->IA_blk->ptr;
-            A_JA   = A_CSC->JA_blk->ptr;
-            A_A   = A_CSC->A_blk->ptr;
+    Weight* s_A   = s->ptr;
+    
+    COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;
+    if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+        const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
+        A_nnz   = A_CSC->nnz;
+        A_nrows = A_CSC->nrows;
+        A_ncols = A_CSC->ncols;
+        A_IA   = A_CSC->IA_blk->ptr;
+        A_JA   = A_CSC->JA_blk->ptr;
+        A_A   = A_CSC->A_blk->ptr;
+    
+        const std::shared_ptr<struct CSC<Weight>> B_CSC = std::static_pointer_cast<struct CSC<Weight>>(B_SPMAT);
+        B_nnz   = B_CSC->nnz;
+        B_nrows = B_CSC->nrows;
+        B_ncols = B_CSC->ncols;
+        B_IA   = B_CSC->IA_blk->ptr;
+        B_JA   = B_CSC->JA_blk->ptr;
+        B_A   = B_CSC->A_blk->ptr;
         
-            const std::shared_ptr<struct CSC<Weight>> B_CSC = std::static_pointer_cast<struct CSC<Weight>>(B_SPMAT);
-            B_nnz   = B_CSC->nnz;
-            B_nrows = B_CSC->nrows;
-            B_ncols = B_CSC->ncols;
-            B_IA   = B_CSC->IA_blk->ptr;
-            B_JA   = B_CSC->JA_blk->ptr;
-            B_A   = B_CSC->A_blk->ptr;
-        }
-        else {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Compression not implemented\n");
-            std::exit(Env::finalize());
+        if((A_ncols != B_nrows) or (s->nitems < A_nrows)) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d], SPA[%lu]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
+            std::exit(1); 
         }
         
-    Weight*          s_A   = s->ptr;
-
-    if((A_ncols != B_nrows) or (s->nitems < A_nrows)) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d], SPA[%lu]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
-        std::exit(1); 
+        for(uint32_t j = start; j < end; j++) {
+            for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
+                uint32_t l = B_IA[k];
+                for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
+                    s_A[A_IA[n]] = 1;
+                }
+            }
+            for(uint32_t i = 0; i < A_nrows; i++) {
+                if(s_A[i]){
+                    nnzmax++;
+                    s_A[i] = 0;
+                }
+            }
+        }
+    }
+    else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+        const std::shared_ptr<struct CSR<Weight>> A_CSR = std::static_pointer_cast<struct CSR<Weight>>(A_SPMAT);
+        A_nnz   = A_CSR->nnz;
+        A_nrows = A_CSR->nrows;
+        A_ncols = A_CSR->ncols;
+        A_IA   = A_CSR->IA_blk->ptr;
+        A_JA   = A_CSR->JA_blk->ptr;
+        A_A   = A_CSR->A_blk->ptr;
+    
+        const std::shared_ptr<struct CSR<Weight>> B_CSR = std::static_pointer_cast<struct CSR<Weight>>(B_SPMAT);
+        B_nnz   = B_CSR->nnz;
+        B_nrows = B_CSR->nrows;
+        B_ncols = B_CSR->ncols;
+        B_IA   = B_CSR->IA_blk->ptr;
+        B_JA   = B_CSR->JA_blk->ptr;
+        B_A   = B_CSR->A_blk->ptr;
+        
+        if((A_ncols != B_nrows) or (s->nitems < B_ncols)) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d], SPA[%lu]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
+            std::exit(1); 
+        }
+ //printf("Symb OP: A[%d %d] B[%d %d] SPA[%lu] [%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems, start, end);
+        for(uint32_t i = start; i < end; i++) {
+            for(uint32_t k = A_IA[i]; k < A_IA[i+1]; k++) {
+                uint32_t l = A_JA[k];
+                for(uint32_t n = B_IA[l]; n < B_IA[l+1]; n++) {
+                    s_A[B_JA[n]] = 1;
+                }
+            }
+            for(uint32_t j = 0; j < B_ncols; j++) {
+                if(s_A[j]){
+                    nnzmax++;
+                    s_A[j] = 0;
+                }
+            }
+        }
+    }
+    else {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
+        std::exit(Env::finalize());
     }
     
-    uint64_t nnzmax = 0;
-    uint32_t nrows = A_nrows;
-    uint32_t ncols = B_ncols; 
-
-    for(uint32_t j = start_col; j < end_col; j++) {
-        for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
-            uint32_t l = B_IA[k];
-            for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
-                s_A[A_IA[n]] = 1;
-            }
-        }
-        for(uint32_t i = 0; i < A_nrows; i++) {
-            if(s_A[i]){
-                nnzmax++;
-                s_A[i] = 0;
-            }
-        }
-    }
+    nrows = A_nrows;
+    ncols = B_ncols;
 
     return std::make_tuple(nnzmax, nrows, ncols);
 }
@@ -91,9 +131,9 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
                       std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
                       std::shared_ptr<struct Data_Block<Weight>> s,
                       const std::shared_ptr<struct Data_Block<Weight>> b,
-                      const uint32_t start_col,
-                      const uint32_t end_col,
-                      const uint32_t off_col,
+                      const uint32_t start,
+                      const uint32_t end,
+                      const uint32_t off,
                       uint64_t& idx_nnz,
                       const int32_t tid) {
     
@@ -118,11 +158,11 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
     uint32_t* C_JA;
     Weight*    C_A;
     
-    COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;
+    Weight*       s_A = s->ptr;
+    const Weight* b_A = b->ptr;
     
-    if((A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) and 
-       (B_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) and
-       (C_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_)) {
+    COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;
+    if(compression_type == COMPRESSED_FORMAT::_CSC_) {
         const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
         A_nnz   = A_CSC->nnz;
         A_nrows = A_CSC->nrows;
@@ -146,31 +186,65 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
         C_IA   = C_CSC->IA_blk->ptr;
         C_JA   = C_CSC->JA_blk->ptr;
         C_A   = C_CSC->A_blk->ptr;
-    }
-    else {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
-        std::exit(Env::finalize());
-    }
-    
-    Weight*          s_A   = s->ptr;
-    const Weight*    b_A   = b->ptr;
+                        
+        if((A_ncols != B_nrows) or (s->nitems < A_nrows)) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
+            std::exit(1); 
+        }
         
-    if((A_ncols != B_nrows) or (s->nitems < A_nrows)) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
-        std::exit(1); 
-    }
-
-    if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-        const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_SPMAT);
-        for(uint32_t j = start_col; j < end_col; j++) {
+        for(uint32_t j = start; j < end; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
                 for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
                     s_A[A_IA[n]] += (B_A[k] * A_A[n]);
                 }
             }
-            C_CSC->populate_spa(&s_A, b_A, off_col + j, idx_nnz, tid);
+            C_CSC->populate_spa(&s_A, b_A, off + j, idx_nnz, tid);
         }
+    }
+    else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+        const std::shared_ptr<struct CSR<Weight>> A_CSR = std::static_pointer_cast<struct CSR<Weight>>(A_SPMAT);
+        A_nnz   = A_CSR->nnz;
+        A_nrows = A_CSR->nrows;
+        A_ncols = A_CSR->ncols;
+        A_IA   = A_CSR->IA_blk->ptr;
+        A_JA   = A_CSR->JA_blk->ptr;
+        A_A   = A_CSR->A_blk->ptr;
+        
+        const std::shared_ptr<struct CSR<Weight>> B_CSR = std::static_pointer_cast<struct CSR<Weight>>(B_SPMAT);          
+        B_nnz   = B_CSR->nnz;
+        B_nrows = B_CSR->nrows;
+        B_ncols = B_CSR->ncols;
+        B_IA   = B_CSR->IA_blk->ptr;
+        B_JA   = B_CSR->JA_blk->ptr;
+        B_A   = B_CSR->A_blk->ptr;
+            
+        const std::shared_ptr<struct CSR<Weight>> C_CSR = std::static_pointer_cast<struct CSR<Weight>>(C_SPMAT);              
+        C_nnz   = C_CSR->nnz;
+        C_nrows = C_CSR->nrows;
+        C_ncols = C_CSR->ncols;
+        C_IA   = C_CSR->IA_blk->ptr;
+        C_JA   = C_CSR->JA_blk->ptr;
+        C_A   = C_CSR->A_blk->ptr;
+                        
+        if((A_ncols != B_nrows) or (s->nitems < B_ncols)) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu] Bias[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems, b->nitems);
+            std::exit(1); 
+        }
+    //printf("Real OP: A[%d %d] B[%d %d] C[%d %d] SPA[%lu] [%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols, C_nrows, C_ncols, s->nitems, start, end);
+        for(uint32_t i = start; i < end; i++) {
+            for(uint32_t k = A_IA[i]; k < A_IA[i+1]; k++) {
+                uint32_t l = A_JA[k];
+                for(uint32_t n = B_IA[l]; n < B_IA[l+1]; n++) {
+                    s_A[B_JA[n]] += (A_A[k] * B_A[n]);
+                }
+            }
+            C_CSR->populate_spa(&s_A, b_A, off + i, idx_nnz, tid);
+        }        
+    }
+    else {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
+        std::exit(Env::finalize());
     }
 }
 
@@ -183,51 +257,41 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
                                 const std::shared_ptr<struct Data_Block<Weight>> b_bias,
                                 const uint32_t nrows,
                                 const uint32_t ncols,
-                                const uint32_t B_start_col,
-                                const uint32_t B_end_col,
-                                const uint32_t B_sub_start_col,
-                                const uint32_t B_sub_end_col,
+                                const uint32_t start,
+                                const uint32_t end,
+                                const uint32_t sub_start,
+                                const uint32_t sub_end,
                                 struct Env::thread_struct& thread_st,
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
     
-    COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;    
-    if((A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) and 
-       (B_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) and
-       (C_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_)) {
-        
-        std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
-        std::shared_ptr<struct CSC<Weight>> B_CSC = std::static_pointer_cast<struct CSC<Weight>>(B_SPMAT);
-        std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_SPMAT);
-                                        
+    COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;   
+    if((compression_type == COMPRESSED_FORMAT::_CSC_) or (compression_type == COMPRESSED_FORMAT::_CSR_)) {
         double start_time = 0;
         start_time = Env::tic(); 
-            std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, B_start_col, B_end_col, tid);
+            std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, tid);
             pthread_barrier_wait(&Env::thread_barrier);
         Env::spmm_symb_time[tid] += Env::toc(start_time);   
 
         start_time = Env::tic();
             uint64_t nnz = Env::adjust_nnz(leader_tid, tid);
-            C_CSC->reallocate(nnz, nrows, ncols, leader_tid, tid);
+            C_SPMAT->reallocate(nnz, nrows, ncols, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
-        
+
         start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barrier);
-            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, B_start_col, B_end_col, B_sub_start_col, thread_st.idx_nnz, tid);
+            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, start, end, sub_start, thread_st.idx_nnz, tid);
             pthread_barrier_wait(&Env::thread_barrier);
             Env::adjust_displacement(tid);
-            C_CSC->adjust(leader_tid, tid);	
+            C_SPMAT->adjust(leader_tid, tid);	
         Env::spmm_real_time[tid] += Env::toc(start_time);
-        
+
         start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barrier);
-            A_CSC->repopulate(C_CSC, B_start_col, B_end_col, thread_st.dis_nnz, leader_tid, tid);
-            //A_CSC->repopulate(C_CSC, B_sub_start_col, B_sub_end_col, thread_st.dis_nnz, leader_tid, tid);
+            A_SPMAT->repopulate(C_SPMAT, start, end, thread_st.dis_nnz, leader_tid, tid);
+            //A_SPMAT->repopulate(C_SPMAT, B_sub_start, B_sub_end, thread_st.dis_nnz, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
-        
-        //A_CSC->walk_dxm(false, leader_tid, tid);
-        //pthread_barrier_wait(&Env::thread_barrier);
-        //std::exit(0);
+        //A_SPMAT->walk_dxm(false, leader_tid, tid);
    }
    else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
@@ -244,6 +308,7 @@ inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compre
                                              const int32_t leader_tid, 
                                              const int32_t tid) {                  
     if(tid == leader_tid) {
+        std::vector<uint32_t> allCategories;
         uint64_t A_nnz;
         uint32_t A_nrows;
         uint32_t A_ncols;
@@ -260,20 +325,38 @@ inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compre
             A_IA   = A_CSC->IA_blk->ptr;
             A_JA   = A_CSC->JA_blk->ptr;
             A_A   = A_CSC->A_blk->ptr;
+            
+            allCategories.resize(A_nrows);
+            for(uint32_t j = 0; j < A_ncols; j++) {
+                for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
+                    allCategories[A_IA[i]] = 1;
+                }
+            }
+            
+        }
+        else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+            const std::shared_ptr<struct CSR<Weight>> A_CSR = std::static_pointer_cast<struct CSR<Weight>>(A_SPMAT);
+            A_nnz   = A_CSR->nnz;
+            A_nrows = A_CSR->nrows;
+            A_ncols = A_CSR->ncols;
+            A_IA   = A_CSR->IA_blk->ptr;
+            A_JA   = A_CSR->JA_blk->ptr;
+            A_A   = A_CSR->A_blk->ptr;
+            
+            allCategories.resize(A_nrows);
+            for(uint32_t i = 0; i < A_nrows; i++) {
+                for(uint32_t j = A_IA[i]; j < A_IA[i+1]; j++) {
+                    allCategories[i] = 1;
+                }
+            }
         }
         else {
             Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
             std::exit(Env::finalize());
         }
         
-        std::vector<uint32_t> allCategories(A_nrows);
+        //std::vector<uint32_t> allCategories(A_nrows);
 
-        for(uint32_t j = 0; j < A_ncols; j++) {
-            for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
-                allCategories[A_IA[i]] = 1;
-            }
-        }
-        
         int count = 0;
         for(uint32_t i = 0; i < A_nrows; i++) {
             if(trueCategories[start_row + i] != allCategories[i]) {
@@ -307,42 +390,40 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
                                const std::shared_ptr<struct Data_Block<Weight>> b_bias,
                                const uint32_t nrows,
                                const uint32_t ncols,
-                               const uint32_t B_start_col,
-                               const uint32_t B_end_col,
-                               const uint32_t B_off_col,
+                               const uint32_t start,
+                               const uint32_t end,
+                               const uint32_t off,
                                struct Env::thread_struct& thread_st,
                                int32_t leader_tid, 
                                const int32_t tid) {
     
     COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;    
-    if((A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) and 
-       (B_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) and
-       (C_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_)) {
+    if((A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) or (A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSR_)) {
         
-        std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
-        std::shared_ptr<struct CSC<Weight>> B_CSC = std::static_pointer_cast<struct CSC<Weight>>(B_SPMAT);
-        std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_SPMAT);
+        //std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
+        //std::shared_ptr<struct CSC<Weight>> B_CSC = std::static_pointer_cast<struct CSC<Weight>>(B_SPMAT);
+        //std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_SPMAT);
                          
         double start_time = 0;
         start_time = Env::tic();
-            std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, B_start_col, B_end_col, tid);
+            std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, tid);
         Env::spmm_symb_time[tid] += Env::toc(start_time);      
         
         start_time = Env::tic();
             leader_tid = -1;
             uint64_t nnz = thread_st.off_nnz;
-            C_CSC->reallocate(thread_st.off_nnz, nrows, ncols, leader_tid, tid);
+            C_SPMAT->reallocate(thread_st.off_nnz, nrows, ncols, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
         
         start_time = Env::tic();
             thread_st.idx_nnz = 0;
-            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, B_start_col, B_end_col, B_off_col, thread_st.idx_nnz, tid);
+            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, start, end, off, thread_st.idx_nnz, tid);
             Env::adjust_displacement(tid);
-            C_CSC->adjust(tid);
+            C_SPMAT->adjust(tid);
         Env::spmm_real_time[tid] += Env::toc(start_time);                              
     
         //leader_tid = 0;
-        //C_CSC->walk_dxd(false, leader_tid, tid);
+        //C_SPMAT->walk_dxd(false, leader_tid, tid);
    }
 }
 
@@ -361,7 +442,7 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
     uint32_t* A_JA;
     Weight*    A_A;   
 
-
+    std::vector<uint32_t> allCategories;
     COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;  
     if(compression_type == COMPRESSED_FORMAT::_CSC_) {
         const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
@@ -371,18 +452,34 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
         A_IA   = A_CSC->IA_blk->ptr;
         A_JA   = A_CSC->JA_blk->ptr;
         A_A   = A_CSC->A_blk->ptr;
+        
+        allCategories.resize(A_nrows);
+        for(uint32_t j = 0; j < A_ncols; j++) {
+            for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
+                allCategories[A_IA[i]] = 1;
+            }
+        }
+    }
+    else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+        const std::shared_ptr<struct CSR<Weight>> A_CSR = std::static_pointer_cast<struct CSR<Weight>>(A_SPMAT);
+        A_nnz   = A_CSR->nnz;
+        A_nrows = A_CSR->nrows;
+        A_ncols = A_CSR->ncols;
+        A_IA   = A_CSR->IA_blk->ptr;
+        A_JA   = A_CSR->JA_blk->ptr;
+        A_A   = A_CSR->A_blk->ptr;
+        
+        allCategories.resize(A_nrows);
+        for(uint32_t i = 0; i < A_nrows; i++) {
+            for(uint32_t j = A_IA[i]; j < A_IA[i+1]; j++) {
+                allCategories[i] = 1;
+            }
+        }
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
         std::exit(Env::finalize());
     }    
-
-    std::vector<uint32_t> allCategories(A_nrows);
-    for(uint32_t j = 0; j < A_ncols; j++) {
-        for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
-            allCategories[A_IA[i]] = 1;
-        }
-    }
 
     int count = 0;
     for(uint32_t i = 0; i < A_nrows; i++) {
@@ -417,6 +514,53 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
     Env::barrier();
 }
 
+template<typename Weight>
+inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT, 
+                                std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT, 
+                                std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT, 
+                                std::shared_ptr<struct Data_Block<Weight>> s_spa,
+                                const std::shared_ptr<struct Data_Block<Weight>> b_bias,
+                                const uint32_t nrows,
+                                const uint32_t ncols,
+                                const uint32_t start,
+                                const uint32_t end,
+                                const uint32_t off,
+                                const std::deque<int32_t> my_threads,
+                                struct Env::thread_struct& thread_st,
+                                const int32_t leader_tid, 
+                                const int32_t tid) {
+
+    COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;    
+    if((compression_type == COMPRESSED_FORMAT::_CSC_) or (compression_type == COMPRESSED_FORMAT::_CSR_)) {
+        double start_time = 0;
+        if(tid ==leader_tid) start_time = Env::tic(); 
+            std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, tid);
+            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+        if(tid ==leader_tid) Env::spmm_symb_time[tid] += Env::toc(start_time);   
+        
+        if(tid ==leader_tid) start_time = Env::tic();
+            uint64_t nnz = Env::adjust_nnz(my_threads, leader_tid, tid);
+            C_SPMAT->reallocate(nnz, nrows, ncols, leader_tid, tid);
+        if(tid ==leader_tid) Env::memory_allocation_time[tid] += Env::toc(start_time);
+        
+        if(tid ==leader_tid) start_time = Env::tic();
+            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, start, end, off, thread_st.idx_nnz, tid);
+            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+            Env::adjust_displacement(my_threads, leader_tid, tid);
+            C_SPMAT->adjust(my_threads, leader_tid, tid);	
+        if(tid ==leader_tid) Env::spmm_real_time[tid] += Env::toc(start_time);
+        
+        if(tid ==leader_tid) start_time = Env::tic();
+            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+            A_SPMAT->repopulate(C_SPMAT, my_threads, leader_tid, tid);
+        if(tid ==leader_tid) Env::memory_allocation_time[tid] += Env::toc(start_time);
+    }
+    else {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
+        std::exit(Env::finalize());
+    }    
+}
 
 template<typename Weight>
 inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct Tile<Weight>>> tiles,
@@ -440,6 +584,7 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
             struct Tile<Weight>& A_tile = tiles[rowgroup][0];
             start_row = A_tile.start_row;
             std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
+            std::vector<uint32_t> allCategories;
             COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;  
             if(compression_type == COMPRESSED_FORMAT::_CSC_) {
                 const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
@@ -449,19 +594,34 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
                 A_IA   = A_CSC->IA_blk->ptr;
                 A_JA   = A_CSC->JA_blk->ptr;
                 A_A   = A_CSC->A_blk->ptr;
+                
+                allCategories.resize(A_nrows);  
+                for(uint32_t j = 0; j < A_ncols; j++) {
+                    for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
+                        allCategories[A_IA[i]] = 1;
+                    }
+                }                    
+            }
+            else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+                const std::shared_ptr<struct CSR<Weight>> A_CSR = std::static_pointer_cast<struct CSR<Weight>>(A_SPMAT);
+                A_nnz   = A_CSR->nnz;
+                A_nrows = A_CSR->nrows;
+                A_ncols = A_CSR->ncols;
+                A_IA   = A_CSR->IA_blk->ptr;
+                A_JA   = A_CSR->JA_blk->ptr;
+                A_A   = A_CSR->A_blk->ptr;
+                
+                allCategories.resize(A_nrows);
+                for(uint32_t i = 0; i < A_nrows; i++) {
+                    for(uint32_t j = A_IA[i]; j < A_IA[i+1]; j++) {
+                        allCategories[i] = 1;
+                    }
+                } 
             }
             else {
                 Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
                 std::exit(Env::finalize());
             }    
-    
-            std::vector<uint32_t> allCategories(A_nrows);
-
-            for(uint32_t j = 0; j < A_ncols; j++) {
-                for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
-                    allCategories[A_IA[i]] = 1;
-                }
-            }
             
             for(uint32_t i = 0; i < A_nrows; i++) {
                 if(trueCategories[start_row + i] != allCategories[i]) {
@@ -505,60 +665,6 @@ inline void work_x_stealing_validate_prediction(std::vector<std::vector<struct T
 }
 
 
-template<typename Weight>
-inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT, 
-                                std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT, 
-                                std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT, 
-                                std::shared_ptr<struct Data_Block<Weight>> s_spa,
-                                const std::shared_ptr<struct Data_Block<Weight>> b_bias,
-                                const uint32_t nrows,
-                                const uint32_t ncols,
-                                const uint32_t B_start_col,
-                                const uint32_t B_end_col,
-                                const uint32_t B_off_col,
-                                const std::deque<int32_t> my_threads,
-                                struct Env::thread_struct& thread_st,
-                                const int32_t leader_tid, 
-                                const int32_t tid) {
-
-    COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;    
-    if((A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) and 
-       (B_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) and
-       (C_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_)) {
-        
-        std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
-        std::shared_ptr<struct CSC<Weight>> B_CSC = std::static_pointer_cast<struct CSC<Weight>>(B_SPMAT);
-        std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_SPMAT);
-                                    
-        double start_time = 0;
-        if(tid ==leader_tid) start_time = Env::tic(); 
-            std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, B_start_col, B_end_col, tid);
-            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
-        if(tid ==leader_tid) Env::spmm_symb_time[tid] += Env::toc(start_time);   
-        
-        if(tid ==leader_tid) start_time = Env::tic();
-            uint64_t nnz = Env::adjust_nnz(my_threads, leader_tid, tid);
-            C_CSC->reallocate(nnz, nrows, ncols, leader_tid, tid);
-        if(tid ==leader_tid) Env::memory_allocation_time[tid] += Env::toc(start_time);
-        
-        if(tid ==leader_tid) start_time = Env::tic();
-            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
-            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, B_start_col, B_end_col, B_off_col, thread_st.idx_nnz, tid);
-            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
-            Env::adjust_displacement(my_threads, leader_tid, tid);
-            C_CSC->adjust(my_threads, leader_tid, tid);	
-        if(tid ==leader_tid) Env::spmm_real_time[tid] += Env::toc(start_time);
-        
-        if(tid ==leader_tid) start_time = Env::tic();
-            pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
-            A_CSC->repopulate(C_CSC, my_threads, leader_tid, tid);
-        if(tid ==leader_tid) Env::memory_allocation_time[tid] += Env::toc(start_time);
-    }
-    else {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
-        std::exit(Env::finalize());
-    }    
-}
 
 /*
 template<typename Weight>
