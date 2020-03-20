@@ -161,10 +161,10 @@ void CSR<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
     /* ReLU activation function thresholds */
     const Weight YMIN = 0; 
     const Weight YMAX = 32;
-
+    
     for(uint32_t j = 0; j < CSR::ncols; j++) {
         if(s[j]) {
-            s[j] += b[r];
+            s[j] += b[j];
             s[j] = (s[j] < YMIN) ? YMIN : (s[j] > YMAX) ? YMAX : s[j];
             if(s[j]) {
                 JA[k] = j;
