@@ -107,9 +107,12 @@ namespace Env {
         int32_t leader;
         uint32_t rowgroup;
         uint32_t start_layer;
+        uint32_t start_row;
+        uint32_t end_row;
         uint32_t start_col;
         uint32_t end_col;
         uint32_t off_col; 
+        uint32_t off; 
         uint64_t idx_nnz; /* Current index of thread pointing to where the new data will be inserted */
         uint64_t off_nnz; /* Thread Offset from the beginning of the compressed format data */ 
         uint64_t dis_nnz; /* The part that a thread may skip cuasing some internal fragmentation */
