@@ -27,7 +27,7 @@ struct Compressed_Format {
         // If tile height and width are not necessarily multiples of nrows and ncols 
         virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
-        virtual void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        //virtual void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
@@ -59,7 +59,7 @@ struct CSR: public Compressed_Format<Weight> {
         void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width){}
         void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
         void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
-        void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid);
+        //void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid);
@@ -475,6 +475,7 @@ void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
     */
 }
 
+/*
 template<typename Weight>
 void CSR<Weight>::walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid) {  
     if(tid == leader_tid) {
@@ -526,7 +527,7 @@ void CSR<Weight>::walk_dxm1(const bool one_rank, const int32_t leader_tid, const
         } 
     }    
 }
-
+*/
 
 /* Compressed Sparse Column (CSC) */
 template<typename Weight>
