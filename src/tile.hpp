@@ -19,8 +19,8 @@ struct Tile{
         void compress(const COMPRESSED_FORMAT compression_type_, const bool one_rank, const int32_t socket_id);
         
         std::vector<struct Triple<Weight>> triples;
-        //std::shared_ptr<struct Compressed_Format<Weight>> spmat = nullptr;
-        std::shared_ptr<struct CSC<Weight>> spmat = nullptr;
+        std::shared_ptr<struct Compressed_Format<Weight>> spmat = nullptr;
+        //std::shared_ptr<struct CSC<Weight>> spmat = nullptr;
         
         COMPRESSED_FORMAT compression_type;
         
@@ -43,9 +43,9 @@ void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type_, const boo
     if(compression_type == COMPRESSED_FORMAT::_CSC_) {
         spmat = std::make_shared<struct CSC<Weight>>(triples.size(), height, width, socket_id);
     }
-    //else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
-    //    spmat = std::make_shared<struct CSC<Weight>>(triples.size(), height, width, socket_id);
-    //}
+    else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+        spmat = std::make_shared<struct CSR<Weight>>(triples.size(), height, width, socket_id);
+    }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
         std::exit(Env::finalize());
