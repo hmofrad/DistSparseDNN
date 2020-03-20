@@ -1471,6 +1471,9 @@ uint32_t Tiling<Weight>::get_tile_info_max(const std::string field) {
             if(field.compare("height") == 0) {
                 max = (tile.height > max) ? tile.height : max;
             }
+            else if(field.compare("width") == 0) {
+                max = (tile.width > max) ? tile.width : max;
+            }
         }
     }
     return(max);
@@ -1486,6 +1489,9 @@ uint32_t Tiling<Weight>::get_tile_info(const std::string field, const int32_t ti
                     return(tile.start_row);
                 }
                 else if(field.compare("height") == 0) {
+                    return(tile.height);
+                }
+                else if(field.compare("width") == 0) {
                     return(tile.height);
                 }
             }
