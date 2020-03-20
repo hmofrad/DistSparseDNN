@@ -20,20 +20,21 @@ const char* COMPRESSED_FORMATS[] = {"_CSR_", "_DCSR_", "_TCSR_", "_CSC_", "_DCSC
 template<typename Weight>
 struct Compressed_Format {
     public:
-        Compressed_Format() {};
-        virtual ~Compressed_Format() {};
-        
-        virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width) {};
-        virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width) {};
-        virtual void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid) {};
-        virtual void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid) {};
-        virtual void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid) {};
-        virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid) {};
-        virtual void adjust(const int32_t tid) {};
-        virtual void adjust(const int32_t leader_tid, const int32_t tid) {};
-        virtual void adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {};
-        virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid) {};
-        virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {};
+        Compressed_Format() {}
+        virtual ~Compressed_Format() {}
+        // Fixed tile height and width; tile height = nrows / nranks or tile width = ncols / nranks 
+        virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        // If tile height and width are not necessarily multiples of nrows and ncols 
+        virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        virtual void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        virtual void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        virtual void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        virtual void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        virtual void adjust(const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        virtual void adjust(const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        virtual void adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         
         COMPRESSED_FORMAT compression_type;
         
@@ -47,7 +48,410 @@ struct Compressed_Format {
         std::shared_ptr<struct Data_Block<Weight>>   A_blk;
 };
 
+template<typename Weight>
+struct CSR: public Compressed_Format<Weight> {
+    public:
+        CSR(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_);
+        CSR(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id);
+        ~CSR(){};
+        
+        void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width){}
+        void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
+        void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
+        void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
+        void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid);
+        void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid);
+        void adjust(const int32_t tid);
+        void adjust(const int32_t leader_tid, const int32_t tid);
+        void adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+        
+        uint64_t nnz   = 0;
+        uint64_t nnz_i = 0;
+        uint32_t nrows = 0;
+        uint32_t ncols = 0;
+        
+        std::shared_ptr<struct Data_Block<uint32_t>> IA_blk;
+        std::shared_ptr<struct Data_Block<uint32_t>> JA_blk;
+        std::shared_ptr<struct Data_Block<Weight>>   A_blk;
+};
 
+/* Compressed Sparse Row (CSR) */
+template<typename Weight>
+CSR<Weight>::CSR(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id) {
+    Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_CSR_;
+    Compressed_Format<Weight>::nnz = nnz_;
+    Compressed_Format<Weight>::nnz_i = nnz_;
+    Compressed_Format<Weight>::nrows = nrows_; 
+    Compressed_Format<Weight>::ncols = ncols_;
+    
+    CSR::compression_type = COMPRESSED_FORMAT::_CSR_;
+    CSR::nnz = nnz_;
+    CSR::nnz_i = nnz_;
+    CSR::nrows = nrows_; 
+    CSR::ncols = ncols_;
+    
+    CSR::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>((CSR::nrows + 1), socket_id));
+    CSR::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSR::nnz, socket_id));
+    CSR::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSR::nnz, socket_id));
+}
+
+template<typename Weight>
+CSR<Weight>::CSR(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_) {
+    Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_CSR_;
+    Compressed_Format<Weight>::nnz = nnz_;
+    Compressed_Format<Weight>::nnz_i = nnz_;
+    Compressed_Format<Weight>::nrows = nrows_; 
+    Compressed_Format<Weight>::ncols = ncols_;
+    
+    CSR::compression_type = COMPRESSED_FORMAT::_CSR_;
+    CSR::nnz = nnz_;
+    CSR::nnz_i = nnz_;
+    CSR::nrows = nrows_; 
+    CSR::ncols = ncols_;
+    
+    CSR::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>((CSR::nrows + 1), Env::rank_socket_id));
+    CSR::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSR::nnz, Env::rank_socket_id));
+    CSR::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSR::nnz, Env::rank_socket_id));
+}
+
+template<typename Weight>
+void CSR<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, 
+                                                                             const uint32_t start_col, const uint32_t tile_width) {    
+    const RowSort<Weight> f_row;
+    std::sort(triples.begin(), triples.end(), f_row);      
+
+    uint32_t* IA = CSR::IA_blk->ptr;
+    uint32_t* JA = CSR::JA_blk->ptr;
+    Weight* A = CSR::A_blk->ptr;
+    
+    uint32_t i = 1;
+    uint32_t j = 0; 
+    IA[0] = 0;
+    for(auto &triple: triples) {
+        std::pair pair = std::make_pair(((triple.row - start_row) % tile_height), ((triple.col - start_col) % tile_width));
+        while((i - 1) != pair.first) {
+            i++;
+            IA[i] = IA[i - 1];
+        }                  
+        IA[i]++;
+        JA[j] = pair.second;
+        A[j] = triple.weight;
+        j++;
+    }
+    
+    while(i < CSR::nrows) {
+        i++;
+        IA[i] = IA[i - 1];
+    }
+    CSR::nnz_i = CSR::nnz; 
+}
+
+template<typename Weight>
+void CSR<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t row, uint64_t& index, const int32_t tid) {
+    uint64_t&  k = index;
+    uint32_t   r = row + 1;
+    uint32_t* IA = CSR::IA_blk->ptr;
+    uint32_t* JA = CSR::JA_blk->ptr;
+    Weight*    A = CSR::A_blk->ptr;
+    Weight*    s = *spa;
+    const Weight* b = bias;
+    
+    /* ReLU activation function thresholds */
+    const Weight YMIN = 0; 
+    const Weight YMAX = 32;
+
+    for(uint32_t j = 0; j < CSR::ncols; j++) {
+        if(s[j]) {
+            s[j] += b[r];
+            s[j] = (s[j] < YMIN) ? YMIN : (s[j] > YMAX) ? YMAX : s[j];
+            if(s[j]) {
+                JA[k] = j;
+                A[k] = s[j];
+                k++;
+                s[j] = 0;
+            }
+        }
+    }
+    IA[r] = k;
+}
+
+
+template<typename Weight>
+void CSR<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid) {  
+    if(tid == leader_tid) {
+        uint32_t* IA = CSR::IA_blk->ptr;
+        uint32_t* JA = CSR::JA_blk->ptr;
+        Weight*    A = CSR::A_blk->ptr;
+        
+        double checksum = 0;
+        uint64_t checkcount = 0;
+        for(uint32_t i = 0; i < CSR::nrows; i++) {
+            //if(!Env::rank)
+            //    std::cout << "i=" << i << "," << i << ": " << IA[i] << "--" << IA[i + 1] << ": " <<  IA[i + 1] - IA[i] << std::endl;
+            for(uint32_t j = IA[i]; j < IA[i + 1]; j++) {
+                (void) JA[j];
+                (void) A[j];
+                checksum += A[j];
+                checkcount++;
+                //if(!Env::rank)
+                //    std::cout << "    j=" << j << ",j=" << JA[j] <<  ",value=" << A[j] << std::endl;
+            }
+        }
+
+        Env::barrier();
+        if(one_rank) {
+            Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, checksum, checkcount);
+        }
+        else {
+            uint64_t nnz_ = CSR::nnz_i;
+            uint64_t nnz_ranks = 0;
+            double sum_ranks = 0;
+            uint64_t count_ranks = 0;
+            MPI_Allreduce(&nnz_, &nnz_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(&checksum, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(&checkcount, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+
+            if(count_ranks != nnz_ranks) {
+                Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!!\n");
+            }
+            Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
+        } 
+    }    
+}
+
+template<typename Weight>
+void CSR<Weight>::walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid) {
+    uint32_t* IA = CSR::IA_blk->ptr;
+    uint32_t* JA = CSR::JA_blk->ptr;
+    Weight*    A = CSR::A_blk->ptr;
+    
+    double&   checksum   = Env::counters[tid].checksum;
+    uint64_t& checkcount = Env::counters[tid].checkcount;
+    uint64_t& checknnz   = Env::counters[tid].checknnz;
+    
+    checksum   = 0;
+    checkcount = 0;    
+    checknnz   = CSR::nnz_i;
+
+    for(uint32_t i = 0; i < CSR::nrows; i++) { 
+        //if(!Env::rank and !tid)
+        //    std::cout << "i=" << i << "," << i << ": " << IA[i] << "--" << IA[i + 1] << ": " <<  IA[i + 1] - IA[i] << std::endl;    
+        for(uint32_t j = IA[i]; j < IA[i + 1]; j++) {
+            (void) JA[j];
+            (void) A[j];
+            checksum += A[j];
+            checkcount++;
+            //if(!Env::rank and !tid)
+            //std::cout << "    j=" << j << ",j=" << JA[j] <<  ",value=" << A[j] << std::endl;
+        }
+    }   
+    
+    Env::barrier();
+    pthread_barrier_wait(&Env::thread_barrier);
+    if(tid == leader_tid) {
+        double     sum_threads = 0;
+        uint64_t count_threads = 0;
+        uint64_t   nnz_threads = 0;
+        
+        for(auto it = Env::counters.begin(); it != Env::counters.end(); it++) {
+            sum_threads   += (*it).checksum;
+            count_threads += (*it).checkcount;
+            nnz_threads   += (*it).checknnz;
+        }
+        
+        if(one_rank) {
+            Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_threads, count_threads);
+        }
+        else {
+            double     sum_ranks = 0;
+            uint64_t count_ranks = 0;
+            
+            MPI_Allreduce(&sum_threads, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(&count_threads, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+            
+            if(count_threads != nnz_threads) {
+                Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!! (%lu != %lu)\n", count_threads, nnz_threads);
+            }
+            Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
+        }
+    }
+}
+
+template<typename Weight>
+void CSR<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid) {
+    if(CSR::ncols != ncols_) {
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot reallocate.\n");
+        std::exit(Env::finalize());     
+    }
+    if((leader_tid == -1) or (tid == leader_tid)) {
+        CSR::nnz = nnz_;
+        CSR::nnz_i = 0;
+        CSR::nrows = nrows_; 
+        CSR::ncols = ncols_;
+        
+        CSR::JA_blk->reallocate(CSR::nnz);
+        CSR::A_blk->reallocate(CSR::nnz);
+            
+        CSR::JA_blk->clear();
+        CSR::IA_blk->clear();
+        CSR::A_blk->clear();
+        
+        Compressed_Format<Weight>::nnz = nnz_;
+        Compressed_Format<Weight>::nnz_i = 0;
+        Compressed_Format<Weight>::nrows = nrows_; 
+        Compressed_Format<Weight>::ncols = ncols_;
+    }
+
+}
+
+template<typename Weight>
+void CSR<Weight>::adjust(const int32_t tid){
+    CSR::nnz_i = Env::threads[tid].idx_nnz;
+    //Env::nnzs[tid].push_back(Env::threads[tid].idx_nnz);
+}
+
+template<typename Weight>
+void CSR<Weight>::adjust(const int32_t leader_tid, const int32_t tid){
+    if((leader_tid == -1) or (tid == leader_tid)) {
+        CSR::nnz_i = 0;
+        for(uint32_t i = 0; i < Env::threads.size(); i++) {    
+            CSR::nnz_i += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
+            //Env::nnzs[i].push_back(Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
+        }
+    }
+    pthread_barrier_wait(&Env::thread_barrier);
+}
+
+template<typename Weight>
+void CSR<Weight>::adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid){    
+    if((leader_tid == -1) or (tid == leader_tid)) {
+        CSR::nnz_i = 0;
+        for(uint32_t i = 0; i < my_threads.size(); i++) {    
+            int32_t t = my_threads[i];
+            CSR::nnz_i += (Env::threads[t].idx_nnz - Env::threads[t].off_nnz);
+            //Env::nnzs[t].push_back(Env::threads[t].idx_nnz - Env::threads[t].off_nnz);
+        }
+    }
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+}
+
+template<typename Weight>
+void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t end_row, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid) {
+    std::shared_ptr<struct CSR<Weight>> other_csr = std::static_pointer_cast<struct CSR<Weight>>(other_spmat);
+    
+    uint32_t  o_ncols = other_csr->ncols;
+    uint32_t  o_nrows = other_csr->nrows;
+    uint64_t  o_nnz   = other_csr->nnz;
+    uint64_t  o_nnz_i = other_csr->nnz_i;
+    uint32_t* o_JA    = other_csr->JA_blk->ptr;
+    uint32_t* o_IA    = other_csr->IA_blk->ptr;
+    Weight*   o_A     = other_csr->A_blk->ptr;
+
+    if(CSR::nrows != o_nrows){
+        fprintf(stderr, "Error: Cannot repopulate CSR\n");
+        exit(1);
+    }
+    
+    if(tid == leader_tid) {
+        CSR::nnz = o_nnz_i;
+        CSR::nnz_i = o_nnz_i;
+        CSR::IA_blk->clear();
+        CSR::JA_blk->reallocate(CSR::nnz_i);
+        CSR::JA_blk->clear();
+        CSR::A_blk->reallocate(CSR::nnz_i);
+        CSR::A_blk->clear();
+        
+        Compressed_Format<Weight>::nnz = o_nnz_i;
+        Compressed_Format<Weight>::nnz_i = o_nnz_i;
+    }
+    pthread_barrier_wait(&Env::thread_barrier);
+    
+    uint32_t* IA = CSR::IA_blk->ptr;
+    uint32_t* JA = CSR::JA_blk->ptr;
+    Weight*    A = CSR::A_blk->ptr;
+
+    for(int32_t i = 0; i < tid; i++) {
+        IA[start_row+1] += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
+    }
+
+    for(uint32_t i = start_row; i < end_row; i++) {
+        IA[i+1] = (i == start_row) ? IA[i+1] : IA[i];
+        uint32_t& k = IA[i+1];
+        uint32_t m = (i == start_row) ? dis_nnz : 0;
+        for(uint32_t j = o_IA[i] + m; j < o_IA[i + 1]; j++) {
+            JA[k] = o_JA[j];
+            A[k]  = o_A[j];
+            k++;
+        }
+    }
+    
+    pthread_barrier_wait(&Env::thread_barrier);
+}
+
+template<typename Weight>
+void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const std::deque<int32_t> my_threads, const int32_t leader_tid,  const int32_t tid) {
+    std::shared_ptr<struct CSR<Weight>> other_csr = std::static_pointer_cast<struct CSR<Weight>>(other_spmat);
+    
+    uint32_t  o_ncols = other_csr->ncols;
+    uint32_t  o_nrows = other_csr->nrows;
+    uint64_t  o_nnz   = other_csr->nnz;
+    uint64_t  o_nnz_i = other_csr->nnz_i;
+    uint32_t* o_JA    = other_csr->JA_blk->ptr;
+    uint32_t* o_IA    = other_csr->IA_blk->ptr;
+    Weight*   o_A     = other_csr->A_blk->ptr;
+
+    if(CSR::nrows != o_nrows){
+        fprintf(stderr, "Error: Cannot repopulate CSR\n");
+        exit(1);
+    }
+    
+    if(tid == leader_tid) {
+        CSR::nnz = o_nnz_i;
+        CSR::nnz_i = o_nnz_i;
+        CSR::IA_blk->clear();
+        CSR::JA_blk->reallocate(CSR::nnz_i);
+        CSR::JA_blk->clear();
+        CSR::A_blk->reallocate(CSR::nnz_i);
+        CSR::A_blk->clear();
+        
+        Compressed_Format<Weight>::nnz = o_nnz_i;
+        Compressed_Format<Weight>::nnz_i = o_nnz_i;
+    }    
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+    
+    uint32_t* JA = CSR::JA_blk->ptr;
+    uint32_t* IA = CSR::IA_blk->ptr;
+    Weight*    A = CSR::A_blk->ptr;
+
+    // It's ugly but I have to :-/
+    for(uint32_t j = 0; j < Env::threads[tid].index; j++) {
+        int32_t tt = Env::my_threads[leader_tid][j];
+        IA[Env::threads[tid].start_row+1] += (Env::threads[tt].idx_nnz - Env::threads[tt].off_nnz);
+    }
+
+    const uint32_t start_row = Env::threads[tid].start_row;
+    const uint32_t end_row   = Env::threads[tid].end_row;
+
+    for(uint32_t j = o_IA[start_row] + Env::threads[tid].dis_nnz; j < o_IA[start_row + 1]; j++) {
+        JA[IA[start_row+1]] = o_JA[j];
+        A[IA[start_row+1]]  = o_A[j];
+        IA[start_row+1]++;
+    }
+
+    for(uint32_t i = start_row; i < end_row; i++) {
+        IA[i+1] = IA[i];
+        for(uint32_t j = o_IA[i]; j < o_IA[i + 1]; j++) {
+            JA[IA[i+1]] = o_JA[j];
+            A[IA[i+1]]  = o_A[j];
+            IA[i+1]++;
+        }
+    }
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+}
+
+/* Compressed Sparse Column (CSC) */
 template<typename Weight>
 struct CSC: public Compressed_Format<Weight> {
     public:
@@ -64,8 +468,8 @@ struct CSC: public Compressed_Format<Weight> {
         void adjust(const int32_t tid);
         void adjust(const int32_t leader_tid, const int32_t tid);
         void adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
-        void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid);
-        void repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
         
         uint64_t nnz   = 0;
         uint64_t nnz_i = 0;
@@ -115,7 +519,6 @@ CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncol
     CSC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSC::nnz, Env::rank_socket_id));
 }
 
-// For the case with fixed height and width; tile height = nrows / nranks or tile width = ncols / nranks 
 template<typename Weight>
 void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width) {
     const ColSort<Weight> f_col;
@@ -147,7 +550,6 @@ void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const ui
     CSC::nnz_i = CSC::nnz;
 }
 
-// For the case tile height and width are not necessarily multiples of nrows and ncols 
 template<typename Weight>
 void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, 
                                                                              const uint32_t start_col, const uint32_t tile_width) {    
@@ -179,8 +581,6 @@ void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const ui
     }
     CSC::nnz_i = CSC::nnz;   
 }
-
-
 
 template<typename Weight>
 void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t col, uint64_t& index, const int32_t tid) {
@@ -330,6 +730,11 @@ void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
         CSC::JA_blk->clear();
         CSC::IA_blk->clear();
         CSC::A_blk->clear();
+        
+        Compressed_Format<Weight>::nnz = nnz_;
+        Compressed_Format<Weight>::nnz_i = 0;
+        Compressed_Format<Weight>::nrows = nrows_; 
+        Compressed_Format<Weight>::ncols = ncols_;
     }
 }
 
@@ -365,14 +770,16 @@ void CSC<Weight>::adjust(const std::deque<int32_t> my_threads, const int32_t lea
 }
 
 template<typename Weight>
-void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid) {
-    uint32_t  o_ncols = other->ncols;
-    uint32_t  o_nrows = other->nrows;
-    uint64_t  o_nnz   = other->nnz;
-    uint64_t  o_nnz_i = other->nnz_i;
-    uint32_t* o_JA    = other->JA_blk->ptr;
-    uint32_t* o_IA    = other->IA_blk->ptr;
-    Weight*   o_A     = other->A_blk->ptr;
+void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_col, const uint32_t end_col, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid) {
+    std::shared_ptr<struct CSC<Weight>> other_csc = std::static_pointer_cast<struct CSC<Weight>>(other_spmat);
+    
+    uint32_t  o_ncols = other_csc->ncols;
+    uint32_t  o_nrows = other_csc->nrows;
+    uint64_t  o_nnz   = other_csc->nnz;
+    uint64_t  o_nnz_i = other_csc->nnz_i;
+    uint32_t* o_JA    = other_csc->JA_blk->ptr;
+    uint32_t* o_IA    = other_csc->IA_blk->ptr;
+    Weight*   o_A     = other_csc->A_blk->ptr;
 
     if(CSC::ncols != o_ncols){
         fprintf(stderr, "Error: Cannot repopulate CSC\n");
@@ -387,6 +794,9 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         CSC::IA_blk->clear();
         CSC::A_blk->reallocate(CSC::nnz_i);
         CSC::A_blk->clear();
+        
+        Compressed_Format<Weight>::nnz = o_nnz_i;
+        Compressed_Format<Weight>::nnz_i = o_nnz_i;
     }
     pthread_barrier_wait(&Env::thread_barrier);
     
@@ -412,14 +822,16 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
 }
 
 template<typename Weight>
-void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, const std::deque<int32_t> my_threads, const int32_t leader_tid,  const int32_t tid) {
-    uint32_t  o_ncols = other->ncols;
-    uint32_t  o_nrows = other->nrows;
-    uint64_t  o_nnz   = other->nnz;
-    uint64_t  o_nnz_i = other->nnz_i;
-    uint32_t* o_JA    = other->JA_blk->ptr;
-    uint32_t* o_IA    = other->IA_blk->ptr;
-    Weight*   o_A     = other->A_blk->ptr;
+void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const std::deque<int32_t> my_threads, const int32_t leader_tid,  const int32_t tid) {
+    std::shared_ptr<struct CSC<Weight>> other_csc = std::static_pointer_cast<struct CSC<Weight>>(other_spmat);
+    
+    uint32_t  o_ncols = other_csc->ncols;
+    uint32_t  o_nrows = other_csc->nrows;
+    uint64_t  o_nnz   = other_csc->nnz;
+    uint64_t  o_nnz_i = other_csc->nnz_i;
+    uint32_t* o_JA    = other_csc->JA_blk->ptr;
+    uint32_t* o_IA    = other_csc->IA_blk->ptr;
+    Weight*   o_A     = other_csc->A_blk->ptr;
 
     if(CSC::ncols != o_ncols){
         fprintf(stderr, "Error: Cannot repopulate CSC\n");
@@ -434,6 +846,9 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct CSC<Weight>> other, co
         CSC::IA_blk->clear();
         CSC::A_blk->reallocate(CSC::nnz_i);
         CSC::A_blk->clear();
+        
+        Compressed_Format<Weight>::nnz = o_nnz_i;
+        Compressed_Format<Weight>::nnz_i = o_nnz_i;
     }    
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
     
