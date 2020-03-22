@@ -58,6 +58,8 @@ class Net {
         uint32_t schduling_threshold = 4;
         
         COMPRESSED_FORMAT compression_type;
+        bool dual_spmat = true;
+        float duality_ratio = .5;
         
         HASHING_TYPE hashing_type;        
         std::shared_ptr<struct TwoDHasher> input_hasher;
@@ -136,7 +138,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                    nnz, nrows, ncols, 
                                                                    feature_file, input_type, 
                                                                    TILING_TYPE::_1D_ROW_, compression_type,
-                                                                   input_hasher, repartition));
+                                                                   input_hasher, false, repartition));
     }
     else if((parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) or (parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_)) {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads * split_factor, Env::nranks * Env::nthreads * split_factor, 1, Env::nranks,
@@ -144,7 +146,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                    nnz, nrows, ncols, 
                                                                    feature_file, input_type, 
                                                                    TILING_TYPE::_1D_ROW_, compression_type,
-                                                                   input_hasher, repartition));        
+                                                                   input_hasher, false, repartition));        
        inputFeatures->set_threads_indices();
        inputFeatures->set_rank_indices();  
     }
@@ -154,7 +156,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                    nnz, nrows, ncols, 
                                                                    feature_file, input_type, 
                                                                    TILING_TYPE::_1D_ROW_, compression_type,
-                                                                   input_hasher, repartition));
+                                                                   input_hasher, false, repartition));
         inputFeatures->set_thread_index();                                                           
     }
     
@@ -183,6 +185,10 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         layers[s].resize(maxLayers);
         biasWeightVecs[s].resize(maxLayers);
     }
+    
+    if((parallelism_type != PARALLELISM_TYPE::_HYBRID_X_HYBRID_) and (dual_spmat == true)) {
+        dual_spmat = false;
+    }
 
     for(uint32_t i = 0; i < maxLayers; i++) {
         std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "/n" + std::to_string(Nneurons) + "-l" + std::to_string(i+1);
@@ -202,7 +208,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             layer_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, false, nrows, ncols, nbuckets_rows, nbuckets_cols));
             Env::barrier();
         }
-           
+        
+        bool enable_dual_spmat = (dual_spmat and (i >= maxLayers*duality_ratio)) ? true : false;
         for(int32_t s = 0; s < Env::nsockets; s++) {
             if(replication or (s == Env::rank_socket_id)) {
                 /*
@@ -220,7 +227,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                                                                            nnz, nrows, ncols, 
                                                                            layerFile, input_type, 
                                                                            TILING_TYPE::_1D_COL_, compression_type,
-                                                                           layer_hasher, false));
+                                                                           layer_hasher, enable_dual_spmat, false));
                 
                 //}   
                 //if(compression_type == COMPRESSED_FORMAT::_CSC_) {                
@@ -239,7 +246,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     Logging::print(Logging::LOG_LEVEL::VOID, "\n"); 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
     Env::barrier();
-
+    
     for(int32_t s = 0; s < Env::nsockets; s++) {
         if(replication or (s == Env::rank_socket_id)) {
             for(uint32_t i = 0; i < maxLayers; i++) {
@@ -260,8 +267,28 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             }
             else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
                 int32_t sid = Env::rank_socket_id;
-                uint32_t height = (repartition) ? layers[sid][0]->get_tile_info_max("height") : layers[sid][0]->get_tile_info("height", 0);
-                spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(height, Env::threads_socket_id[i]));
+                uint32_t tile_height = (repartition) ? layers[sid][0]->get_tile_info_max("height") : layers[sid][0]->get_tile_info("height", 0);
+                spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(tile_height, Env::threads_socket_id[i]));
+            }
+            else {
+                Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
+                std::exit(Env::finalize());
+            }
+        }
+        else if(parallelism_type == PARALLELISM_TYPE::_HYBRID_X_HYBRID_) {
+            /*
+            if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+                uint32_t tile_height = (repartition) ? inputFeatures->get_tile_info_max("height") : inputFeatures->get_tile_info("height", 0);
+                spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(tile_height, Env::threads_socket_id[i]));    
+            }
+            else 
+            */
+            if((compression_type == COMPRESSED_FORMAT::_CSC_) or (compression_type == COMPRESSED_FORMAT::_CSR_)) {
+                int32_t sid = Env::rank_socket_id;
+                uint32_t tile_height1 = (repartition) ? inputFeatures->get_tile_info_max("height") : inputFeatures->get_tile_info("height", 0);
+                uint32_t tile_height2 = (repartition) ? layers[sid][0]->get_tile_info_max("height") : layers[sid][0]->get_tile_info("height", 0);
+                uint32_t tile_height = (tile_height1 > tile_height2) ? tile_height1 : tile_height2;
+                spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(tile_height, Env::threads_socket_id[i]));
             }
             else {
                 Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
@@ -275,8 +302,8 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             }
             else if(compression_type == COMPRESSED_FORMAT::_CSR_) {   
                 int32_t sid = Env::rank_socket_id;
-                uint32_t height = (repartition) ? layers[sid][0]->get_tile_info_max("height") : layers[sid][0]->get_tile_info("height", 0);
-                spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(height, Env::threads_socket_id[i]));
+                uint32_t tile_height = (repartition) ? layers[sid][0]->get_tile_info_max("height") : layers[sid][0]->get_tile_info("height", 0);
+                spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(tile_height, Env::threads_socket_id[i]));
             }
             else {
                 Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
@@ -289,26 +316,26 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                             0, inputFeatures->nrows, inputFeatures->ncols, 
                                                             TILING_TYPE::_1D_ROW_, compression_type,
-                                                            input_hasher, repartition));
+                                                            input_hasher, false, repartition));
     }
     else if((parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) or (parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_)) {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads * split_factor, Env::nranks * Env::nthreads * split_factor, 1, Env::nranks, 
                                                             Env::nthreads, Env::nranks * Env::nthreads, 
                                                             0, inputFeatures->nrows, inputFeatures->ncols, 
                                                             TILING_TYPE::_1D_ROW_, compression_type,
-                                                            input_hasher, repartition));
+                                                            input_hasher, false, repartition));
     }
     else {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks, 
                                                             Env::nthreads, Env::nranks * Env::nthreads, 
                                                             0, inputFeatures->nrows, inputFeatures->ncols, 
                                                             TILING_TYPE::_1D_ROW_, compression_type,
-                                                            input_hasher, repartition));
+                                                            input_hasher, false, repartition));
     }
     output->set_tile_info(inputFeatures->tiles);
 
-    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method [Compression=%s| Parallelism=%s| Scheduling=%s| Hashing=%s].\n", 
-                   COMPRESSED_FORMATS[compression_type], PARALLELISM_TYPES[parallelism_type], SCHEDULING_TYPES[scheduling_type], HASHING_TYPES[hashing_type]); 
+    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Running the inferenceReLU method [Compression=%s(%d)|Parallelism=%s|Scheduling=%s|Hashing=%s].\n", 
+                   COMPRESSED_FORMATS[compression_type], dual_spmat, PARALLELISM_TYPES[parallelism_type], SCHEDULING_TYPES[scheduling_type], HASHING_TYPES[hashing_type]); 
     auto finish = std::chrono::high_resolution_clock::now();
     Env::io_time = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish-start).count())/1e9;
     Env::barrier();
@@ -796,10 +823,129 @@ template<typename Weight>
 void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     uint32_t my_rowgroup = Env::thread_rowgroup[tid];
     int32_t my_leader_tid = 0;
+    bool has_dual_spmat = false;
+    
+    //struct Tile<Weight>& A_tile = inputFeatures->tiles[my_rowgroup][0];
+    //struct Tile<Weight>& C_tile = output->tiles[my_rowgroup][0];
+    //std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
     
     auto start_t = std::chrono::high_resolution_clock::now();  
     uint32_t my_start_layer = hybrid_x_data(Env::my_threads[tid], tid);
+    //struct Tile<Weight>& A_tile = (not(my_start_layer%2)) ? inputFeatures->tiles[my_rowgroup][0] : output->tiles[my_rowgroup][0];
+    //struct Tile<Weight>& C_tile = (not(my_start_layer%2)) ? output->tiles[my_rowgroup][0] : inputFeatures->tiles[my_rowgroup][0];
     if(my_start_layer < maxLayers) {
+        
+        if(dual_spmat) {      
+            has_dual_spmat = true;
+            if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+                //printf("1.\n");
+                //struct Tile<Weight>& A_tile = (not(my_start_layer%2)) ? inputFeatures->tiles[my_rowgroup][0] : output->tiles[my_rowgroup][0];
+                //struct Tile<Weight>& C_tile = (not(my_start_layer%2)) ? output->tiles[my_rowgroup][0] : inputFeatures->tiles[my_rowgroup][0];
+                struct Tile<Weight>& A_tile = inputFeatures->tiles[my_rowgroup][0];
+                struct Tile<Weight>& C_tile = output->tiles[my_rowgroup][0];
+                A_tile.spmat1 = std::make_shared<struct CSR<Weight>>(A_tile.spmat, A_tile.start_row, A_tile.end_row, A_tile.start_col, A_tile.end_col, Env::threads_socket_id[tid]);
+                //printf("2.\n");
+                //C_tile.spmat1 = std::make_shared<struct CSR<Weight>>(C_tile.spmat, C_tile.start_row, C_tile.end_row, C_tile.start_col, C_tile.end_col, Env::threads_socket_id[tid]);
+                C_tile.spmat1 = std::make_shared<struct CSR<Weight>>(0, C_tile.height, C_tile.width, Env::threads_socket_id[tid]);
+                //printf("3. %d %d\n", C_tile.height, C_tile.width);
+                
+                //A_tile.spmat->walk_dxm(false, tid, tid);
+                //A_tile.spmat1->walk_dxm(false, tid, tid);
+                //std::exit(0);
+                /*
+                C_tile.spmat->walk_dxm(false, tid, tid);
+                C_tile.spmat1->walk_dxm(false, tid, tid);
+                */
+            }
+            else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+                //struct Tile<Weight>& A_tile = (not(my_start_layer%2)) ? inputFeatures->tiles[my_rowgroup][0] : output->tiles[my_rowgroup][0];
+                //struct Tile<Weight>& C_tile = (not(my_start_layer%2)) ? output->tiles[my_rowgroup][0] : inputFeatures->tiles[my_rowgroup][0];
+                
+                struct Tile<Weight>& A_tile = inputFeatures->tiles[my_rowgroup][0];
+                struct Tile<Weight>& C_tile = output->tiles[my_rowgroup][0];
+                
+                A_tile.spmat1 = std::make_shared<struct CSC<Weight>>(A_tile.spmat, A_tile.start_row, A_tile.end_row, A_tile.start_col, A_tile.end_col, Env::threads_socket_id[tid]);
+                //A_tile.compression_type = COMPRESSED_FORMAT::_CSC_;
+                //C_tile.spmat1 = std::make_shared<struct CSC<Weight>>(C_tile.spmat, C_tile.start_row, C_tile.end_row, C_tile.start_col, C_tile.end_col, Env::threads_socket_id[tid]);
+                C_tile.spmat1 = std::make_shared<struct CSC<Weight>>(0, C_tile.height, C_tile.width, Env::threads_socket_id[tid]);
+                /*
+                A_tile.spmat->walk_dxm(false, tid, tid);
+                A_tile.spmat1->walk_dxm(false, tid, tid);
+                
+                C_tile.spmat->walk_dxm(false, tid, tid);
+                C_tile.spmat1->walk_dxm(false, tid, tid);
+                */
+                
+                //C_tile.spmat1 = std::make_shared<struct CSC<Weight>>(0, C_tile.height, C_tile.width, Env::threads_socket_id[tid]);
+                /*
+                if(tid == 1) {
+                    printf("%d %d\n", not(my_start_layer%2), my_start_layer);
+                //C_tile.spmat->walk_dxm(false, tid, tid);
+                //C_tile.spmat1->walk_dxm(false, tid, tid);
+                A_tile.spmat->walk_dxm(false, tid, tid);
+                A_tile.spmat1->walk_dxm(false, tid, tid);
+                printf("----\n");
+                int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;    
+                uint64_t nnzmax = 0;
+                std::tie(nnzmax, std::ignore, std::ignore) = spmm_symb(A_tile.spmat, layers[sid][my_start_layer]->tiles[0][0].spmat, spaWeightVec[tid], 0, A_tile.height, tid);
+                printf("CSR=%lu\n", nnzmax);
+                std::tie(nnzmax, std::ignore, std::ignore) = spmm_symb(A_tile.spmat1, layers[sid][my_start_layer]->tiles[0][0].spmat1, spaWeightVec[tid], 0, A_tile.width, tid);
+                printf("CSC=%lu\n", nnzmax);
+                */
+                //std::shared_ptr<struct CSR<Weight>> A = std::make_shared<struct CSR<Weight>>(A_tile.spmat1, A_tile.start_row, A_tile.end_row, A_tile.start_col, A_tile.end_col, Env::threads_socket_id[tid]);
+                //A->walk_dxm(false, tid, tid);
+                /*
+                uint64_t nnzmax = 0;
+                uint32_t A_nrows = A_tile.spmat1->nrows;
+                uint32_t A_ncols = A_tile.spmat1->ncols;
+                uint32_t* A_IA = A_tile.spmat1->IA_blk->ptr;
+                uint32_t* A_JA = A_tile.spmat1->JA_blk->ptr;
+                Weight*    A_A = A_tile.spmat1->A_blk->ptr;
+                
+                printf("xxxx\n");
+                int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;                
+                struct Tile<Weight>& B_tile = layers[sid][my_start_layer]->tiles[0][0];   
+                uint32_t B_nrows = B_tile.spmat1->nrows;
+                uint32_t B_ncols = B_tile.spmat1->ncols;
+                uint32_t* B_IA = B_tile.spmat1->JA_blk->ptr;
+                uint32_t* B_JA = B_tile.spmat1->JA_blk->ptr;
+                Weight*    B_A = B_tile.spmat1->A_blk->ptr;
+                
+                Weight* s_A   = spaWeightVec[tid]->ptr;
+                */
+                /*
+                printf("Symb OP: A[%d %d] B[%d %d] SPA[%lu]\n", A_nrows, A_ncols, B_nrows, B_ncols, spaWeightVec[tid]->nitems);
+                for(uint32_t j = 0; j < B_ncols; j++) {
+                    for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
+                        uint32_t l = B_IA[k];
+                        for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
+                            s_A[A_IA[n]] = 1;
+                        }
+                    }
+                    for(uint32_t i = 0; i < A_nrows; i++) {
+                        if(s_A[i]){
+                            nnzmax++;
+                            s_A[i] = 0;
+                        }
+                    }
+                }
+                */
+                
+                
+               // std::exit(0);
+                
+                
+                
+                
+                
+                
+                
+                
+                
+                //}
+                //C_tile.compression_type = COMPRESSED_FORMAT::_CSC_;
+            }
+        }
         hybrid_x_model(Env::my_threads[tid], my_rowgroup, my_start_layer, tid, tid);
     }
 
@@ -809,12 +955,33 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         uint32_t leader_start_layer = Env::threads[tid].start_layer;
         hybrid_x_model(Env::my_threads[tid], leader_rowgroup, leader_start_layer, leader, tid);
     }
-
+    //printf("DONE %d %d\n", Env::rank, tid);
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
-
+    //compression_type = COMPRESSED_FORMAT::_CSC_;
+    //struct Tile<Weight>& A_tile = inputFeatures->tiles[my_rowgroup][0];
+    /*
+    if(compression_type == COMPRESSED_FORMAT::_CSC_ and Env::dual_spmat) {
+        const std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat1;
+        data_x_data_validate_prediction(A_SPMAT, A_tile.start_row, trueCategories, nCategories, my_leader_tid, tid);
+    }
+    else {
+        */
     struct Tile<Weight>& A_tile = inputFeatures->tiles[my_rowgroup][0];
-    const std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
+    std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT;    
+    if(has_dual_spmat) {
+        A_SPMAT = A_tile.spmat1;
+        //printf("1. %d %s\n", tid, COMPRESSED_FORMATS[A_SPMAT->compression_type]);
+    }
+    else {
+        //const std::shared_ptr<struct Compressed_Format<Weight>> 
+        
+        A_SPMAT = A_tile.spmat;
+        //printf("2. %d %s\n", tid, COMPRESSED_FORMATS[A_SPMAT->compression_type]);
+        
+    }
+    //A_SPMAT->walk_dxm(false, tid, tid);
+    pthread_barrier_wait(&Env::thread_barrier);
     data_x_data_validate_prediction(A_SPMAT, A_tile.start_row, trueCategories, nCategories, my_leader_tid, tid);
 }
 
@@ -843,30 +1010,36 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
         start = 0;
         end = nrows;
     }
-    
+    bool breaking = false;
     uint32_t l = 0; 
     for (l = 0; l < maxLayers; l++) {
-        if(!add_to_my_follower_threads(my_threads, l, nrows, ncols, tid, tid)) {
-            struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
-                                                 : output->tiles[leader_rowgroup][0];
-            std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
-            struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];    
-            std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
-            struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
-                                                     : inputFeatures->tiles[leader_rowgroup][0];
-            std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-            //nrows = A_SPMAT->nrows;
-            b_bias = biasWeightVecs[sid][l];      
-            //B_start_col = 0;
-            //B_end_col = B_SPMAT->ncols;
-            data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
-                               nrows, ncols, start, end, off, 
-                               thread_st, leader_tid, tid); 
-            Env::scores[sid1][tid]++;            
+        if((l >= maxLayers*duality_ratio) and add_to_my_follower_threads(my_threads, l, nrows, ncols, tid, tid)) {
+            if(not(l%2)) 
+                break;
+            else 
+                breaking = true;
         }
-        else {
-            break;
-        }
+        struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
+                                             : output->tiles[leader_rowgroup][0];
+        std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
+        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];    
+        std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
+        struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
+                                                 : inputFeatures->tiles[leader_rowgroup][0];
+        std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
+        //nrows = A_SPMAT->nrows;
+        b_bias = biasWeightVecs[sid][l];      
+        //B_start_col = 0;
+        //B_end_col = B_SPMAT->ncols;
+        data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
+                           nrows, ncols, start, end, off, 
+                           thread_st, leader_tid, tid); 
+        Env::scores[sid1][tid]++;            
+        //}
+        //else {
+          //  break;
+        //}
+        if(breaking) break;
     }
     return(l);
 }
@@ -875,54 +1048,116 @@ template<typename Weight>
 void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid) {
     int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
-    
+    //printf("2> tid=%d l=%d %d\n", tid, leader_start_layer, (not(leader_start_layer%2)));
     struct Env::thread_struct& thread_st = Env::threads[tid];    
-    struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
+    //struct Tile<Weight>& A_tile = (not(leader_start_layer%2)) ? inputFeatures->tiles[leader_rowgroup][0] : output->tiles[leader_rowgroup][0];
+    //struct Tile<Weight>& C_tile = (not(leader_start_layer%2)) ? output->tiles[leader_rowgroup][0] : inputFeatures->tiles[leader_rowgroup][0];
+    struct Tile<Weight>& A_tile =  inputFeatures->tiles[leader_rowgroup][0];
     struct Tile<Weight>& C_tile = output->tiles[leader_rowgroup][0];
     std::shared_ptr<struct Data_Block<Weight>> s_spa = spaWeightVec[tid];
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
+    
+    std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = nullptr;
+    std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = nullptr;
+    std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = nullptr;
     
     uint32_t nrows = A_tile.spmat->nrows;
     const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t start, end;
     const uint32_t off = 0;   
     double start_time = 0;
-    
+    //printf("A; %s %s\n", COMPRESSED_FORMATS[A_tile.spmat->compression_type], COMPRESSED_FORMATS[A_tile.spmat1->compression_type]);
+    //printf("B: %s %s\n", COMPRESSED_FORMATS[layers[sid][0]->tiles[0][0].spmat->compression_type], COMPRESSED_FORMATS[layers[sid][0]->tiles[0][0].spmat1->compression_type]);
+    //printf("C: %s %s\n", COMPRESSED_FORMATS[C_tile.spmat->compression_type], COMPRESSED_FORMATS[C_tile.spmat1->compression_type]);
+   // printf(">> Start Rank=%d tid=%d leader=%d %s\n", Env::rank, tid, leader_tid, COMPRESSED_FORMATS[compression_type]);
+    //if(tid == leader_tid) printf("Start Rank=%d tid=%d leader_start_layer=%d\n", Env::rank, tid, leader_start_layer);
     for (uint32_t l = leader_start_layer; l < maxLayers; l++) {
-        
         (void)add_to_my_follower_threads(my_threads, l, nrows, ncols, leader_tid, tid);
         start_time = Env::tic();   
             Env::decrease_num_threads(1, leader_tid, tid);
             Env::init_num_threads(my_threads.size(), leader_tid, tid);
         Env::hybrid_probe_time[tid] += Env::toc(start_time);     
-  
-        std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
-        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
-        std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
-        std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-        b_bias = biasWeightVecs[sid][l];
         
-        if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-            start = Env::threads[tid].start_col;
-            end = Env::threads[tid].end_col;
+        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
+        
+        b_bias = biasWeightVecs[sid][l];
+        if(dual_spmat) {
+            A_SPMAT = A_tile.spmat1;
+            B_SPMAT = B_tile.spmat1;
+            C_SPMAT = C_tile.spmat1;
+            if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+                start = Env::threads[tid].start_row;
+                end = Env::threads[tid].end_row;
+            }
+            else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+                start = Env::threads[tid].start_col;
+                end = Env::threads[tid].end_col;
+            }
+            //if(tid == 1) {
+            //    printf("for-loop\n");
+            //A_tile.spmat1->walk_dxm(false, tid, tid);
+            ///}
+            //printf("R=%d tid=%d leader=%d layer=%d [%d, %d] [%d %d]\n", Env::rank, tid, leader_tid, l, nrows, ncols, start, end);
+            //A_SPMAT->walk_dxm(false, leader_tid, tid);
+            //printf("Rank=%d tid=%d leader=%d layer=%d %s %s\n", Env::rank, tid, leader_tid, l, COMPRESSED_FORMATS[compression_type], COMPRESSED_FORMATS[A_SPMAT->compression_type]);    
+        //    std::exit(0);  
         }
-        else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
-            start = Env::threads[tid].start_row;
-            end = Env::threads[tid].end_row;
+        else {
+            if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+            //if(compression_type == COMPRESSED_FORMAT::_CSC_ or Env::dual_spmat) {
+                //printf("1.\n");
+                //std::shared_ptr<struct Compressed_Format<Weight>> 
+                A_SPMAT = A_tile.spmat;
+                
+                //printf("2.\n");
+                //std::shared_ptr<struct Compressed_Format<Weight>> 
+                B_SPMAT = B_tile.spmat;
+                //printf("3.\n");
+                //std::shared_ptr<struct Compressed_Format<Weight>> 
+                C_SPMAT = C_tile.spmat;
+                //printf("4.\n");
+                start = Env::threads[tid].start_col;
+                end = Env::threads[tid].end_col;
+                //printf("R=%d tid=%d leader=%d layer=%d [%d, %d] [%d %d]\n", Env::rank, tid, leader_tid, l, nrows, ncols, start, end);
+                //data_x_model_hybrid_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
+                  //             nrows, ncols, start, end, off,
+                    //           my_threads, thread_st, leader_tid, tid);
+            }
+            else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+            //else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+                //std::shared_ptr<struct Compressed_Format<Weight>> 
+                A_SPMAT = A_tile.spmat;
+                //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
+                //std::shared_ptr<struct Compressed_Format<Weight>> 
+                B_SPMAT = B_tile.spmat;
+                //std::shared_ptr<struct Compressed_Format<Weight>> 
+                C_SPMAT = C_tile.spmat;
+                
+                start = Env::threads[tid].start_row;
+                end = Env::threads[tid].end_row;
+                
+
+                
+            }
         }
-        //printf("R=%d t=%d nr=%d nc=%d [%d %d]\n", Env::rank, tid, nrows, ncols, start, end);
+
+        data_x_model_hybrid_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
+               nrows, ncols, start, end, off,
+               my_threads, thread_st, leader_tid, tid);
+        //A_SPMAT->walk_dxm(false, leader_tid, tid);
+       // printf("R=%d t=%d l=%d nr=%d nc=%d [%d %d]\n", Env::rank, tid, l, nrows, ncols, start, end);
 
         //B_start = Env::threads[tid].start_col;
         //B_end = Env::threads[tid].end_col;
         //nrows = A_SPMAT->nrows;
         
-        
-        data_x_model_hybrid_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
-                                   nrows, ncols, start, end, off,
-                                   my_threads, thread_st, leader_tid, tid);
+        ///printf("cccc\n");
+
                                    
        if(tid == leader_tid) Env::scores[sid1][tid]++;
     }
+   // printf(">> Enndddd  Rank=%d tid=%d leader=%d %s\n", Env::rank, tid, leader_tid, COMPRESSED_FORMATS[compression_type]);
+    //if(tid == leader_tid) printf("Done Rank=%d tid=%d\n", Env::rank, tid);
 }
 
 template<typename Weight>
@@ -974,29 +1209,58 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
                 my_threads.insert(my_threads.end(), follower_threads.begin(), follower_threads.end());
                 follower_threads.erase(follower_threads.begin(), follower_threads.end());
                 
-                if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-                    for(uint32_t i = 0; i < num_threads; i++) {
-                        int32_t t = my_threads[i];
-                        Env::threads[t].index = i;
-                        Env::threads[t].leader = tid;
-                        Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
-                        Env::threads[t].start_layer = start_layer;
-                        Env::threads[t].start_col = ((ncols/num_threads) * i);
-                        Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
+                //if(dual_spmat) {
+                    if((dual_spmat and compression_type == COMPRESSED_FORMAT::_CSC_) or (not dual_spmat and compression_type == COMPRESSED_FORMAT::_CSR_)) {
+                        for(uint32_t i = 0; i < num_threads; i++) {
+                            int32_t t = my_threads[i];
+                            Env::threads[t].index = i;
+                            Env::threads[t].leader = tid;
+                            Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
+                            Env::threads[t].start_layer = start_layer;
+                            Env::threads[t].start_row = ((nrows/num_threads) * i);
+                            Env::threads[t].end_row   = (i == (num_threads-1)) ? nrows : ((nrows/num_threads) * (i+1));
+                        }
+                    }
+                    else if((dual_spmat and compression_type == COMPRESSED_FORMAT::_CSR_) or (not dual_spmat and compression_type == COMPRESSED_FORMAT::_CSC_)) {
+                        for(uint32_t i = 0; i < num_threads; i++) {
+                            int32_t t = my_threads[i];
+                            Env::threads[t].index = i;
+                            Env::threads[t].leader = tid;
+                            Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
+                            Env::threads[t].start_layer = start_layer;
+                            Env::threads[t].start_col = ((ncols/num_threads) * i);
+                            Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
+                        }
+                    }                    
+                /*    
+                }
+                
+                else {
+                    if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+                        for(uint32_t i = 0; i < num_threads; i++) {
+                            int32_t t = my_threads[i];
+                            Env::threads[t].index = i;
+                            Env::threads[t].leader = tid;
+                            Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
+                            Env::threads[t].start_layer = start_layer;
+                            Env::threads[t].start_col = ((ncols/num_threads) * i);
+                            Env::threads[t].end_col   = (i == (num_threads-1)) ? ncols : ((ncols/num_threads) * (i+1));
+                        }
+                    
+                    }
+                    else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+                        for(uint32_t i = 0; i < num_threads; i++) {
+                            int32_t t = my_threads[i];
+                            Env::threads[t].index = i;
+                            Env::threads[t].leader = tid;
+                            Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
+                            Env::threads[t].start_layer = start_layer;
+                            Env::threads[t].start_row = ((nrows/num_threads) * i);
+                            Env::threads[t].end_row   = (i == (num_threads-1)) ? nrows : ((nrows/num_threads) * (i+1));
+                        }
                     }
                 }
-                else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
-                    for(uint32_t i = 0; i < num_threads; i++) {
-                        int32_t t = my_threads[i];
-                        Env::threads[t].index = i;
-                        Env::threads[t].leader = tid;
-                        Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
-                        Env::threads[t].start_layer = start_layer;
-                        Env::threads[t].start_row = ((nrows/num_threads) * i);
-                        Env::threads[t].end_row   = (i == (num_threads-1)) ? nrows : ((nrows/num_threads) * (i+1));
-                    }
-                }
-
+                */
                 pthread_barrier_destroy(&Env::thread_barriers[tid]);
                 pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
 
