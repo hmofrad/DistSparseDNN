@@ -31,25 +31,25 @@ class Tiling {
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
                const std::string input_file, const INPUT_TYPE input_type,
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, 
-               std::shared_ptr<struct TwoDHasher> hasher, const bool repartition = false);
+               std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat = false, const bool repartition = false);
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, 
                const uint32_t nranks_, const uint32_t rank_nthreads_, const uint32_t nthreads_,
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
                const std::string input_file, const INPUT_TYPE input_type, 
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
-               std::shared_ptr<struct TwoDHasher> hasher, const bool repartition = false);               
+               std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat = false, const bool repartition = false);               
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
-               std::shared_ptr<struct TwoDHasher> hasher, const bool repartition = false);
+               std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat = false, const bool repartition = false);
                 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_,
                const uint32_t rank_nthreads_, const uint32_t nthreads_, 
                const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
-               std::shared_ptr<struct TwoDHasher> hasher, const bool repartition = false);
+               std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat = false, const bool repartition = false);
 
         uint32_t ntiles, nrowgrps, ncolgrps;
         uint32_t nranks, rank_ntiles, rank_nrowgrps, rank_ncolgrps;
@@ -89,7 +89,7 @@ class Tiling {
         void exchange_triples();
         void insert_triples(std::vector<struct Triple<Weight>>& triples);
         void delete_triples(std::vector<struct Triple<Weight>>& triples);
-        void compress_triples(const COMPRESSED_FORMAT compression_type);
+        void compress_triples(const COMPRESSED_FORMAT compression_type, const bool dual_spmat);
         
         void repartition_tiles(const std::string input_file, const INPUT_TYPE input_type, std::shared_ptr<struct TwoDHasher> hasher);
         
@@ -104,7 +104,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
                        const TILING_TYPE tiling_type_, 
-                       const COMPRESSED_FORMAT compression_type, std::shared_ptr<struct TwoDHasher> hasher, const bool repartition) 
+                       const COMPRESSED_FORMAT compression_type, std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat, const bool repartition) 
         : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
           nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
     
@@ -269,7 +269,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         print_tiling("nedges");
         print_tiling("height");
     }
-    compress_triples(compression_type); 
+    compress_triples(compression_type, dual_spmat); 
 }
 
 template<typename Weight>
@@ -278,7 +278,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
-                       std::shared_ptr<struct TwoDHasher> hasher, const bool repartition)
+                       std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat, const bool repartition)
                      : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        rank_nthreads(rank_nthreads_), nthreads(nthreads_),
                        nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
@@ -455,14 +455,14 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         print_tiling("width");
     }
 
-    compress_triples(compression_type);
+    compress_triples(compression_type, dual_spmat);
 }
 
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
-                       std::shared_ptr<struct TwoDHasher> hasher, const bool repartition)
+                       std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat, const bool repartition)
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        nnz(nnz_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
                            
@@ -560,7 +560,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     print_tiling("rank");
     print_tiling("nedges");
 
-    compress_triples(compression_type);  
+    compress_triples(compression_type, dual_spmat);  
 }
 
 
@@ -569,7 +569,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                        const uint32_t rank_nthreads_, const uint32_t nthreads_, 
                        const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
-                       std::shared_ptr<struct TwoDHasher> hasher, const bool repartition)
+                       std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat, const bool repartition)
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        nthreads(nthreads_),
                        nnz(nnz_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
@@ -678,7 +678,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     print_tiling("thread");
     print_tiling("nedges");
 
-    compress_triples(compression_type);  
+    compress_triples(compression_type, dual_spmat);  
 }
 
 template<typename Weight>
@@ -1519,7 +1519,7 @@ void Tiling<Weight>::set_tile_info(const std::vector<std::vector<struct Tile<Wei
 }
 
 template<typename Weight>
-void Tiling<Weight>::compress_triples(const COMPRESSED_FORMAT compression_type){
+void Tiling<Weight>::compress_triples(const COMPRESSED_FORMAT compression_type, const bool dual_spmat){
     Env::barrier();
     Logging::print(Logging::LOG_LEVEL::INFO, "Tile compression: Start compressing tile using %s\n", COMPRESSED_FORMATS[compression_type]);
 
@@ -1527,7 +1527,7 @@ void Tiling<Weight>::compress_triples(const COMPRESSED_FORMAT compression_type){
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             if(tile.rank == Env::rank) {
-                tile.compress(compression_type, one_rank, Env::threads_socket_id[tile.thread]);
+                tile.compress(compression_type, dual_spmat, one_rank, Env::threads_socket_id[tile.thread]);
             }
         }
     }    
