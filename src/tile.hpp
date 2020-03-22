@@ -16,10 +16,11 @@ struct Tile{
         Tile() {};
         ~Tile() {};
 
-        void compress(const COMPRESSED_FORMAT compression_type_, const bool one_rank, const int32_t socket_id);
+        void compress(const COMPRESSED_FORMAT compression_type_, const bool dual_spmat,  const bool one_rank, const int32_t socket_id);
         
         std::vector<struct Triple<Weight>> triples;
         std::shared_ptr<struct Compressed_Format<Weight>> spmat = nullptr;
+        std::shared_ptr<struct Compressed_Format<Weight>> spmat1 = nullptr;
         //std::shared_ptr<struct CSC<Weight>> spmat = nullptr;
         
         COMPRESSED_FORMAT compression_type;
@@ -36,24 +37,33 @@ struct Tile{
 };
 
 template<typename Weight>
-void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type_, const bool one_rank, const int32_t socket_id) {  
+void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type_, const bool dual_spmat, const bool one_rank, const int32_t socket_id) {  
 
     compression_type = compression_type_;
-    
+
     if(compression_type == COMPRESSED_FORMAT::_CSC_) {
         spmat = std::make_shared<struct CSC<Weight>>(triples.size(), height, width, socket_id);
+        if(dual_spmat) {
+            spmat1 = std::make_shared<struct CSR<Weight>>(triples.size(), height, width, socket_id);
+        }
     }
     else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
         spmat = std::make_shared<struct CSR<Weight>>(triples.size(), height, width, socket_id);
+        if(dual_spmat) {
+            spmat1 = std::make_shared<struct CSC<Weight>>(triples.size(), height, width, socket_id);
+        }
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
         std::exit(Env::finalize());
     }
     
-    
+    //printf("%d %d %d %d\n", start_row, end_row, start_col, end_col);
     if(not triples.empty()){
         spmat->populate(triples, start_row, end_row, start_col, end_col);
+        if(dual_spmat) {
+            spmat1->populate(triples, start_row, end_row, start_col, end_col);
+        }
         //spmat->walk_dxm(one_rank, 0, 0);
         triples.clear();
         triples.shrink_to_fit();
