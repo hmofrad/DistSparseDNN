@@ -58,8 +58,8 @@ class Net {
         uint32_t schduling_threshold = 4;
         
         COMPRESSED_FORMAT compression_type;
-        bool dual_spmat = true;
-        float duality_ratio = .5;
+        bool dual_spmat = false;
+        float recruiting_ratio = .3;
         
         HASHING_TYPE hashing_type;        
         std::shared_ptr<struct TwoDHasher> input_hasher;
@@ -209,7 +209,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             Env::barrier();
         }
         
-        bool enable_dual_spmat = (dual_spmat and (i >= maxLayers*duality_ratio)) ? true : false;
+        bool enable_dual_spmat = (dual_spmat and (i >= maxLayers*recruiting_ratio)) ? true : false;
         for(int32_t s = 0; s < Env::nsockets; s++) {
             if(replication or (s == Env::rank_socket_id)) {
                 /*
@@ -1013,7 +1013,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
     bool breaking = false;
     uint32_t l = 0; 
     for (l = 0; l < maxLayers; l++) {
-        if((l >= maxLayers*duality_ratio) and add_to_my_follower_threads(my_threads, l, nrows, ncols, tid, tid)) {
+        if((l >= maxLayers*recruiting_ratio) and add_to_my_follower_threads(my_threads, l, nrows, ncols, tid, tid)) {
             if(not(l%2)) 
                 break;
             else 
