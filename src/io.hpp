@@ -31,7 +31,7 @@ namespace IO {
     int32_t binary_file_categories(const std::string inputFile, std::vector<uint32_t>& categories, const uint32_t tile_height, std::shared_ptr<struct TwoDHasher> hasher);
     
     template<typename Weight>
-    std::vector<struct Triple<Weight>> binary_file_read(const std::string inputFile, bool one_rank, std::shared_ptr<struct TwoDHasher> hasher, const uint32_t nrows);
+    std::vector<struct Triple<Weight>> binary_file_read(const std::string inputFile, bool one_rank, std::shared_ptr<struct TwoDHasher> hasher, const uint32_t nrows, const uint32_t ncols);
 }
 
 template<typename Weight>
@@ -307,7 +307,7 @@ std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputF
 */
 
 template<typename Weight>
-std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputFile, bool one_rank, std::shared_ptr<struct TwoDHasher> hasher, const uint32_t nrows) {
+std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputFile, bool one_rank, std::shared_ptr<struct TwoDHasher> hasher, const uint32_t nrows, const uint32_t ncols) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: Start reading the input file %s\n", inputFile.c_str());
     
     std::ifstream fin(inputFile.c_str(), std::ios_base::binary);
@@ -373,7 +373,7 @@ std::vector<struct Triple<Weight>> IO::binary_file_read(const std::string inputF
             triple.row = hasher->hasher_r->hash(triple.row);
             triple.col = hasher->hasher_c->hash(triple.col);
             
-            if(triple.row < nrows)
+            if((triple.row < nrows) and (triple.col < ncols))
                 triples1[tid].push_back(triple);
             
             //triples[index] = triple;
