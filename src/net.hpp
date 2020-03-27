@@ -26,7 +26,7 @@ class Net {
         Net() {};
         ~Net() {};
         
-        Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, 
+        Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, const uint32_t Nneurons1_,
             const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
             const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
             const COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSR_,
@@ -86,7 +86,7 @@ class Net {
 };
 
 template<typename Weight>
-Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, 
+Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, const uint32_t Nneurons1_,
                  const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
                  const PARALLELISM_TYPE parallelism_type_, const COMPRESSED_FORMAT compression_type_, 
                  const HASHING_TYPE hashing_type_, const INPUT_TYPE input_type) 
@@ -99,7 +99,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     std::vector<uint32_t> NneuronsVector = {1024, 4096, 16384, 65536};    
     uint32_t idxN = std::distance(NneuronsVector.begin(), std::find(NneuronsVector.begin(), NneuronsVector.end(), Nneurons));
     if(idxN >= NneuronsVector.size()) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of neurons %d", Nneurons);
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of neurons %d\n", Nneurons);
         std::exit(Env::finalize());
     }    
     biasValue = neuralNetBias[idxN];
@@ -114,10 +114,14 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(feature_file)
                                                                      : IO::binary_file_stat<Weight>(feature_file);
     Net::nedges = nnz;
-    nrows = NinputInstanses + 2;
     //nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
+    nrows = NinputInstanses + 2;
     
-    ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
+    if(Nneurons1_)
+        ncols = Nneurons1_ + 2;
+    else
+        ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
+    
     ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
     
     if(parallelism_type != PARALLELISM_TYPE::_HYBRID_X_HYBRID_) {
@@ -164,7 +168,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     std::vector<uint32_t> maxLayersVector = {120, 480, 1920};
     uint32_t idxL = std::distance(maxLayersVector.begin(), std::find(maxLayersVector.begin(), maxLayersVector.end(), maxLayers));
     if(idxL >= maxLayersVector.size()) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of layers %d", maxLayers);
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of layers %d\n", maxLayers);
         std::exit(Env::finalize());
     }
     std::string categoryFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "-l" + std::to_string(maxLayers);
@@ -195,16 +199,22 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         layerFile += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
         if(i == 0) {
             std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(layerFile)
-                                                                         : IO::binary_file_stat<Weight>(layerFile);                                                                     
-            nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
-            ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols; 
-
+                                                                         : IO::binary_file_stat<Weight>(layerFile);   
+            if(Nneurons1_) {
+                nrows = inputFeatures->ncols; 
+                ncols = inputFeatures->ncols;                 
+            }
+            else {
+                nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
+                ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols;                 
+            }
+                
             nbuckets_rows = nbuckets_cols;
             nbuckets_cols = nbuckets_cols; // dummy            
             
             //nbuckets_rows = Env::nthreads * 512;
             //nbuckets_cols = Env::nthreads * 512;
-
+             
             layer_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, false, nrows, ncols, nbuckets_rows, nbuckets_cols));
             Env::barrier();
         }
