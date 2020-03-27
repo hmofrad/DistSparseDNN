@@ -234,7 +234,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         triples = IO::text_file_read<Weight>(input_file, one_rank);
     }
     else {
-        triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows);
+        triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows, ncols);
     }
     insert_triples(triples);
     delete_triples(triples);
@@ -417,7 +417,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         triples = IO::text_file_read<Weight>(input_file, one_rank);
     }
     else {
-        triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows);
+        triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows, ncols);
     }
     insert_triples(triples);
     delete_triples(triples);
@@ -1180,7 +1180,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             triples = IO::text_file_read<Weight>(input_file, one_rank);
         }
         else {
-            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows);
+            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows, ncols);
         }
         
         insert_triples(triples);
@@ -1390,7 +1390,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             triples = IO::text_file_read<Weight>(input_file, one_rank);
         }
         else {
-            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows);
+            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows, ncols);
         }
         
         insert_triples(triples);
