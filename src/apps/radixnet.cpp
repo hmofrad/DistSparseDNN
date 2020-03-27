@@ -32,7 +32,7 @@ int main(int argc, char **argv) {
         std::exit(Env::finalize());   
     }
 
-    if(argc != 11) {
+    if(argc != 12) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "USAGE = %s -m <NinputInstances> -n <Nneurons> -l <maxLayers> <path_to_input> <path_to_dnn> -p <parallelism_type>\n", argv[0]);
         std::exit(Env::finalize());     
     }
@@ -47,7 +47,8 @@ int main(int argc, char **argv) {
         Logging::print(Logging::LOG_LEVEL::WARN, "NUMA is disabled.\n", Env::NUMA_ALLOC);
     }
     
-    int x = atoi(argv[10]);
+    //int x = atoi(argv[10]);
+    int x = atoi(argv[11]);
 
     PARALLELISM_TYPE p_type = (PARALLELISM_TYPE)x;
     if(p_type >= (PARALLELISM_TYPE::_SIZE_)) {
@@ -55,8 +56,11 @@ int main(int argc, char **argv) {
         std::exit(Env::finalize());
     }
     
-    Net<WGT> N(atoi(argv[2]), atoi(argv[4]), 
-               ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]), p_type);//PARALLELISM_TYPE::_HYBRID_X_HYBRID_);//_MANAGER_X_WORKER_);
+    //Net<WGT> N(atoi(argv[2]), atoi(argv[4]), 
+    //           ((std::string) argv[7]), atoi(argv[6]), ((std::string) argv[8]), p_type);//PARALLELISM_TYPE::_HYBRID_X_HYBRID_);//_MANAGER_X_WORKER_);
+               
+    Net<WGT> N(atoi(argv[2]), atoi(argv[4]), atoi(argv[5]),
+               ((std::string) argv[8]), atoi(argv[7]), ((std::string) argv[9]), p_type);//PARALLELISM_TYPE::_HYBRID_X_HYBRID_);//_MANAGER_X_WORKER_);
     
     return(Env::finalize());
 }
