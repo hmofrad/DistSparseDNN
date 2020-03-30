@@ -78,11 +78,12 @@ class Net {
         void manager_x_worker(const int32_t tid);
         void work_x_stealing(const int32_t tid);
         uint32_t hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t tid);
+        void hybrid_x_data1(const int32_t tid);
         void hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid);
         
         bool add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid);
-        bool    add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t nrows, const uint32_t ncols, const int32_t leader, const int32_t tid);
-        bool    thread_scheduling(std::deque<int32_t>& my_threads, std::deque<int32_t>& follower_threads, int32_t socket_id, const uint32_t start_layer, const uint32_t nrows, const uint32_t ncols, const int32_t leader, const int32_t tid);
+        bool    add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t start_row, const uint32_t nrows, const uint32_t ncols, const int32_t leader, const int32_t tid);
+        bool    thread_scheduling(std::deque<int32_t>& my_threads, std::deque<int32_t>& follower_threads, int32_t socket_id, const uint32_t start_layer, const uint32_t start_row, const uint32_t nrows, const uint32_t ncols, const int32_t leader, const int32_t tid);
 };
 
 template<typename Weight>
@@ -479,21 +480,22 @@ void Net<Weight>::printTimesExcel() {
     stats(Env::hybrid_probe_time, sum, mean, std_dev, min, max);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f\n", min, max, sum);
     */
-  
-    /*
-    for(auto t: Env::execution_time) {
-        printf("%f\n", t);
-    }
-    printf("\n");
+    if(Env::nnzs[0].empty()) return;
     
-    
-    for(auto nnz: Env::nnzs) {
-        for(auto n: nnz)
-            printf("%d ", n);
+    for(int j = 0; j < Env::nthreads; j++) {
+        for(int i = 0; i < 20; i++) {
+            printf("%d ", Env::nnzs[j][i]);
+        }
         printf("\n");
     }
     printf("\n");
-    */
+    if(Env::times[0].empty()) return;
+    for(int j = 0; j < Env::nthreads; j++) {
+        for(int i = 0; i < 20; i++) {
+            printf("%f ", Env::times[j][i]/1e9);
+        }
+        printf("\n");
+    }
     
     /*
     int m = Env::nnzs[0].size();
@@ -720,7 +722,8 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     
     auto start_t = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
-         std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
+        auto now1 = std::chrono::high_resolution_clock::now();
+        std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
         
         //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
         struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
@@ -759,7 +762,13 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         //printf("time %f: Rank=%d tid=%2d layer=%3d nnz=%d B=%lu C=%lu\n", elapsed, Env::rank, tid, l, Env::nnzs[tid][l], B_SIZE, C_SIZE);
         if(tid == leader_tid)
             Env::data_counters[tid].push_back({elapsed, Env::rank, tid, l, (B_CSC->IA_blk->nitems*4*2+ncols*4), (uint64_t) (C_CSC->IA_blk->nitems*4*2+ncols*4)});
-        */                    
+        */     
+
+            
+        auto now2 = std::chrono::high_resolution_clock::now();
+        double elapsed = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(now2 - now1).count());
+        Env::times[tid].push_back(elapsed);
+        
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
@@ -794,6 +803,8 @@ void Net<Weight>::data_x_data(const int32_t tid) {
     
     auto start_t = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
+        auto now1 = std::chrono::high_resolution_clock::now();
+        
         struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                  : output->tiles[leader_rowgroup][0];
         std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
@@ -819,6 +830,11 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         //printf("time %f: Rank=%d tid=%2d layer=%3d nnz=%d B=%lu C=%lu\n", elapsed, Env::rank, tid, l, Env::nnzs[tid][l], B_SIZE, C_SIZE);
         //Env::data_counters[tid].push_back({elapsed, Env::rank, tid, l, (B_CSC->IA_blk->nitems*4*2+ncols*4), (uint64_t) (C_CSC->IA_blk->nitems*4*2+ncols*4)});
         
+           
+        auto now2 = std::chrono::high_resolution_clock::now();
+        double elapsed = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(now2 - now1).count());
+        Env::times[tid].push_back(elapsed);
+       
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
@@ -964,6 +980,14 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
         uint32_t leader_rowgroup = Env::threads[tid].rowgroup;
         uint32_t leader_start_layer = Env::threads[tid].start_layer;
         hybrid_x_model(Env::my_threads[tid], leader_rowgroup, leader_start_layer, leader, tid);
+        /*
+        if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+            
+        }
+        else {
+            hybrid_x_data1(tid);
+        }
+        */
     }
     //printf("DONE %d %d\n", Env::rank, tid);
     auto finish_t = std::chrono::high_resolution_clock::now();
@@ -1011,7 +1035,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
     const uint32_t ncols = layers[sid][0]->ncols;
     uint32_t start, end;
     const uint32_t off = 0;
-    
+    uint32_t start_row = 0;
     if(compression_type == COMPRESSED_FORMAT::_CSC_) {
         start = 0;
         end = ncols;
@@ -1023,11 +1047,20 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
     bool breaking = false;
     uint32_t l = 0; 
     for (l = 0; l < maxLayers; l++) {
-        if((l >= maxLayers*recruiting_ratio) and add_to_my_follower_threads(my_threads, l, nrows, ncols, tid, tid)) {
-            if(not(l%2)) 
-                break;
-            else 
-                breaking = true;
+        if((l >= maxLayers*recruiting_ratio) and add_to_my_follower_threads(my_threads, l, 0, nrows, ncols, tid, tid)) {
+            //if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+                if(not(l%2)) 
+                    break;
+                else     
+                    breaking = true;
+            /*    
+            }
+            else {
+                start = Env::threads[tid].start_row;
+                end = Env::threads[tid].end_row;
+                //nrows = end - start;
+            }
+            */
         }
         struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                              : output->tiles[leader_rowgroup][0];
@@ -1053,6 +1086,13 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
     }
     return(l);
 }
+
+template<typename Weight>
+void Net<Weight>::hybrid_x_data1(const int32_t tid) {
+    printf("%d\n", tid);
+ 
+}
+
 
 template<typename Weight>
 void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid) {
@@ -1082,7 +1122,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
    // printf(">> Start Rank=%d tid=%d leader=%d %s\n", Env::rank, tid, leader_tid, COMPRESSED_FORMATS[compression_type]);
     //if(tid == leader_tid) printf("Start Rank=%d tid=%d leader_start_layer=%d\n", Env::rank, tid, leader_start_layer);
     for (uint32_t l = leader_start_layer; l < maxLayers; l++) {
-        (void)add_to_my_follower_threads(my_threads, l, nrows, ncols, leader_tid, tid);
+        (void)add_to_my_follower_threads(my_threads, l, 0, nrows, ncols, leader_tid, tid);
         start_time = Env::tic();   
             Env::decrease_num_threads(1, leader_tid, tid);
             Env::init_num_threads(my_threads.size(), leader_tid, tid);
@@ -1171,7 +1211,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
 }
 
 template<typename Weight>
-bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<int32_t>& follower_threads, int32_t socket_id, const uint32_t start_layer, const uint32_t nrows, const uint32_t ncols, const int32_t leader, const int32_t tid) {  
+bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<int32_t>& follower_threads, int32_t socket_id, const uint32_t start_layer, const uint32_t start_row, const uint32_t nrows, const uint32_t ncols, const int32_t leader, const int32_t tid) {  
     bool found = false;
     uint32_t num_threads = my_threads.size();
     uint32_t old_num_threads = my_threads.size();
@@ -1227,9 +1267,11 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
                             Env::threads[t].leader = tid;
                             Env::threads[t].rowgroup = Env::thread_rowgroup[tid];
                             Env::threads[t].start_layer = start_layer;
-                            Env::threads[t].start_row = ((nrows/num_threads) * i);
-                            Env::threads[t].end_row   = (i == (num_threads-1)) ? nrows : ((nrows/num_threads) * (i+1));
+                            Env::threads[t].start_row = start_row + ((nrows/num_threads) * i);
+                            Env::threads[t].end_row   = (i == (num_threads-1)) ? start_row+nrows : start_row+((nrows/num_threads) * (i+1));
                         }
+                        //my_threads.erase(follower_threads.begin(), follower_threads.end());
+                        //my_threads.push_back(tid);                        
                     }
                     else if((dual_spmat and compression_type == COMPRESSED_FORMAT::_CSR_) or (not dual_spmat and compression_type == COMPRESSED_FORMAT::_CSC_)) {
                         for(uint32_t i = 0; i < num_threads; i++) {
@@ -1289,7 +1331,7 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, std::deque<
 
 
 template<typename Weight>
-bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t nrows, const uint32_t ncols, const int32_t leader_tid, const int32_t tid) {  
+bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t start_layer, const uint32_t start_row, const uint32_t nrows, const uint32_t ncols, const int32_t leader_tid, const int32_t tid) {  
     bool found = false;
     if(tid == leader_tid) {
         double start_time = 0;
@@ -1299,12 +1341,12 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
             for(int32_t s = 0; s < Env::nsockets; s++) {
                 int32_t si = (s + Env::threads_socket_id[tid]) % Env::nsockets;
                 if((si == sid1) or (Env::nthreads_per_socket[si] and (Env::numa_follower_threads[si].size() == (uint32_t) Env::nthreads_per_socket[si]))) {
-                    found |= thread_scheduling(my_threads, Env::numa_follower_threads[si], si, start_layer, nrows, ncols, leader_tid, tid);
+                    found |= thread_scheduling(my_threads, Env::numa_follower_threads[si], si, start_layer, start_row, nrows, ncols, leader_tid, tid);
                 }
             }
         }
         else {
-            found = thread_scheduling(my_threads, Env::numa_follower_threads[sid1], sid1, start_layer, nrows, ncols, leader_tid, tid);
+            found = thread_scheduling(my_threads, Env::numa_follower_threads[sid1], sid1, start_layer, start_row, nrows, ncols, leader_tid, tid);
         }
         Env::hybrid_probe_time[tid] += Env::toc(start_time);  
     }
