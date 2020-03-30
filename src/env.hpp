@@ -198,6 +198,7 @@ namespace Env {
                                       
     double global_time;
     std::vector<std::vector<int>> nnzs;
+    std::vector<std::vector<double>> times;
 }
 
 int Env::init() {
@@ -336,6 +337,7 @@ int Env::init() {
     */
 
     nnzs.resize(Env::nthreads);
+    times.resize(Env::nthreads);
     
     MPI_Barrier(MPI_COMM_WORLD);  
     return(status);
