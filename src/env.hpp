@@ -27,7 +27,6 @@ namespace Env {
     int ncores_per_socket = 0;
     int nmachines = 0;;
     int nranks_per_machine = 0;
-    //int nthreads_per_socket = 0;
     std::vector<uint32_t> nthreads_per_socket;
     int rank_core_id = 0;
     int rank_socket_id = 0;
@@ -69,8 +68,6 @@ namespace Env {
     std::vector<pthread_cond_t> thread_conds; 
     std::vector<pthread_mutex_t> thread_mutexes;
     pthread_cond_t manager_cond; 
-    
-    //bool manager = true;
     
     std::deque<int32_t> follower_threads;
 
@@ -154,9 +151,6 @@ namespace Env {
     template<typename Type>
     void destroy_mpi_asynch_shared_mem(Type** mpi_shared_data, MPI_Win* window);
     
-    //int32_t* idle_ranks;
-    //MPI_Win window;
-    
     std::vector<int32_t*> idle_threads;
     std::vector<MPI_Win> thread_windows;
     std::vector<MPI_Group> thread_groups_;
@@ -175,15 +169,6 @@ namespace Env {
     bool manager = true;
     int count = 0;
     
-    /*
-    void create_thread_communicators(std::vector<MPI_Group>& thread_groups_, 
-                                     std::vector<MPI_Group>& thread_groups,
-                                     std::vector<MPI_Comm>&  thread_communicators,
-                                     int32_t ngroups,
-                                     std::vector<int32_t>& groups_rank,
-                                     std::vector<int32_t>& groups_nranks,
-                                     int32_t nranks);
-    */ 
     void create_thread_communicators(MPI_Group* thread_groups_, 
                                      MPI_Group* thread_groups,
                                      MPI_Comm*  thread_communicators,
@@ -286,12 +271,6 @@ int Env::init() {
     finished_threads.resize(Env::nthreads, true);
     //create_mpi_asynch_shared_mem<int32_t>(&Env::idle_ranks, Env::nranks+1, &Env::window);
     
-    //printf("%d\n", Env::rank);
-    //threads_rank.resize(Env::nthreads);
-    //threads_nranks.resize(Env::nthreads);
-    //std::vector<int32_t> ranks(Env::nranks);
-    //std::iota(ranks.begin(), ranks.end(), 0);
-    
     Env::thread_groups_.resize(Env::nthreads);
     Env::thread_groups.resize(Env::nthreads);
     Env::thread_communicators.resize(Env::nthreads);
@@ -320,21 +299,6 @@ int Env::init() {
     
     
     data_counters.resize(Env::nthreads);
-    /*
-    if(Env::rank == 3) {
-        for(auto t : threads_rank) {
-            printf("%d ", t);
-        }
-        printf("\n");
-        for(auto t : threads_nranks) {
-            printf("%d ", t);
-        }
-        printf("\n");
-    }
-    
-    Env::barrier();
-    std::exit(0);
-    */
 
     nnzs.resize(Env::nthreads);
     times.resize(Env::nthreads);
