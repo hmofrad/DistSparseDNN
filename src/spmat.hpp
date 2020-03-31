@@ -88,11 +88,8 @@ template<typename Weight>
 struct CSC: public Compressed_Format<Weight> {
     public:
         CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_);
-        CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id);
-        
-        //CSC(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
+        CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id);        
         CSC(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width, const int32_t socket_id);
-        
         ~CSC(){};
         
         void populate(std::vector<struct Triple<Weight>>& triples);
@@ -194,17 +191,9 @@ CSR<Weight>::CSR(const std::shared_ptr<struct Compressed_Format<Weight>> other_s
         for(uint32_t i = o_JA[j]; i < o_JA[j + 1]; i++) {
             struct Triple<Weight> triple = {o_IA[i], j, o_A[i]};
             triples.push_back(triple);
-            //if(!Env::rank) printf("%d %d\n", triple.row, triple.col);
         }
     }
-    //printf("dddd %lu %d %d %d %d %d %d %lu %lu\n", triples.size(), start_row, tile_height, start_col, tile_width, nrows, ncols, o_nnz, o_nnz_i);
     CSR::populate(triples);   
-
-
-
-
-    
-    //CSR::walk_dxm(false, 0, 0);    
     triples.clear();
     triples.shrink_to_fit();
 }
@@ -322,7 +311,7 @@ void CSR<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const 
                 //    std::cout << "    j=" << j << ",j=" << JA[j] <<  ",value=" << A[j] << std::endl;
             }
         }
-//printf("?? %lu\n", checkcount);
+
         Env::barrier();
         if(one_rank) {
             Logging::print(Logging::LOG_LEVEL::INFO, "CSR: Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, checksum, checkcount);
@@ -596,60 +585,6 @@ void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
     */
 }
 
-/*
-template<typename Weight>
-void CSR<Weight>::walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid) {  
-    if(tid == leader_tid) {
-        uint32_t* IA = CSR::IA_blk->ptr;
-        uint32_t* JA = CSR::JA_blk->ptr;
-        Weight*    A = CSR::A_blk->ptr;
-        
-        double checksum = 0;
-        uint64_t checkcount = 0;
-         uint32_t displacement = 0;
-        int t = 0;
-        for(uint32_t i = 0; i < CSR::nrows; i++) { 
-            int32_t tt = Env::my_threads[leader_tid][t];
-            if(i == Env::threads[tt].start_row) {
-                displacement = Env::threads[tt].dis_nnz; 
-                tt++;
-            }
-            else {
-                displacement = 0;        
-            }
-           //if(!Env::rank)
-             //   std::cout << "j=" << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
-
-            for(uint32_t j = IA[i] + displacement; j < IA[i + 1]; j++) {
-                (void) IA[j];
-                (void) A[j];
-                checksum += A[j];
-                checkcount++;
-            }
-        }
-
-        Env::barrier();
-        if(one_rank) {
-            Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d 1\n", Env::iteration, checksum, checkcount);
-        }
-        else {
-            uint64_t nnz_ = CSR::nnz_i;
-            uint64_t nnz_ranks = 0;
-            double sum_ranks = 0;
-            uint64_t count_ranks = 0;
-            MPI_Allreduce(&nnz_, &nnz_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
-            MPI_Allreduce(&checksum, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
-            MPI_Allreduce(&checkcount, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
-
-            if(count_ranks != nnz_ranks) {
-                Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!! 1\n");
-            }
-            Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d 1\n", Env::iteration, sum_ranks, count_ranks);
-        } 
-    }    
-}
-*/
-
 template<typename Weight>
 CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id) {
     Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_CSC_;
@@ -687,73 +622,6 @@ CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncol
     CSC::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::nnz, Env::rank_socket_id));
     CSC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSC::nnz, Env::rank_socket_id));
 }
-
-/*
-template<typename Weight>
-CSC<Weight>::CSC(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width) {
-    std::shared_ptr<struct CSR<Weight>> other_csr = std::static_pointer_cast<struct CSR<Weight>>(other_spmat);
-    uint32_t  o_ncols = other_csr->ncols;
-    uint32_t  o_nrows = other_csr->nrows;
-    uint64_t  o_nnz   = other_csr->nnz;
-    uint64_t  o_nnz_i = other_csr->nnz_i;
-    uint32_t* o_JA    = other_csr->JA_blk->ptr;
-    uint32_t* o_IA    = other_csr->IA_blk->ptr;
-    Weight*   o_A     = other_csr->A_blk->ptr;
-    
-    
-    Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_CSC_;
-    Compressed_Format<Weight>::nnz = o_nnz;
-    Compressed_Format<Weight>::nnz_i = o_nnz;
-    Compressed_Format<Weight>::nrows = o_nrows; 
-    Compressed_Format<Weight>::ncols = o_ncols;
-    
-    CSC::compression_type = COMPRESSED_FORMAT::_CSC_;
-    CSC::nnz = o_nnz;
-    CSC::nnz_i = o_nnz;
-    CSC::nrows = o_nrows; 
-    CSC::ncols = o_ncols;
-    
-    CSC::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>((CSC::ncols + 1), Env::rank_socket_id));
-    CSC::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::nnz, Env::rank_socket_id));
-    CSC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSC::nnz, Env::rank_socket_id));
-    
-    uint32_t* IA = CSC::IA_blk->ptr;
-    uint32_t* JA = CSC::JA_blk->ptr;
-    Weight* A = CSC::A_blk->ptr;
-    
-    std::vector<struct Triple<Weight>> triples;
-    for(uint32_t i = 0; i < o_nrows; i++) {
-        for(uint32_t j = o_IA[i]; j < o_IA[i + 1]; j++) {
-            struct Triple<Weight> triple = {i, o_JA[j], o_A[j]};
-            triples.push_back(triple);
-        }
-    }
-    CSC::populate(triples, start_row, tile_height, start_col, tile_width);
-    triples.clear();
-    triples.shrink_to_fit();
-    */
-    /*
-    std::vector<uint32_t> column_indices(nrows);
-    
-    uint32_t k = 0;
-    uint32_t min_col = UINT_MAX;
-    for(uint32_t i = 0; i < o_nrows; i++) {
-        for(uint32_t j = o_IA[i] + column_indices[i]; j < o_IA[i + 1]; j++) {
-            printf("i=%d j=%d v=%f\n", i, o_JA[j],  o_A[j]);
-            if(o_JA[j] < min_col) {
-                min_col = o_JA[j];
-            }
-            //break;
-            //JA[o_JA[j]]++;
-            //IA[k] = o_JA[j];
-            //A[k] = O_A[j];
-            //k++;
-        }
-    }
-    printf("min=%d\n", min_col);
-    */
-    //std::exit(0);
-//}
 
 template<typename Weight>
 CSC<Weight>::CSC(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width, const int32_t socket_id) {
@@ -1148,13 +1016,6 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
         exit(1);
     }
 
-    //if(tid == 1) {
-      //  printf("Source[%s]:\n", COMPRESSED_FORMATS[other_csc->compression_type]);
-      //other_csc->walk_dxm1(false, leader_tid, tid);
-      //printf("Source old [%s]:\n", COMPRESSED_FORMATS[this->compression_type]);
-      //this->walk_dxm(false, leader_tid, tid);
-   //}  
-    
     if(tid == leader_tid) {
         CSC::nnz = o_nnz_i;
         CSC::nnz_i = o_nnz_i;
@@ -1221,15 +1082,6 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
         }
     }
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
-   
-   //if(tid == 1) {
-     //  printf("Source new [%s]:\n", COMPRESSED_FORMATS[this->compression_type]);
-   //this->walk_dxm(false, leader_tid, tid);
-     // pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
-   //std::exit(0);
-   //}   
-
-   
 }
 
 template<typename Weight>
