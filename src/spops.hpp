@@ -61,7 +61,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d], SPA[%lu]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
             std::exit(1); 
         }
-        //printf("Symb OP: A[%d %d] B[%d %d] SPA[%lu] [%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems, start, end);
+
         for(uint32_t j = start; j < end; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
@@ -76,7 +76,6 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
                 }
             }
         }
-        //printf("%d %lu [%d %d]\n", tid, nnzmax, start, end);
     }
     else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
         const std::shared_ptr<struct CSR<Weight>> A_CSR = std::static_pointer_cast<struct CSR<Weight>>(A_SPMAT);
@@ -99,7 +98,7 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d], SPA[%lu]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
             std::exit(1); 
         }
- //printf("Symb OP: A[%d %d] B[%d %d] SPA[%lu] [%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems, start, end);
+
         for(uint32_t i = start; i < end; i++) {
             for(uint32_t k = A_IA[i]; k < A_IA[i+1]; k++) {
                 uint32_t l = A_JA[k];
@@ -192,7 +191,7 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
             std::exit(1); 
         }
-       // printf("Real OP: A[%d %d] B[%d %d] C[%d %d] SPA[%lu] [%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols, C_nrows, C_ncols, s->nitems, start, end);
+
         for(uint32_t j = start; j < end; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
@@ -232,7 +231,7 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu] Bias[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems, b->nitems);
             std::exit(1); 
         }
-    //printf("Real OP: A[%d %d] B[%d %d] C[%d %d] SPA[%lu] [%d %d]\n", A_nrows, A_ncols, B_nrows, B_ncols, C_nrows, C_ncols, s->nitems, start, end);
+
         for(uint32_t i = start; i < end; i++) {
             for(uint32_t k = A_IA[i]; k < A_IA[i+1]; k++) {
                 uint32_t l = A_JA[k];
@@ -355,8 +354,6 @@ inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compre
             Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
             std::exit(Env::finalize());
         }
-        
-        //std::vector<uint32_t> allCategories(A_nrows);
 
         int count = 0;
         for(uint32_t i = 0; i < A_nrows; i++) {
@@ -400,11 +397,6 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
     
     COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;    
     if((A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) or (A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSR_)) {
-        
-        //std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
-        //std::shared_ptr<struct CSC<Weight>> B_CSC = std::static_pointer_cast<struct CSC<Weight>>(B_SPMAT);
-        //std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_SPMAT);
-                         
         double start_time = 0;
         start_time = Env::tic();
             std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, tid);
@@ -445,7 +437,6 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
 
     std::vector<uint32_t> allCategories;
     COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;  
-    //printf("Validate: %d %s\n", tid,  COMPRESSED_FORMATS[compression_type]);
     if(compression_type == COMPRESSED_FORMAT::_CSC_) {
         const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
         A_nnz   = A_CSC->nnz;
@@ -486,14 +477,13 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
     int count = 0;
     for(uint32_t i = 0; i < A_nrows; i++) {
         if(trueCategories[start_row + i] != allCategories[i]) {
-            //printf("Rank=%d st=%d i=%d t=%d a=%d\n", Env::rank, start_row, i, trueCategories[start_row + i], allCategories[i]);
             break;
         }
         if(allCategories[i]) {
             count++;
         }
     }
-    //printf("Env::rank=%d, tid=%d count=%d\n", Env::rank, tid, count);
+
     Env::counters[tid].checkcount = count;
     pthread_barrier_wait(&Env::thread_barrier);
     if(tid == leader_tid) {
@@ -535,27 +525,15 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<
 
     COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;    
     if((compression_type == COMPRESSED_FORMAT::_CSC_) or (compression_type == COMPRESSED_FORMAT::_CSR_)) {
-        //printf("1. %d %s\n", tid, COMPRESSED_FORMATS[compression_type]);
         double start_time = 0;
         if(tid ==leader_tid) start_time = Env::tic(); 
             std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, tid);
             pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
         if(tid ==leader_tid) Env::spmm_symb_time[tid] += Env::toc(start_time);   
-        //printf("2. %d\n", tid);
         if(tid ==leader_tid) start_time = Env::tic();
             uint64_t nnz = Env::adjust_nnz(my_threads, leader_tid, tid);
-            //printf("2. %d %lu\n", tid, nnz);
             C_SPMAT->reallocate(nnz, nrows, ncols, leader_tid, tid);
         if(tid ==leader_tid) Env::memory_allocation_time[tid] += Env::toc(start_time);
-        //printf("3. %d\n", tid);
-
-        //if(tid == 1) {
-            //printf("1.>>>> %d %lu\n", tid, nnz);
-            //A_SPMAT->walk_dxm(false, leader_tid, tid);
-           // C_SPMAT->walk_dxm1(false, leader_tid, tid);
-          //  printf("1.<<<<<  %d \n", tid);
-            //std::exit(0);
-        //}
 
         if(tid ==leader_tid) start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
@@ -564,28 +542,11 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<
             Env::adjust_displacement(my_threads, leader_tid, tid);
             C_SPMAT->adjust(my_threads, leader_tid, tid);	
         if(tid ==leader_tid) Env::spmm_real_time[tid] += Env::toc(start_time);
-        //printf("4. %d\n", tid);
-
-        //if(tid == 1) {
-            //printf("2.>>>> %d \n", tid);
-            //A_SPMAT->walk_dxm(false, leader_tid, tid);
-            //C_SPMAT->walk_dxm1(false, leader_tid, tid);
-          //  printf("2.<<<<<  %d \n", tid);
-            //std::exit(0);
-        //}
-
+        
         if(tid ==leader_tid) start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
             A_SPMAT->repopulate(C_SPMAT, my_threads, leader_tid, tid);
         if(tid ==leader_tid) Env::memory_allocation_time[tid] += Env::toc(start_time);
-        //printf("5. %d\n", tid);
-        
-        //if(tid == 1) {
-            //printf("2.>>>> %d \n", tid);
-          //  A_SPMAT->walk_dxm(false, leader_tid, tid);
-            //printf("2.<<<<<  %d \n", tid);
-        //}
-        
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
