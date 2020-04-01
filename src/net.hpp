@@ -26,10 +26,10 @@ class Net {
         Net() {};
         ~Net() {};
         
-        Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, const uint32_t Nneurons1_,
+        Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
             const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
             const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
-            const COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSR_,
+            const COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSC_,
             const HASHING_TYPE hashing_type_ = HASHING_TYPE::_BOTH_,
             const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_);
 
@@ -85,7 +85,7 @@ class Net {
 };
 
 template<typename Weight>
-Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, const uint32_t Nneurons1_,
+Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
                  const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
                  const PARALLELISM_TYPE parallelism_type_, const COMPRESSED_FORMAT compression_type_, 
                  const HASHING_TYPE hashing_type_, const INPUT_TYPE input_type) 
@@ -116,10 +116,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     //nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
     nrows = NinputInstanses + 2;
     
-    if(Nneurons1_)
-        ncols = Nneurons1_ + 2;
-    else
-        ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
+    ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
     
     ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
     
@@ -199,14 +196,10 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
         if(i == 0) {
             std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(layerFile)
                                                                          : IO::binary_file_stat<Weight>(layerFile);   
-            if(Nneurons1_) {
-                nrows = inputFeatures->ncols; 
-                ncols = inputFeatures->ncols;                 
-            }
-            else {
-                nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
-                ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols;                 
-            }
+
+            nrows = (inputFeatures->ncols > nrows) ? inputFeatures->ncols : nrows; 
+            ncols = (inputFeatures->ncols > ncols) ? inputFeatures->ncols : ncols;                 
+            
                 
             nbuckets_rows = nbuckets_cols;
             nbuckets_cols = nbuckets_cols; // dummy            
