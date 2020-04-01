@@ -14,8 +14,8 @@
 #include <omp.h>
 #include <thread>
 #include <sys/sysinfo.h>
-#include <numa.h>
-//#include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
+##include <numa.h>
+#include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
 #include "types.hpp"
 
 namespace Env {
@@ -38,7 +38,7 @@ namespace Env {
     const uint64_t L1_DCACHE_SIZE = sysconf(_SC_LEVEL1_DCACHE_SIZE);
     const uint64_t L2_CACHE_SIZE = sysconf(_SC_LEVEL2_CACHE_SIZE);
     const uint64_t L3_CACHE_SIZE = sysconf(_SC_LEVEL3_CACHE_SIZE);
-    bool NUMA_ALLOC = false;  
+    bool NUMA_ALLOC = true;  
     
     std::vector<uint32_t> thread_rowgroup;
     std::vector<std::deque<uint32_t>> threads_rowgroups;
