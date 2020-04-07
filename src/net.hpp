@@ -484,7 +484,9 @@ void annotate2() {
     uint32_t t = (uint32_t) ceil(annotated.front().time/1e6);
     std::map<int,int> tids;
     std::map<int,int> tids1;
-    //std::unordered_map<int,int> tids;
+    
+    
+    
     uint32_t i=0;
     for(i = 0; i < annotated.size(); i++) {
         int tid = annotated[i].tid;
@@ -506,10 +508,17 @@ void annotate2() {
                 counts[temp[j]]++;
             }
             */
+            bool tf = false;
+            for(auto t: tids) {
+                if(not t.second) {tf = true; break;}
+            }
+            
+            if(tf) {
             printf("%d ", i);
             
             for(auto t: tids) {
                 printf("%d ", t.second);
+            }
             }
             /*
             for(uint32_t j = 1; j < counts.size(); j++) {
@@ -526,12 +535,18 @@ void annotate2() {
     
     
     if(not tids.empty()) {
+        bool tf = false;
+        for(auto t: tids1) {
+            if(not t.second) {tf = true; break;}
+        }
+        
+        if(tf) {
         printf("%d ", i);
-    
+        
         for(auto t: tids1) {
             printf("%d ", t.second);
         }
-        printf("\n");
+        }
     }
     
     
