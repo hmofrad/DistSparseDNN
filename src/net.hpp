@@ -376,8 +376,8 @@ void annotate() {
                 min_idx = i;
             }
         }
-        //auto d = Env::data_counters[min_idx][indices[min_idx]];
-        //printf("%f %d %d %d %lu\n", d.time, d.rank, d.tid, d.layer, d.nnz_bytes);
+        auto d = Env::data_counters[min_idx][indices[min_idx]];
+        //printf("%f %d %d %d\n", d.time, d.rank, d.tid, d.layer);
         annotated.push_back(Env::data_counters[min_idx][indices[min_idx]]);
 
         indices[min_idx]++;
@@ -428,6 +428,8 @@ void annotate() {
     
 }
 
+#include <unordered_map>
+#include <map>
 void annotate1() {
     
     for(uint32_t i = 0; i < Env::data_counters[0].size(); i++) {
@@ -437,6 +439,159 @@ void annotate1() {
     }
 }
 
+void annotate2() {
+    /*
+   for(auto dc: Env::data_counters) {
+        for(auto d: dc) { 
+            printf("%d %f %d\n", d.tid, d.time, d.layer);
+        }
+    }
+    */
+    
+    uint32_t s = 0;
+    for(int i = 0; i < Env::nthreads; i++) {
+        s+= Env::data_counters[i].size();   
+    }
+
+
+    std::vector<struct Env::data_counter> annotated;
+    uint32_t sz = s * Env::nthreads;
+    uint32_t k = 0;
+    std::vector<uint32_t> indices(Env::nthreads, 0);
+    while(k < s) {
+        int min_idx = 0;
+        double min_val = std::numeric_limits<float>::max();
+        for(int i = 0; i < Env::nthreads; i++) {
+            if(indices[i] < Env::data_counters[i].size() && Env::data_counters[i][indices[i]].time < min_val) {
+                min_val = Env::data_counters[i][indices[i]].time;
+                min_idx = i;
+            }
+        }
+        auto d = Env::data_counters[min_idx][indices[min_idx]];
+        //printf("%f %d %d %d\n", d.time, d.rank, d.tid, d.layer);
+        annotated.push_back(Env::data_counters[min_idx][indices[min_idx]]);
+
+        indices[min_idx]++;
+        k++;
+    }
+
+    /*
+    for(uint32_t i = 0; i < annotated.size(); i++) {
+        printf("%f %d %d\n", annotated[i].time, annotated[i].tid, annotated[i].layer);
+    }
+    */
+    
+    uint32_t t = (uint32_t) ceil(annotated.front().time/1e6);
+    std::unordered_map<int,int> tids;
+    uint32_t i=0;
+    for(i = 0; i < annotated.size(); i++) {
+        int tid = annotated[i].tid;
+        int nhelpers = annotated[i].layer;
+        if(tids.size() == (uint32_t) Env::nthreads) {
+            std::vector<uint32_t> temp;
+            for(auto t: tids) {
+                temp.push_back(t.second);
+            }
+            std::sort(temp.begin(), temp.end());
+            
+            std::vector<int> counts(Env::nthreads+1);
+            
+            for(uint32_t j = 0; j < temp.size(); j++) {
+                counts[temp[j]]++;
+            }
+            printf("%d ", i);
+            
+            for(auto t: temp) {
+                printf("%d ", t);
+            }
+            /*
+            for(uint32_t j = 1; j < counts.size(); j++) {
+                //if(counts[j])  printf("%d ", counts[j]);
+            }
+            */
+            printf("\n");
+            tids.clear();
+        }
+        else {
+            tids[tid]=nhelpers;
+        }
+    }
+    if(not tids.empty()) {
+        std::vector<uint32_t> temp;
+        for(auto t: tids) {
+            temp.push_back(t.second);
+        }
+        int s = temp.size();
+        while(s<Env::nthreads) {temp.push_back(0); s++;}
+        std::sort(temp.begin(), temp.end());
+        
+        std::vector<int> counts(Env::nthreads+1);
+        for(uint32_t j = 0; j < temp.size(); j++) {
+            counts[temp[j]]++;
+        }
+        printf("%d ", i);
+        /*
+        for(uint32_t j = 1; j < counts.size(); j++) {
+            //if(counts[j]) printf("%d ", counts[j]);
+        }
+        */
+        for(auto t: temp) {
+            printf("%d ", t);
+        }
+        printf("\n");
+        tids.clear();
+        
+        
+        /*
+        printf("%d ", i);
+        for(auto t: temp) {
+            {printf("%d ", t);}
+        }
+        printf("\n");
+        */
+        tids.clear();
+    }
+    
+    
+    
+    //tids.push_back(annotated.front().tid);
+    //uint64_t b_nbytes = annotated.front().b_bytes;
+    //uint64_t c_nbytes = annotated.front().c_bytes;
+    /*
+    uint32_t nhelpers = annoteted.front().layer;
+    int r = 100;
+    bool p = true;
+    for(uint32_t i = 1; i < annotated.size(); i++) {
+        if(i%r == 0) {
+            p = true;
+        }
+        uint32_t t1 = (uint32_t) ceil(annotated[i].time/1e6);
+        if(t == t1) {
+            //if(std::find(l.begin(), l.end(), annotated[i].layer) == l.end()) {
+                tids.push_back(annotated[i].tid);
+                //c_nbytes += annotated[i].c_bytes;
+                nhelpers += annotated[i].layer;
+            //}
+        }
+        if((t != t1) or (i+1 == annotated.size())) {
+            std::sort(tids.begin(), tids.end());
+            auto last = std::unique(tids.begin(), tids.end());
+            tids.erase(last, tids.end());
+            //printf("i=%d time=%d b_nbyets=%lu c_bytes=%lu\n", i, t, l.size() * b_nbytes, c_nbytes);
+            if(p) {
+                printf("%d %lu %lu\n", i, l.size() * b_nbytes, c_nbytes);
+                p = false;
+            }
+            //for(auto ll: l) {printf("%d ", ll);} printf("\n");
+            t = (uint32_t) ceil(annotated[i].time/1e6);
+            tids.clear();
+            tids.shrink_to_fit();
+            tids.push_back(annotated[i].tids);
+        }
+    }
+*/
+    
+}
 template<typename Weight>
 void Net<Weight>::printTimesExcel() {
     Env::barrier();
@@ -444,6 +599,8 @@ void Net<Weight>::printTimesExcel() {
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
     stats(Env::execution_time, sum, mean, std_dev, min, max);
     Logging::print(Logging::LOG_LEVEL::VOID, "exec time: %.3f %.3f %.3f\n", min, max, sum);
+    
+    annotate2();
     
     /*
     stats(Env::spmm_symb_time, sum, mean, std_dev, min, max);
@@ -458,6 +615,7 @@ void Net<Weight>::printTimesExcel() {
     stats(Env::hybrid_probe_time, sum, mean, std_dev, min, max);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f\n", min, max, sum);
     */
+    /*
     if(Env::nnzs[0].empty()) return;
     
     for(int j = 0; j < Env::nthreads; j++) {
@@ -474,7 +632,7 @@ void Net<Weight>::printTimesExcel() {
         }
         printf("\n");
     }
-    
+    */
     /*
     int m = Env::nnzs[0].size();
     for(int i = 0; i < m; i++) {
@@ -700,7 +858,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     
     auto start_t = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
-        auto now1 = std::chrono::high_resolution_clock::now();
+        //auto now1 = std::chrono::high_resolution_clock::now();
         std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
         
         //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
@@ -742,10 +900,11 @@ void Net<Weight>::data_x_model(const int32_t tid) {
             Env::data_counters[tid].push_back({elapsed, Env::rank, tid, l, (B_CSC->IA_blk->nitems*4*2+ncols*4), (uint64_t) (C_CSC->IA_blk->nitems*4*2+ncols*4)});
         */     
 
-            
+       /*     
         auto now2 = std::chrono::high_resolution_clock::now();
         double elapsed = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(now2 - now1).count());
         Env::times[tid].push_back(elapsed);
+        */
         
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
@@ -781,7 +940,7 @@ void Net<Weight>::data_x_data(const int32_t tid) {
     
     auto start_t = std::chrono::high_resolution_clock::now();  
     for (uint32_t l = 0; l < maxLayers; l++) {
-        auto now1 = std::chrono::high_resolution_clock::now();
+        //auto now1 = std::chrono::high_resolution_clock::now();
         
         struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                  : output->tiles[leader_rowgroup][0];
@@ -804,10 +963,12 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         //printf("time %f: Rank=%d tid=%2d layer=%3d nnz=%d B=%lu C=%lu\n", elapsed, Env::rank, tid, l, Env::nnzs[tid][l], B_SIZE, C_SIZE);
         //Env::data_counters[tid].push_back({elapsed, Env::rank, tid, l, (B_CSC->IA_blk->nitems*4*2+ncols*4), (uint64_t) (C_CSC->IA_blk->nitems*4*2+ncols*4)});
         
-           
+        
+        /*        
         auto now2 = std::chrono::high_resolution_clock::now();
         double elapsed = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(now2 - now1).count());
         Env::times[tid].push_back(elapsed);
+        */
        
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
@@ -823,7 +984,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     uint32_t my_rowgroup = Env::thread_rowgroup[tid];
     int32_t my_leader_tid = 0;
     bool has_dual_spmat = false;
-
+    Env::global_time = Env::tic();
     auto start_t = std::chrono::high_resolution_clock::now();  
     uint32_t my_start_layer = hybrid_x_data(Env::my_threads[tid], tid);
     if(my_start_layer < maxLayers) {
@@ -915,7 +1076,10 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
                            nrows, ncols, start, end, off, 
                            thread_st, leader_tid, tid); 
         
-        Env::scores[sid1][tid]++;            
+        Env::scores[sid1][tid]++;     
+
+        double elapsed = Env::toc(Env::global_time);
+        Env::data_counters[tid].push_back({elapsed, Env::rank, tid, 1, 0,0});        
         
         if(breaking) break;
     }
@@ -986,6 +1150,15 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
                my_threads, thread_st, leader_tid, tid);
                                    
        if(tid == leader_tid) Env::scores[sid1][tid]++;
+       
+       double elapsed = Env::toc(Env::global_time);
+       if(tid == leader_tid) {
+         
+            Env::data_counters[tid].push_back({elapsed, Env::rank, tid, (uint32_t)my_threads.size(), 0,0});        
+       }
+       else {
+            Env::data_counters[tid].push_back({elapsed, Env::rank, tid, 0, 0,0});          
+       }
     }
 }
 
