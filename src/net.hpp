@@ -512,10 +512,8 @@ void annotate2() {
             for(auto t: tids) {
                 if(not t.second) {tf = true; break;}
             }
-            
-            if(tf) {
             printf("%d ", i);
-            
+            if(tf) {
             for(auto t: tids) {
                 printf("%d ", t.second);
             }
@@ -539,14 +537,16 @@ void annotate2() {
         for(auto t: tids1) {
             if(not t.second) {tf = true; break;}
         }
+        printf("%d ", i);
         
         if(tf) {
-        printf("%d ", i);
         
         for(auto t: tids1) {
             printf("%d ", t.second);
         }
+        
         }
+        printf("\n");
     }
     
     
