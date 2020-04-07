@@ -482,27 +482,34 @@ void annotate2() {
     */
     
     uint32_t t = (uint32_t) ceil(annotated.front().time/1e6);
-    std::unordered_map<int,int> tids;
+    std::map<int,int> tids;
+    std::map<int,int> tids1;
+    //std::unordered_map<int,int> tids;
     uint32_t i=0;
     for(i = 0; i < annotated.size(); i++) {
         int tid = annotated[i].tid;
         int nhelpers = annotated[i].layer;
         if(tids.size() == (uint32_t) Env::nthreads) {
+            tids1.clear();
+            tids1 = tids;
+            /*
             std::vector<uint32_t> temp;
             for(auto t: tids) {
                 temp.push_back(t.second);
             }
-            std::sort(temp.begin(), temp.end());
             
+            std::sort(temp.begin(), temp.end());
+
             std::vector<int> counts(Env::nthreads+1);
             
             for(uint32_t j = 0; j < temp.size(); j++) {
                 counts[temp[j]]++;
             }
+            */
             printf("%d ", i);
             
-            for(auto t: temp) {
-                printf("%d ", t);
+            for(auto t: tids) {
+                printf("%d ", t.second);
             }
             /*
             for(uint32_t j = 1; j < counts.size(); j++) {
@@ -516,41 +523,17 @@ void annotate2() {
             tids[tid]=nhelpers;
         }
     }
+    
+    
     if(not tids.empty()) {
-        std::vector<uint32_t> temp;
-        for(auto t: tids) {
-            temp.push_back(t.second);
-        }
-        int s = temp.size();
-        while(s<Env::nthreads) {temp.push_back(0); s++;}
-        std::sort(temp.begin(), temp.end());
-        
-        std::vector<int> counts(Env::nthreads+1);
-        for(uint32_t j = 0; j < temp.size(); j++) {
-            counts[temp[j]]++;
-        }
         printf("%d ", i);
-        /*
-        for(uint32_t j = 1; j < counts.size(); j++) {
-            //if(counts[j]) printf("%d ", counts[j]);
-        }
-        */
-        for(auto t: temp) {
-            printf("%d ", t);
+    
+        for(auto t: tids1) {
+            printf("%d ", t.second);
         }
         printf("\n");
-        tids.clear();
-        
-        
-        /*
-        printf("%d ", i);
-        for(auto t: temp) {
-            {printf("%d ", t);}
-        }
-        printf("\n");
-        */
-        tids.clear();
     }
+    
     
     
     
