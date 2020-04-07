@@ -489,6 +489,7 @@ void annotate2() {
     
     uint32_t i=0;
     for(i = 0; i < annotated.size(); i++) {
+        double time = annotated[i].time/1e6;
         int tid = annotated[i].tid;
         int nhelpers = annotated[i].layer;
         if(tids.size() == (uint32_t) Env::nthreads) {
@@ -500,7 +501,7 @@ void annotate2() {
                 counts1 += t.second==1;
             }
             
-            printf("%d %d %d\n",i, counts1, Env::nthreads-counts1);
+            printf("%d %d %d\n",time, counts1, Env::nthreads-counts1);
             /*
             std::vector<uint32_t> temp;
             for(auto t: tids) {
