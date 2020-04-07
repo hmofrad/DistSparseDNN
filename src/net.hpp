@@ -494,6 +494,13 @@ void annotate2() {
         if(tids.size() == (uint32_t) Env::nthreads) {
             tids1.clear();
             tids1 = tids;
+            int counts1 = 0;
+            
+            for(auto t: tids) {
+                counts1 += t.second==1;
+            }
+            
+            printf("%d %d %d\n",i, counts1, Env::nthreads-counts1);
             /*
             std::vector<uint32_t> temp;
             for(auto t: tids) {
@@ -508,6 +515,7 @@ void annotate2() {
                 counts[temp[j]]++;
             }
             */
+            /*
             bool tf = false;
             for(auto t: tids) {
                 if(not t.second) {tf = true; break;}
@@ -518,12 +526,14 @@ void annotate2() {
                 printf("%d ", t.second);
             }
             }
+            printf("\n");
+            */
             /*
             for(uint32_t j = 1; j < counts.size(); j++) {
                 //if(counts[j])  printf("%d ", counts[j]);
             }
             */
-            printf("\n");
+            
             tids.clear();
         }
         else {
@@ -533,6 +543,16 @@ void annotate2() {
     
     
     if(not tids.empty()) {
+        
+        int counts1 = 0;
+        
+        for(auto t: tids) {
+            counts1 += t.second==1;
+        }
+        
+        printf("%d %d %d\n",i, counts1, Env::nthreads-counts1);
+        
+        /*
         bool tf = false;
         for(auto t: tids1) {
             if(not t.second) {tf = true; break;}
@@ -547,6 +567,7 @@ void annotate2() {
         
         }
         printf("\n");
+        */
     }
     
     
