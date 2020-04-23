@@ -133,7 +133,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
     long nbuckets_cols = 1;
     
     input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, nrows, ncols, nbuckets_rows, nbuckets_cols));
-    
+    /*
     uint64_t total_memory = nnz*sizeof(uint32_t) + nnz*sizeof(Weight);
     if(compression_type == COMPRESSED_FORMAT::_CSC_) {
         total_memory += ncols*sizeof(uint32_t);
@@ -149,6 +149,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_,
         split_factor = (total_memory+Env::L3_CACHE_SIZE-1)/Env::L3_CACHE_SIZE;
     }
     //split_factor=1;
+    */
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                                    nnz, nrows, ncols, 
@@ -635,7 +636,7 @@ void Net<Weight>::printTimesExcel() {
     
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
     stats(Env::execution_time, sum, mean, std_dev, min, max);
-    Logging::print(Logging::LOG_LEVEL::VOID, "exec time: %.3f %.3f %.3f\n", min, max, sum);
+    Logging::print(Logging::LOG_LEVEL::VOID, "exec time: %.3f %.3f %.3f %3f %3f\n", min, max, sum, mean, std_dev);
     
     //annotate2();
     
