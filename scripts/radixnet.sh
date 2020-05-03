@@ -1,22 +1,20 @@
 #!/bin/bash
 # (c) Mohammad Hasanzadeh Mofrad, 2020
 # (e) m.hasanzadeh.mofrad@gmail.com
-# Run: chmod +x text2bin.sh && ./text2bin.sh
+# Run: chmod +x radixnet.sh && ./radixnet.sh
 
 echo "Sparse Deep Neural Network Challange Dataset (http://graphchallenge.mit.edu/)"
 echo "Script for converting dataset text files into binary files"
-echo "Approximate required space is 100 GB"
+echo "Approximate required space for the dataset is 100 GB"
 
-if [ "$#" -ne 1 ] || ! [ -d "$1" ]; then
+if [ "$#" -ne 1 ]; then
 	echo "Usage: $0 DIRECTORY"
 	exit 1
 fi
 
-
 DATA_DIR=$1
 TXT_DIR=text
 BIN_DIR=bin
-
 mkdir -p ${DATA_DIR}
 
 NEURONS=(1024 4096 16384 65536)
@@ -84,7 +82,7 @@ done
 
 BIN_DIR_DNN=${DATA_DIR}/${BIN_DIR}/DNN
 mkdir -p ${BIN_DIR_DNN}
-echo "Converting   DNN files from text (${TXT_DIR_DNN})   to binary (${BIN_DIR_DNN})"
+echo "Converting DNN files from text (${TXT_DIR_DNN})   to binary (${BIN_DIR_DNN})"
 
 for N in "${NEURONS[@]}"; do
 	for L in "${LAYERS[@]}"; do
@@ -101,7 +99,7 @@ for N in "${NEURONS[@]}"; do
 	FILE_BIN_PATH=${BIN_DIR_DNN}/${DNN_FILE_PREFIX}${N}
 	if [ ! -d "${FILE_BIN_PATH}" ]; then
 		mkdir ${FILE_BIN_PATH}
-		for i in {1..1920..1}; do
+		for (( i=1; i<=${LAYERS[-1]}; i++ )); do
 			FILE_TSV=${FILE_TSV_PATH}/n${N}-l${i}.tsv
 			FILE_BIN=${FILE_BIN_PATH}/n${N}-l${i}.bin
 			./${CONVERTER} ${FILE_TSV} ${FILE_BIN} 3
