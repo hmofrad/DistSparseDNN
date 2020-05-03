@@ -1,4 +1,5 @@
 #!/bin/bash
+# radixnet.sh Script for downloading and converting radixnet into binary files
 # (c) Mohammad Hasanzadeh Mofrad, 2020
 # (e) m.hasanzadeh.mofrad@gmail.com
 # Run: chmod +x radixnet.sh && ./radixnet.sh
