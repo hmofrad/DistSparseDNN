@@ -13,6 +13,8 @@
          2 = Two columns input text file
          3 = Three columns input text file (3rd column as double/float weights)
  */
+ 
+using WGT = float; 
 
 int main(int argc, char **argv) {
     
@@ -27,13 +29,13 @@ int main(int argc, char **argv) {
     
     std::ifstream fin(filepath_in.c_str(),   std::ios_base::in);
     if(!fin.is_open()) {
-        fprintf(stderr, "Unable to open input file\n");
+        fprintf(stderr, "Unable to open input file %s.\n", filepath_in.c_str());
         std::exit(1); 
     }
     
     std::ofstream fout(filepath_out.c_str(), std::ios_base::out);
     if(!fout.is_open()) {
-        fprintf(stderr, "Unable to open output file\n");
+        fprintf(stderr, "Unable to open output file %s.\n", filepath_out.c_str());
         std::exit(1); 
     }
     
@@ -41,8 +43,7 @@ int main(int argc, char **argv) {
     uint32_t num_rows = 0;
     uint32_t num_cols = 0;
     uint32_t i, j;
-    //double w;
-    float w;
+    WGT w;
     std::string line;
     std::istringstream iss;
     while (std::getline(fin, line)) {
@@ -64,8 +65,7 @@ int main(int argc, char **argv) {
             iss >> i >> j >> w;
             fout.write(reinterpret_cast<const char*>(&i), sizeof(uint32_t));
             fout.write(reinterpret_cast<const char*>(&j), sizeof(uint32_t));
-            //fout.write(reinterpret_cast<const char*>(&w), sizeof(double));
-            fout.write(reinterpret_cast<const char*>(&w), sizeof(float));
+            fout.write(reinterpret_cast<const char*>(&w), sizeof(WGT));
             //std::cout << "i=" << i << " j=" << j << " w=" << w << std::endl;
         }
         
