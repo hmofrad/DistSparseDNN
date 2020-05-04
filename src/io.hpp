@@ -16,8 +16,8 @@
 #include "tile.hpp"
 #include "hashers.hpp"
 enum INPUT_TYPE {_TEXT_, _BINARY_};
-enum VALUE_TYPE {_NONZERO_INSTANCES_ONLY_, _INSTANCE_AND_VALUE_PAIRS_};
-enum CATEGORY_TYPE {_NONZERO_INSTANCES_ONLY_1, _INSTANCE_AND_VALUE_PAIRS_1};
+enum VALUE_TYPE {_CONSTANT_, _NONZERO_INSTANCES_ONLY_, _INSTANCE_AND_VALUE_PAIRS_};
+enum CATEGORY_TYPE {_NONZERO_INSTANCES_ONLY_1, _INSTANCE_AND_PREDICTED_CLASS_PAIRS_1};
 enum BIAS_TYPE {_CONSTANTS_, _VECTORS_};
 
 namespace IO {
@@ -25,7 +25,8 @@ namespace IO {
     uint64_t get_nnzs(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const uint32_t nrows);
 	template<typename Weight>
     std::vector<struct Triple<Weight>> read_file_ijw(const std::string input_file, const INPUT_TYPE input_type, std::shared_ptr<struct TwoDHasher> hasher, bool one_rank, const uint32_t nrows, const uint32_t ncols);
-    uint32_t read_file_iv(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const VALUE_TYPE value_type, std::vector<uint32_t>& values, const uint32_t nrows);
+	template<typename Weight>
+    uint32_t read_file_iv(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const VALUE_TYPE value_type, std::vector<Weight>& values, const uint32_t nrows);
     
 	
     template<typename Weight>
@@ -75,18 +76,18 @@ uint64_t IO::get_nnzs(const std::string input_file, const INPUT_TYPE input_type,
 			std::exit(Env::finalize());
 		}
 		
-		uint64_t filesize, offset = 0;
+		uint64_t file_size, offset = 0;
 		fin.seekg (0, std::ios_base::end);
-		filesize = (uint64_t) fin.tellg();
+		file_size = (uint64_t) fin.tellg();
 		fin.seekg(0, std::ios_base::beg);
 		
-		if(filesize % sizeof(struct Triple<Weight>)) {
+		if(file_size % sizeof(struct Triple<Weight>)) {
 			Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", input_file.c_str());
 			std::exit(Env::finalize());
 		}
 		
 		struct Triple<Weight> triple;
-		while(offset < filesize) {
+		while(offset < file_size) {
 			fin.read(reinterpret_cast<char*>(&triple), sizeof(struct Triple<Weight>));
 			offset += sizeof(struct Triple<Weight>);
 			triple.row = hasher->hasher_r->hash(triple.row);
@@ -100,10 +101,8 @@ uint64_t IO::get_nnzs(const std::string input_file, const INPUT_TYPE input_type,
 	return ninput_nnzs;
 }
 
-
-
 template<typename Weight>
-std::vector<struct Triple<Weight>> IO::read_file(const std::string input_file, const INPUT_TYPE input_type, std::shared_ptr<struct TwoDHasher> hasher, bool one_rank, const uint32_t nrows,  const uint32_t ncols) {
+std::vector<struct Triple<Weight>> IO::read_file_ijw(const std::string input_file, const INPUT_TYPE input_type, std::shared_ptr<struct TwoDHasher> hasher, bool one_rank, const uint32_t nrows,  const uint32_t ncols) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Start reading the input file %s\n", input_file.c_str());
 	std::vector<struct Triple<Weight>> triples;
 	std::vector<std::vector<struct Triple<Weight>>> triples1(Env::nthreads);
@@ -121,7 +120,7 @@ std::vector<struct Triple<Weight>> IO::read_file(const std::string input_file, c
 		}
 		fin.clear();
 		fin.seekg(0, std::ios_base::beg);
-		Logging::print(Logging::LOG_LEVEL::INFO, "Read text: File contains %lu lines\n", nlines);
+		Logging::print(Logging::LOG_LEVEL::INFO, "Read file: File contains %lu lines\n", nlines);
 		
 		uint64_t share = nlines / Env::nranks;
 		uint64_t start_line = Env::rank * share;
@@ -178,7 +177,7 @@ std::vector<struct Triple<Weight>> IO::read_file(const std::string input_file, c
 				triple.row = hasher->hasher_r->hash(triple.row);
 				triple.col = hasher->hasher_c->hash(triple.col);
 				if(triple.col >= ncols) {
-					Logging::print(Logging::LOG_LEVEL::ERROR, "Incorrent file dimensions [%dx%d]\n", nrows, ncols); 
+					Logging::print(Logging::LOG_LEVEL::ERROR, "Incorrect file dimensions [%dx%d]\n", nrows, ncols); 
 					std::exit(Env::finalize());
 				}
 				if(triple.row < nrows) triples1[tid].push_back(triple);
@@ -197,31 +196,31 @@ std::vector<struct Triple<Weight>> IO::read_file(const std::string input_file, c
 			std::exit(Env::finalize());
 		}
 		
-		uint64_t filesize, offset = 0;
+		uint64_t file_size, offset = 0;
 		fin.seekg (0, std::ios_base::end);
-		filesize = (uint64_t) fin.tellg();
+		file_size = (uint64_t) fin.tellg();
 		fin.clear();
 		fin.close();
 		
-		if(filesize % sizeof(struct Triple<Weight>)) {
+		if(file_size % sizeof(struct Triple<Weight>)) {
 			Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", input_file.c_str());
 			std::exit(Env::finalize());
 		}
 		
-		uint64_t nTriples = filesize / sizeof(struct Triple<Weight>);
-		Logging::print(Logging::LOG_LEVEL::INFO, "Read binary: File size is %lu bytes with %lu triples\n", filesize, nTriples);
+		uint64_t nTriples = file_size / sizeof(struct Triple<Weight>);
+		Logging::print(Logging::LOG_LEVEL::INFO, "Read file: File size is %lu bytes with %lu triples\n", file_size, nTriples);
 		
 		uint64_t share = (nTriples / Env::nranks) * sizeof(struct Triple<Weight>);
 		
 		uint64_t start_offset = Env::rank * share;
-		uint64_t end_offset = (Env::rank != Env::nranks - 1) ? ((Env::rank + 1) * share) : filesize;
+		uint64_t end_offset = (Env::rank != Env::nranks - 1) ? ((Env::rank + 1) * share) : file_size;
 		share = (Env::rank == Env::nranks - 1) ? end_offset - start_offset : share;
 		uint64_t share_tripels = share/sizeof(struct Triple<Weight>);
 
 		if(one_rank) {
-			share = filesize;
+			share = file_size;
 			start_offset = 0;
-			end_offset = filesize;
+			end_offset = file_size;
 			share_tripels = share/sizeof(struct Triple<Weight>);
 		}
 		
@@ -249,7 +248,7 @@ std::vector<struct Triple<Weight>> IO::read_file(const std::string input_file, c
 				triple.row = hasher->hasher_r->hash(triple.row);
 				triple.col = hasher->hasher_c->hash(triple.col);
 				if(triple.col >= ncols) {
-					Logging::print(Logging::LOG_LEVEL::ERROR, "Incorrent file dimensions [%dx%d]\n", nrows, ncols); 
+					Logging::print(Logging::LOG_LEVEL::ERROR, "Incorret file dimensions [%dx%d]\n", nrows, ncols); 
 					std::exit(Env::finalize());
 				}
 				if(triple.row < nrows) triples1[tid].push_back(triple);
@@ -262,13 +261,115 @@ std::vector<struct Triple<Weight>> IO::read_file(const std::string input_file, c
 	Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Done reading the input file %s\n", input_file.c_str());
 	Env::barrier(); 
 	
-    
-	
     return(triples);
 }
 
+template<typename Weight>
+uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const VALUE_TYPE value_type, std::vector<Weight>& values, const uint32_t nrows) {
+	Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Start reading file %s\n", input_file.c_str());
+	values.resize(nrows);
+	uint32_t ninstances = 0;
+	uint32_t instance = 0;
+	Weight value = 0;
+	if(input_type == INPUT_TYPE::_TEXT_) {
+		std::ifstream fin(input_file.c_str(), std::ios_base::in);
+		if(not fin.is_open()) {
+			Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", input_file.c_str());
+			std::exit(Env::finalize());
+		}
 
+		uint32_t nlines = 0;
+		std::string line;
+		while (std::getline(fin, line)) {
+			nlines++;
+		}
+		fin.clear();
+		fin.seekg(0, std::ios_base::beg);
 
+		std::istringstream iss;
+		while(std::getline(fin, line)) {
+			iss.clear();
+			iss.str(line);
+			if(value_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
+				iss >> instance;
+				instance = hasher->hasher_r->hash(instance);
+				if(instance < nrows) {
+					values[instance] = 1;
+					ninstances++;
+				}
+			}
+			else if(value_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
+				iss >> instance >>  value;
+				instance = hasher->hasher_r->hash(instance);
+				if(instance < nrows) {
+					values[instance] = value;
+					ninstances++;
+				}
+			}
+			nlines--;
+		}
+		fin.close();
+
+		if(nlines) {
+			Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", input_file.c_str());
+			std::exit(Env::finalize());
+		}
+		
+	}	
+	else if(input_type == INPUT_TYPE::_BINARY_) {
+		std::ifstream fin(input_file.c_str(), std::ios_base::binary);
+		if(not fin.is_open()) {
+			Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", input_file.c_str());
+			std::exit(Env::finalize());
+		}
+		
+		uint64_t file_size, offset = 0;
+		fin.seekg (0, std::ios_base::end);
+		file_size = (uint64_t) fin.tellg();
+		fin.seekg(0, std::ios_base::beg);
+
+		if(file_size % sizeof(uint32_t)) {
+			Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", input_file.c_str());
+			std::exit(Env::finalize());
+		}
+		uint32_t loop_count = 0;		
+		while(offset < file_size) {
+			if(value_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
+				fin.read(reinterpret_cast<char*>(&instance), sizeof(uint32_t));
+				offset += sizeof(uint32_t);
+				instance = hasher->hasher_r->hash(instance);
+				if(instance < nrows) {
+					values[instance] = 1;
+					ninstances++;
+				}
+			}
+			else if(value_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
+				fin.read(reinterpret_cast<char*>(&instance), sizeof(uint32_t));
+				offset += sizeof(uint32_t);
+				fin.read(reinterpret_cast<char*>(&value), sizeof(Weight));
+				offset += sizeof(Weight);
+				instance = hasher->hasher_r->hash(instance);
+				if(instance < nrows) {
+					values[instance] = value;
+					ninstances++;
+				}
+			}
+			loop_count++;
+		}
+		fin.close();
+		
+		uint64_t loop_size = (value_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) ? (loop_count * sizeof(uint32_t)) :
+																			        (loop_count * 2 * sizeof(uint32_t));
+		if(loop_size != file_size) {
+			Logging::print(Logging::LOG_LEVEL::ERROR, "Reading %s\n", input_file.c_str());
+			std::exit(Env::finalize());
+		}
+	}	
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Total number of instances %d\n", ninstances);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Done reading file %s\n", input_file.c_str());
+    Env::barrier();
+    return(ninstances);	
+}
 
 template<typename Weight>
 std::tuple<uint64_t, uint32_t, uint32_t> IO::text_file_stat(const std::string input_file) {
@@ -673,7 +774,7 @@ int32_t IO::binary_file_categories(const std::string input_file, std::vector<uin
     uint32_t category = 0;
     categories.resize(tile_height);
     while(offset < filesize) {
-		if(category_type == CATEGORY_TYPE::_NONZERO_INSTANCES_ONLY_) {
+		if(category_type == CATEGORY_TYPE::_NONZERO_INSTANCES_ONLY_1) {
 			fin.read(reinterpret_cast<char*>(&instance), sizeof(uint32_t));
 			offset += sizeof(uint32_t);
 			instance = hasher->hasher_r->hash(instance);
@@ -682,7 +783,7 @@ int32_t IO::binary_file_categories(const std::string input_file, std::vector<uin
 				ninstances++;
 			}
 		}
-		else if(category_type == CATEGORY_TYPE::_INSTANCE_AND_PREDICTED_CLASS_PAIRS_) {
+		else if(category_type == CATEGORY_TYPE::_INSTANCE_AND_PREDICTED_CLASS_PAIRS_1) {
 			fin.read(reinterpret_cast<char*>(&instance), sizeof(uint32_t));
 			offset += sizeof(uint32_t);
 			fin.read(reinterpret_cast<char*>(&category), sizeof(uint32_t));
