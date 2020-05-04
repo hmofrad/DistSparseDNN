@@ -226,7 +226,7 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
         C_IA   = C_CSR->IA_blk->ptr;
         C_JA   = C_CSR->JA_blk->ptr;
         C_A   = C_CSR->A_blk->ptr;
-                        
+
         if((A_ncols != B_nrows) or (s->nitems < B_ncols)) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu] Bias[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems, b->nitems);
             std::exit(1); 
@@ -304,7 +304,7 @@ template<typename Weight>
 inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
                                              const uint32_t start_row,
                                              const std::vector<uint32_t> trueCategories,
-                                             const int32_t nCategories,
+                                             const uint32_t npredicted_instances,
                                              const int32_t leader_tid, 
                                              const int32_t tid) {                  
     if(tid == leader_tid) {
@@ -364,10 +364,10 @@ inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compre
                 count++;
             }
         }
-        int counts = 0;
-        MPI_Allreduce(&count, &counts, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        uint32_t counts = 0;
+        MPI_Allreduce(&count, &counts, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
         
-        bool passed = (counts == nCategories);
+        bool passed = (counts == npredicted_instances);
         if(passed) {
             Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
         }
@@ -423,8 +423,8 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
 template<typename Weight>
 inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
                                 const uint32_t start_row,
-                                const std::vector<uint32_t> trueCategories,
-                                const int32_t nCategories,
+                                const std::vector<uint32_t> true_categories,
+                                const uint32_t npredicted_instances,
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
 
@@ -476,7 +476,7 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
 
     int count = 0;
     for(uint32_t i = 0; i < A_nrows; i++) {
-        if(trueCategories[start_row + i] != allCategories[i]) {
+        if(true_categories[start_row + i] != allCategories[i]) {
             break;
         }
         if(allCategories[i]) {
@@ -487,15 +487,14 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
     Env::counters[tid].checkcount = count;
     pthread_barrier_wait(&Env::thread_barrier);
     if(tid == leader_tid) {
-        int counts = 0;
+        uint32_t counts = 0;
         for(auto counter: Env::counters) {
             counts += counter.checkcount;
         }
-        int countss = 0;
-        MPI_Allreduce(&counts, &countss, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+        uint32_t countss = 0;
+        MPI_Allreduce(&counts, &countss, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
         
-        
-        bool passed = (countss == nCategories);
+        bool passed = (countss == npredicted_instances);
         if(passed) {
             Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
         }
@@ -526,10 +525,12 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<
     COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;    
     if((compression_type == COMPRESSED_FORMAT::_CSC_) or (compression_type == COMPRESSED_FORMAT::_CSR_)) {
         double start_time = 0;
+
         if(tid ==leader_tid) start_time = Env::tic(); 
             std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, tid);
             pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
         if(tid ==leader_tid) Env::spmm_symb_time[tid] += Env::toc(start_time);   
+
         if(tid ==leader_tid) start_time = Env::tic();
             uint64_t nnz = Env::adjust_nnz(my_threads, leader_tid, tid);
             C_SPMAT->reallocate(nnz, nrows, ncols, leader_tid, tid);
@@ -542,7 +543,7 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<
             Env::adjust_displacement(my_threads, leader_tid, tid);
             C_SPMAT->adjust(my_threads, leader_tid, tid);	
         if(tid ==leader_tid) Env::spmm_real_time[tid] += Env::toc(start_time);
-        
+
         if(tid ==leader_tid) start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
             A_SPMAT->repopulate(C_SPMAT, my_threads, leader_tid, tid);
@@ -556,8 +557,8 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<
 
 template<typename Weight>
 inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct Tile<Weight>>> tiles,
-                                const std::vector<uint32_t> trueCategories,
-                                const int32_t nCategories,
+                                const std::vector<uint32_t> true_categories,
+                                const uint32_t npredicted_instances,
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
     pthread_barrier_wait(&Env::thread_barrier);                                        
@@ -586,7 +587,7 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
                 A_IA   = A_CSC->IA_blk->ptr;
                 A_JA   = A_CSC->JA_blk->ptr;
                 A_A   = A_CSC->A_blk->ptr;
-                
+
                 allCategories.resize(A_nrows);  
                 for(uint32_t j = 0; j < A_ncols; j++) {
                     for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
@@ -616,7 +617,7 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
             }    
             
             for(uint32_t i = 0; i < A_nrows; i++) {
-                if(trueCategories[start_row + i] != allCategories[i]) {
+                if(true_categories[start_row + i] != allCategories[i]) {
                     break;
                 }
                 if(allCategories[i]) {
@@ -625,9 +626,9 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
             }
         }
         
-        int counts = 0;
-        MPI_Allreduce(&count, &counts, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-        bool passed = (counts == nCategories);
+        uint32_t counts = 0;
+        MPI_Allreduce(&count, &counts, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
+        bool passed = (counts == npredicted_instances);
         if(passed) {
             Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
         }
@@ -641,8 +642,8 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
 
 template<typename Weight>
 inline void work_x_stealing_validate_prediction(std::vector<std::vector<struct Tile<Weight>>> tiles,
-                                const std::vector<uint32_t> trueCategories,
-                                const int32_t nCategories,
+                                const std::vector<uint32_t> true_categories,
+                                const uint32_t npredicted_instances,
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
     pthread_barrier_wait(&Env::thread_barrier);     
@@ -653,7 +654,7 @@ inline void work_x_stealing_validate_prediction(std::vector<std::vector<struct T
         }
     }
     pthread_barrier_wait(&Env::thread_barrier);   
-    manager_x_worker_validate_prediction(tiles, trueCategories, nCategories, leader_tid, tid);
+    manager_x_worker_validate_prediction(tiles, true_categories, npredicted_instances, leader_tid, tid);
 }
 
 
@@ -661,7 +662,7 @@ inline void work_x_stealing_validate_prediction(std::vector<std::vector<struct T
 /*
 template<typename Weight>
 inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
-                                const std::vector<uint32_t> trueCategories,
+                                const std::vector<uint32_t> true_categories,
                                 const uint32_t start_row,
                                 const int32_t tid) {
     const uint64_t A_nnz   = A_CSC->nnz;
@@ -680,7 +681,7 @@ inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
 
     bool me = 1;
     for(uint32_t i = 0; i < A_nrows; i++) {
-        if(trueCategories[start_row + i] != allCategories[i]) {
+        if(true_categories[start_row + i] != allCategories[i]) {
             me = 0;
             break;
         }
@@ -709,7 +710,7 @@ inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
 
 template<typename Weight>
 inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
-                                const std::vector<uint32_t> trueCategories,
+                                const std::vector<uint32_t> true_categories,
                                 const uint32_t start_row) {
     const uint64_t A_nnz   = A_CSC->nnz;
     const uint32_t A_nrows = A_CSC->nrows;
@@ -728,7 +729,7 @@ inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
     
     char me = 1;
     for(uint32_t i = 0; i < A_nrows; i++) {
-        if(trueCategories[start_row + i] != allCategories[i]) {
+        if(true_categories[start_row + i] != allCategories[i]) {
             me = 0;
             break;
         }
@@ -741,7 +742,7 @@ inline bool validate_prediction(const std::shared_ptr<struct CSC<Weight>> A_CSC,
 
 template<typename Weight>
 inline int32_t validate_prediction1(const std::shared_ptr<struct CSC<Weight>> A_CSC,
-                                const std::vector<uint32_t> trueCategories,
+                                const std::vector<uint32_t> true_categories,
                                 const uint32_t start_row) {
     const uint64_t A_nnz   = A_CSC->nnz;
     const uint32_t A_nrows = A_CSC->nrows;
@@ -760,7 +761,7 @@ inline int32_t validate_prediction1(const std::shared_ptr<struct CSC<Weight>> A_
     
     int32_t count = 0;
     for(uint32_t i = 0; i < A_nrows; i++) {
-        if(trueCategories[start_row + i] != allCategories[i]) {
+        if(true_categories[start_row + i] != allCategories[i]) {
             count = -1;
             break;
         }
