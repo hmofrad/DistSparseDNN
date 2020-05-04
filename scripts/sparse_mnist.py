@@ -125,7 +125,7 @@ for i in range(ninstances):
     for j in range(x_train[i].shape[0]):
         v=x_train[i][j]
         if(v != 0):
-            rows[k]=i
+            rows[k]=i+1
             cols[k]=j
             vals[k]=v
             k+=1
