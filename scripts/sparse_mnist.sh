@@ -46,13 +46,17 @@ LAYERS=30
 for (( i=0; i<$LAYERS; i++ )); do
 	FILE_TXT=${TXT_DIR}/weights${i}.txt
 	FILE_BIN=${BIN_DIR}/weights${i}.bin
-	./${CONVERTER} ${FILE_TXT} ${FILE_BIN} 3
+	if [ ! -f "${FILE_BIN}" ]; then
+		./${CONVERTER} ${FILE_TXT} ${FILE_BIN} 3
+	fi
 done
 
 for (( i=0; i<$LAYERS; i++ )); do
 	FILE_TXT=${TXT_DIR}/bias${i}.txt
 	FILE_BIN=${BIN_DIR}/bias${i}.bin
-	./${CONVERTER} ${FILE_TXT} ${FILE_BIN} 4
+	if [ ! -f "${FILE_BIN}" ]; then
+		./${CONVERTER} ${FILE_TXT} ${FILE_BIN} 4
+	fi
 done
 
 exit;
