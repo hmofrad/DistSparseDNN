@@ -732,8 +732,8 @@ template<typename Weight>
 void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, 
                                                                              const uint32_t start_col, const uint32_t tile_width) {    
     const ColSort<Weight> f_col;
-    std::sort(triples.begin(), triples.end(), f_col);      
-    
+    std::sort(triples.begin(), triples.end(), f_col);   
+	
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
     Weight* A = CSC::A_blk->ptr;
@@ -751,6 +751,7 @@ void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const ui
         IA[i] = pair.first;
         A[i] = triple.weight;
         i++;
+		
     }
     
     while(j < CSC::ncols) {
@@ -758,6 +759,91 @@ void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const ui
         JA[j] = JA[j - 1];
     }
     CSC::nnz_i = CSC::nnz;   
+    
+    /*
+    if(Env::print) {
+        
+    for(uint32_t j = 0; j < 11; j++) {
+        //if(j == 8 or j == 16 or j == 24 or j == 32) {
+            printf("%d ", j);
+            for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
+                printf("%d ", IA[i]);
+            }
+            printf("\n");
+        //}
+    }
+    std::exit(0);
+    }
+    else {
+        Env::print = true;
+    }
+    */
+    
+    /*
+    std::vector<int> cols(CSC::nrows);
+    std::vector<int> rows(CSC::ncols);
+    std::vector<int> c(CSC::ncols);
+    std::vector<int> r(CSC::nrows);
+    for(uint32_t j = 0; j < CSC::ncols; j++) {
+        int nc = JA[j + 1] - JA[j];
+        cols[nc]++;
+        
+        //printf("%d(%d): ", j, JA[j + 1] - JA[j]);
+        for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
+          //  printf("%d ", IA[i]);
+            //cols[j]++;
+            r[IA[i]]++;
+            c[j]++;
+        }
+        //printf("\n");
+    }
+    */
+    /*
+    for(uint32_t i = 0; i < CSC::ncols; i++) {
+        printf("%d %d\n", i, cols[i]);
+    }
+    */
+    /*
+    if(0 and !Env::rank) {
+        //printf("%lu\n", CSC::nnz_i);
+        
+        for(uint32_t i = 0; i < CSC::ncols; i++) {
+            printf("%d %d\n", i, c[i]);
+        }
+        
+       
+        for(uint32_t i = 0; i < CSC::nrows; i++) {
+            printf("%d %d\n", i, r[i]);
+        }
+        
+        
+    }
+    Env::barrier();
+    if(Env::rank) {
+        //printf("%lu\n", CSC::nnz_i);
+        
+        for(uint32_t i = 0; i < CSC::ncols; i++) {
+            printf("%d %d\n", i, c[i]);
+        }
+        
+        
+        for(uint32_t i = 0; i < CSC::nrows; i++) {
+            printf("%d %d\n", i, r[i]);
+        }
+        
+    }
+    Env::barrier();
+    */
+    /*
+    for(uint32_t i = 0; i < CSC::nrows; i++) {
+        rows[r[i]]++;
+    }
+    for(uint32_t i = 0; i < CSC::ncols; i++) {
+        printf("%d %d\n", i, rows[i]);
+    }
+    */
+    
+    //std::exit(0);
 }
 
 template<typename Weight>
