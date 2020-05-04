@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
 		else if(mode == 4) {
             iss >> i >> w;
             fout.write(reinterpret_cast<const char*>(&i), sizeof(uint32_t));
-            fout.write(reinterpret_cast<const char*>(&j), sizeof(WGT));
+            fout.write(reinterpret_cast<const char*>(&w), sizeof(WGT));
             //std::cout << "i=" << i << " j=" << j << std::endl;
         }
         
