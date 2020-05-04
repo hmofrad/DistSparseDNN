@@ -13,8 +13,6 @@
 #include <deque>
 #include "hashers.hpp"
 
-enum CATEGORY_TYPE {_NONZERO_INSTANCES_ONLY_, _INSTANCE_AND_PREDICTED_CLASS_PAIRS_};
-enum BIAS_TYPE {_CONSTANT_, _VECTORS_};
 /* Input x layers */
 enum PARALLELISM_TYPE {_DATA_X_MODEL_, _DATA_X_DATA_, _HYBRID_X_HYBRID_, _MANAGER_X_WORKER_, _WORK_X_STEALING_, _SIZE_};
 const char* PARALLELISM_TYPES[] = {"_DATA_X_MODEL_", "_DATA_X_DATA_", "_HYBRID_X_HYBRID_", "_MANAGER_X_WORKER_", "_WORK_X_STEALING_"};
@@ -28,47 +26,50 @@ class Net {
         Net() {};
         ~Net() {};
         
-        Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, const uint32_t maxLayers_,
-            const std::string feature_file, 
-			const CATEGORY_TYPE categoryType, const  std::string categoryFile, 
-			const  std::vector<std::string> layerFiles,
-			const  BIAS_TYPE biasType, const std::vector<std::string> biasFiles, Weight biasValue,
+        Net(const uint32_t input_ninstanses_, const uint32_t input_nfeatures_, const std::string feature_file,
+			const uint32_t nneurons_, const uint32_t nmax_layers_, const  std::vector<std::string> layer_files,
+            const Weight bias_value, const  BIAS_TYPE bias_type, const std::vector<std::string> bias_files,
+			const uint32_t ncategories, const VALUE_TYPE category_type, const  std::string category_file, 
+			const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_,
             const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
-            const COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSC_,
-            const HASHING_TYPE hashing_type_ = HASHING_TYPE::_BOTH_,
-            const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_);
+            const COMPRESSED_FORMAT compression_type_ = COMPRESSED_FORMAT::_CSC_,
+            const HASHING_TYPE hashing_type_ = HASHING_TYPE::_BOTH_);
 
         std::unique_ptr<struct Tiling<Weight>> inputFeatures = nullptr;
-        std::vector<uint32_t> trueCategories;
-        std::vector<std::vector<std::unique_ptr<struct Tiling<Weight>>>> layers;
+        std::vector<uint32_t> true_categories;
+        std::vector<std::unique_ptr<struct Tiling<Weight>>> layers;
         
-        std::vector<std::vector<std::shared_ptr<struct Data_Block<Weight>>>> biasWeightVecs;
+        std::vector<std::shared_ptr<struct Data_Block<Weight>>> biasWeightVecs;
         std::vector<std::shared_ptr<struct Data_Block<Weight>>> spaWeightVec;
         
         std::unique_ptr<struct Tiling<Weight>> output = nullptr;
 		
-		//std::string feature_file;
+        //uint64_t nedges;
+        //uint32_t ninputinstanses;        
+        //
+		uint32_t input_ninstanses = 0;
+		uint32_t input_nfeatures = 0;
+		uint64_t input_nnzs = 0;
+		uint32_t nneurons = 0;
+        uint32_t nmax_layers = 0;
+        uint32_t ncategories = 0;
+		
+		uint32_t predicted_nistances;
         
-        uint64_t nedges;
-        uint32_t NinputInstanses;        
-        uint32_t Nneurons;
-        //Weight biasValue;
-        uint32_t maxLayers;
-        int32_t nCategories;
-        
-        PARALLELISM_TYPE parallelism_type;
+        PARALLELISM_TYPE parallelism_type = PARALLELISM_TYPE::_HYBRID_X_HYBRID_;
         SCHEDULING_TYPE scheduling_type = _SLOWER_FIRST_;
         bool repartition = false;
-        bool replication = false;
+        //bool replication = false;
         uint32_t split_factor = 8;
         bool numa_queues = true;
         uint32_t schduling_threshold = 4;
         
-        COMPRESSED_FORMAT compression_type;
+        COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSC_;
         bool dual_spmat = false;
         float recruiting_ratio = .3;
         
-        HASHING_TYPE hashing_type;        
+        HASHING_TYPE hashing_type = HASHING_TYPE::_BOTH_; 
+		std::vector<std::shared_ptr<struct TwoDHasher>> hashers;
         std::shared_ptr<struct TwoDHasher> input_hasher;
         std::shared_ptr<struct TwoDHasher> layer_hasher;
 
@@ -87,65 +88,74 @@ class Net {
         uint32_t hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t my_rowgroup, const int32_t tid);
         void hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t my_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid);
         bool add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid);
-        bool    add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t my_rowgroup, const uint32_t start_layer, const uint32_t start_row, const uint32_t nrows, const uint32_t ncols, const int32_t leader, const int32_t tid);
-        bool    thread_scheduling(std::deque<int32_t>& my_threads, const uint32_t my_rowgroup, std::deque<int32_t>& follower_threads, int32_t socket_id, const uint32_t start_layer, const uint32_t start_row, const uint32_t nrows, const uint32_t ncols, const int32_t leader, const int32_t tid);
+        bool add_to_my_follower_threads(std::deque<int32_t>& my_threads, const uint32_t my_rowgroup, const uint32_t start_layer, const uint32_t start_row, const uint32_t nrows, const uint32_t ncols, const int32_t leader, const int32_t tid);
+        bool thread_scheduling(std::deque<int32_t>& my_threads, const uint32_t my_rowgroup, std::deque<int32_t>& follower_threads, int32_t socket_id, const uint32_t start_layer, const uint32_t start_row, const uint32_t nrows, const uint32_t ncols, const int32_t leader, const int32_t tid);
 };
 
+
+
 template<typename Weight>
-Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, const uint32_t maxLayers_, 
-                 const std::string feature_file, 
-				 const CATEGORY_TYPE categoryType, const std::string categoryFile, 
-				 const std::vector<std::string> layerFiles,
-				 const BIAS_TYPE biasType, const std::vector<std::string> biasFiles, Weight biasValue,
-				 //const std::string inputFile_prefix, const uint32_t maxLayers_, const std::string layerFile_prefix,
-                 const PARALLELISM_TYPE parallelism_type_, const COMPRESSED_FORMAT compression_type_, 
-                 const HASHING_TYPE hashing_type_, const INPUT_TYPE input_type) 
-                     : NinputInstanses(NinputInstanses_), Nneurons(Nneurons_), 
-                       maxLayers(maxLayers_), parallelism_type(parallelism_type_), compression_type(compression_type_), hashing_type(hashing_type_) {
-    
+Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeatures_, const std::string feature_file,
+				 const uint32_t nneurons_, const uint32_t nmax_layers_, const std::vector<std::string> layer_files,
+				 const Weight bias_value, const BIAS_TYPE bias_type, const std::vector<std::string> bias_files,
+				 const uint32_t ncategories_, const CATEGORY_TYPE category_type, const std::string category_file, 
+				 const INPUT_TYPE input_type, const PARALLELISM_TYPE parallelism_type_, 
+				 const COMPRESSED_FORMAT compression_type_, const HASHING_TYPE hashing_type_)
+				     : input_ninstanses(input_ninstanses_), input_nfeatures(input_nfeatures_), 
+					   nneurons(nneurons_), nmax_layers(nmax_layers_), ncategories(ncategories_), 
+					   parallelism_type(parallelism_type_), compression_type(compression_type_), hashing_type(hashing_type_) {
+						   
     auto start = std::chrono::high_resolution_clock::now();
-	
+	input_ninstanses++;
+	//ninput_feature;
+	scheduling_type = (parallelism_type != PARALLELISM_TYPE::_HYBRID_X_HYBRID_) ? SCHEDULING_TYPE::_NONE_ : scheduling_type;
 	/*
-	Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing input feature file for %d neurons and %s\n", Nneurons, PARALLELISM_TYPES[parallelism_type]);  
+	Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing input feature file for %d neurons and %s\n", nneurons, PARALLELISM_TYPES[parallelism_type]);  
     std::vector<Weight> neuralNetBias = {-0.3,-0.35,-0.4,-0.45};
     std::vector<uint32_t> NneuronsVector = {1024, 4096, 16384, 65536};    
-    uint32_t idxN = std::distance(NneuronsVector.begin(), std::find(NneuronsVector.begin(), NneuronsVector.end(), Nneurons));
+    uint32_t idxN = std::distance(NneuronsVector.begin(), std::find(NneuronsVector.begin(), NneuronsVector.end(), nneurons));
     if(idxN >= NneuronsVector.size()) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of neurons %d\n", Nneurons);
+        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of neurons %d\n", nneurons);
         std::exit(Env::finalize());
     }    
     biasValue = neuralNetBias[idxN];
     
-    std::string feature_file = inputFile_prefix + "/sparse-images-" + std::to_string(Nneurons);
+    std::string feature_file = inputFile_prefix + "/sparse-images-" + std::to_string(nneurons);
     feature_file += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
     */
 	
-    uint64_t nnz = 0;
-    uint32_t nrows = 0;
-    uint32_t ncols = 0;
+    hashers.push_back(std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, input_ninstanses, input_nfeatures, 1, 1)));
+	long nbuckets_rows = 1, nbuckets_cols = 1;
+    //std::shared_ptr<struct TwoDHasher> input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, nrows, ncols, nbuckets_rows, nbuckets_cols));
+	
+	uint64_t nnz = 0;
+	uint64_t nnzs = 0;
+    uint32_t nrows = 0, ncols = 0;
     
-    std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(feature_file)
-                                                                     : IO::binary_file_stat<Weight>(feature_file);
-    Net::nedges = nnz;
-    //nrows = ((NinputInstanses + 2) > nrows) ? (NinputInstanses + 2) : nrows; 
-    nrows = NinputInstanses + 2;
+	
+    //std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(feature_file)
+    //                                                                : IO::binary_file_stat<Weight>(feature_file);
+    input_nnzs = IO::get_nnzs<Weight>(feature_file, input_type, hashers[0], input_ninstanses);
+	
+	//Net::nedges = nnz;
+    //nrows = ((input_ninstanses + 2) > nrows) ? (input_ninstanses + 2) : nrows; 
+    //nrows = input_ninstanses + 2;
     
-    ncols = ((Nneurons + 2) > ncols) ? (Nneurons + 2) : ncols;
+    //ncols = ((nneurons + 2) > ncols) ? (nneurons + 2) : ncols;
     
-    ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
+    //ncols += (ncols % Env::nthreads) ? (Env::nthreads - (ncols % Env::nthreads)) : 0;  
     
-    if(parallelism_type != PARALLELISM_TYPE::_HYBRID_X_HYBRID_) {
-        scheduling_type = SCHEDULING_TYPE::_NONE_;
-    }
+	input_nfeatures += (input_nfeatures % Env::nthreads) ? (Env::nthreads - (input_nfeatures % Env::nthreads)) : 0;  
+	
+	
+    
+	printf("input_nnzs=%lu input_ninstanses=%d input_nfeatures=%d\n", input_nnzs, input_ninstanses, input_nfeatures);
+	
+    //if(replication and (Env::nthreads_per_socket[Env::rank_socket_id] == (uint32_t) Env::nthreads)) {
+    //        replication = false;
+    //}
+    
 
-    if(replication and (Env::nthreads_per_socket[Env::rank_socket_id] == (uint32_t) Env::nthreads)) {
-            replication = false;
-    }
-    
-    long nbuckets_rows = 1;
-    long nbuckets_cols = 1;
-    
-    input_hasher = std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, nrows, ncols, nbuckets_rows, nbuckets_cols));
     /*
     uint64_t total_memory = nnz*sizeof(uint32_t) + nnz*sizeof(Weight);
     if(compression_type == COMPRESSED_FORMAT::_CSC_) {
@@ -166,80 +176,87 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     */
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
-                                                                   nnz, nrows, ncols, 
+                                                                   input_nnzs, input_ninstanses, input_nfeatures, 
                                                                    feature_file, input_type, 
                                                                    TILING_TYPE::_1D_ROW_, compression_type,
-                                                                   input_hasher, false, repartition));
+                                                                   hashers[0], false, repartition));
     }
     else if((parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) or (parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_)) {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads * split_factor, Env::nranks * Env::nthreads * split_factor, 1, Env::nranks,
                                                                    Env::nthreads, Env::nranks * Env::nthreads, 
-                                                                   nnz, nrows, ncols, 
+                                                                   input_nnzs, input_ninstanses, input_nfeatures, 
                                                                    feature_file, input_type, 
                                                                    TILING_TYPE::_1D_ROW_, compression_type,
-                                                                   input_hasher, false, repartition));        
+                                                                   hashers[0], false, repartition));        
        inputFeatures->set_threads_indices();
        inputFeatures->set_rank_indices();  
     }
     else {
         inputFeatures = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks,
                                                                    Env::nthreads, Env::nranks * Env::nthreads, 
-                                                                   nnz, nrows, ncols, 
+                                                                   input_nnzs, input_ninstanses, input_nfeatures, 
                                                                    feature_file, input_type, 
                                                                    TILING_TYPE::_1D_ROW_, compression_type,
-                                                                   input_hasher, false, repartition));
+                                                                   hashers[0], false, repartition));
         inputFeatures->set_thread_index();                                                           
     }
     
-    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", Nneurons, maxLayers); 
+    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", nneurons, nmax_layers); 
+	std::exit(0);
 	
-    std::vector<uint32_t> maxLayersVector = {120, 480, 1920};
-    uint32_t idxL = std::distance(maxLayersVector.begin(), std::find(maxLayersVector.begin(), maxLayersVector.end(), maxLayers));
-    if(idxL >= maxLayersVector.size()) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of layers %d\n", maxLayers);
-        std::exit(Env::finalize());
-    }
+    //std::vector<uint32_t> maxLayersVector = {120, 480, 1920};
+    //uint32_t idxL = std::distance(maxLayersVector.begin(), std::find(maxLayersVector.begin(), maxLayersVector.end(), nmax_layers));
+    //if(idxL >= maxLayersVector.size()) {
+    //    Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of layers %d\n", nmax_layers);
+    //    std::exit(Env::finalize());
+    //}
 	
-    //std::string categoryFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "-l" + std::to_string(maxLayers);
+    //std::string categoryFile = layerFile_prefix + "/neuron" + std::to_string(nneurons) + "-l" + std::to_string(nmax_layers);
     //categoryFile += (input_type == INPUT_TYPE::_TEXT_) ? "-categories.tsv" : "-categories.bin";
     
-	if(categoryType == CATEGORY_TYPE::_NONZERO_INSTANCES_ONLY_) {
-		nCategories = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_categories(categoryFile, trueCategories, inputFeatures->nrows) :
-														   IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows, input_hasher);
-	}
-	else if(categoryType == CATEGORY_TYPE::_INSTANCE_AND_PREDICTED_CLASS_PAIRS_) {
-		printf("bias not implemebted\n");
-		std::exit(0);
-	}
-	
+	//if(categoryType == CATEGORY_TYPE::_NONZERO_INSTANCES_ONLY_) {
+		//predicted_nistances = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_categories(category_file, true_categories, inputFeatures->nrows, category_type, input_hasher) :
+			//											   IO::binary_file_categories(category_file, true_categories, inputFeatures->nrows, category_type, input_hasher);
+	//}
+	//else if(categoryType == CATEGORY_TYPE::_INSTANCE_AND_PREDICTED_CLASS_PAIRS_) {
+		
+		//std::exit(0);
+	//}
+	printf("predicted_nistances %d\n", predicted_nistances);
+	std::exit(0);
 	
 	
     /*
 	if(INPUT_TYPE::_TEXT_ == input_type) {
-        nCategories = IO::text_file_categories(categoryFile, trueCategories, inputFeatures->nrows);
+        predicted_nistances = IO::text_file_categories(categoryFile, true_categories, inputFeatures->nrows);
     }
     else {
-        nCategories = IO::binary_file_categories(categoryFile, trueCategories, inputFeatures->nrows, input_hasher);
+        predicted_nistances = IO::binary_file_categories(categoryFile, true_categories, inputFeatures->nrows, input_hasher);
     }
 	*/
-    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", maxLayers); 
-    //maxLayers = 2;
+    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", nmax_layers); 
+    //nmax_layers = 2;
     
+	
+	layers.resize(nmax_layers);
+	biasWeightVecs.resize(nmax_layers);
+	/*
     layers.resize(Env::nsockets);
     biasWeightVecs.resize(Env::nsockets);
     for(int32_t s = 0; s < Env::nsockets; s++) {
-        layers[s].resize(maxLayers);
-        biasWeightVecs[s].resize(maxLayers);
+        layers[s].resize(nmax_layers);
+        biasWeightVecs[s].resize(nmax_layers);
     }
+	*/
     
     if((parallelism_type != PARALLELISM_TYPE::_HYBRID_X_HYBRID_) and (dual_spmat == true)) {
         dual_spmat = false;
     }
 
-    for(uint32_t i = 0; i < maxLayers; i++) {
-        //std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(Nneurons) + "/n" + std::to_string(Nneurons) + "-l" + std::to_string(i+1);
+    for(uint32_t i = 0; i < nmax_layers; i++) {
+        //std::string layerFile = layerFile_prefix + "/neuron" + std::to_string(nneurons) + "/n" + std::to_string(nneurons) + "-l" + std::to_string(i+1);
         //layerFile += (input_type == INPUT_TYPE::_TEXT_) ? ".tsv" : ".bin";
-		std::string layerFile = layerFiles[i];
+		std::string layerFile = layer_files[i];
         if(i == 0) {
             std::tie(nnz, nrows, ncols) = (INPUT_TYPE::_TEXT_ == input_type) ? IO::text_file_stat<Weight>(layerFile)
                                                                              : IO::binary_file_stat<Weight>(layerFile);   
@@ -258,9 +275,10 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
             Env::barrier();
         }
         
-        bool enable_dual_spmat = (dual_spmat and (i >= maxLayers*recruiting_ratio)) ? true : false;
-        for(int32_t s = 0; s < Env::nsockets; s++) {
-            if(replication or (s == Env::rank_socket_id)) {
+        bool enable_dual_spmat = (dual_spmat and (i >= nmax_layers*recruiting_ratio)) ? true : false;
+		//int32_t s = Env::rank_socket_id;
+        //for(int32_t s = 0; s < Env::nsockets; s++) {
+            //if(replication or (s == Env::rank_socket_id)) {
                 /*
                 if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
                     layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
@@ -272,37 +290,37 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
                 }
                 else {
                 */
-                layers[s][i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
+                layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
                                                                        nnz, nrows, ncols, 
                                                                        layerFile, input_type, 
                                                                        TILING_TYPE::_1D_COL_, compression_type,
                                                                        layer_hasher, enable_dual_spmat, false));
                 
                 //}                
-                biasWeightVecs[s][i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, s));
-            }
-        }    
+                biasWeightVecs[i] = std::move(std::make_shared<struct Data_Block<Weight>>(inputFeatures->ncols, Env::rank_socket_id));
+            //}
+        //}    
         Logging::enabled = false; 
         if(i%10==0) printf("|"); 
     }
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::VOID, "\n"); 
-    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", maxLayers); 
+    Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", nmax_layers); 
     Env::barrier();
     
-	if(biasType == BIAS_TYPE::_CONSTANT_) {
-		for(int32_t s = 0; s < Env::nsockets; s++) {
-			if(replication or (s == Env::rank_socket_id)) {
-				for(uint32_t i = 0; i < maxLayers; i++) {
-					Weight* b_A = biasWeightVecs[s][i]->ptr;
+	if(bias_type == BIAS_TYPE::_CONSTANTS_) {
+		//for(int32_t s = 0; s < Env::nsockets; s++) {
+			//if(replication or (s == Env::rank_socket_id)) {
+				for(uint32_t i = 0; i < nmax_layers; i++) {
+					Weight* b_A = biasWeightVecs[i]->ptr;
 					for(uint32_t i = 0; i < inputFeatures->ncols; i++) {
-						b_A[i] = biasValue;
+						b_A[i] = bias_value;
 					}
 				}
-			}
-		}
+			//}
+		//}
 	}
-	else if(biasType == BIAS_TYPE::_VECTORS_) {
+	else if(bias_type == BIAS_TYPE::_VECTORS_) {
 		printf("bias not implemebted\n");
 		std::exit(0);
 	}
@@ -316,7 +334,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
             }
             else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
                 int32_t sid = Env::rank_socket_id;
-                uint32_t tile_height = (repartition) ? layers[sid][0]->get_tile_info_max("height") : layers[sid][0]->get_tile_info("height", 0);
+                uint32_t tile_height = (repartition) ? layers[0]->get_tile_info_max("height") : layers[0]->get_tile_info("height", 0);
                 spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(tile_height, Env::threads_socket_id[i]));
             }
             else {
@@ -328,7 +346,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
             if((compression_type == COMPRESSED_FORMAT::_CSC_) or (compression_type == COMPRESSED_FORMAT::_CSR_)) {
                 int32_t sid = Env::rank_socket_id;
                 uint32_t tile_height1 = (repartition) ? inputFeatures->get_tile_info_max("height") : inputFeatures->get_tile_info("height", 0);
-                uint32_t tile_height2 = (repartition) ? layers[sid][0]->get_tile_info_max("height") : layers[sid][0]->get_tile_info("height", 0);
+                uint32_t tile_height2 = (repartition) ? layers[0]->get_tile_info_max("height") : layers[0]->get_tile_info("height", 0);
                 uint32_t tile_height = (tile_height1 > tile_height2) ? tile_height1 : tile_height2;
                 spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(tile_height, Env::threads_socket_id[i]));
             }
@@ -344,7 +362,7 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
             }
             else if(compression_type == COMPRESSED_FORMAT::_CSR_) {   
                 int32_t sid = Env::rank_socket_id;
-                uint32_t tile_height = (repartition) ? layers[sid][0]->get_tile_info_max("height") : layers[sid][0]->get_tile_info("height", 0);
+                uint32_t tile_height = (repartition) ? layers[0]->get_tile_info_max("height") : layers[0]->get_tile_info("height", 0);
                 spaWeightVec[i] = std::move(std::make_shared<struct Data_Block<Weight>>(tile_height, Env::threads_socket_id[i]));
             }
             else {
@@ -390,10 +408,10 @@ Net<Weight>::Net(const uint32_t NinputInstanses_, const uint32_t Nneurons_, cons
     Env::barrier();
     
     
-        if(Env::nranks == 1)
-            printTimesExcel();
-        else 
-            printTimesExcel1();
+	if(Env::nranks == 1)
+		printTimesExcel();
+	else 
+		printTimesExcel1();
     
 }
 
@@ -822,13 +840,13 @@ void Net<Weight>::printTimesExcel1() {
     /*
     //uint64_t DNNedges = inputFeatures->get_info("nedges");
     uint64_t DNNedges = Net::nedges;
-    uint64_t DNNConns = NinputInstanses * DNNedges;
+    uint64_t DNNConns = ninputinstanses * DNNedges;
     double inference_rate = (double) DNNConns / exec_time;
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(inference_rate/1e9);
     //Logging::print(Logging::LOG_LEVEL::VOID, "Infe time: %.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
     Logging::print(Logging::LOG_LEVEL::VOID, "%.3f %.3f %.3f %.3f\n", mean, std_dev, min, max);
     */
-    //double min_exec_rate = (double) (NinputInstanses * DNNedges) /max_exec_time;
+    //double min_exec_rate = (double) (ninputinstanses * DNNedges) /max_exec_time;
     //Logging::print(Logging::LOG_LEVEL::VOID, "Run time: %f (sec), run rate: %f (1e9 edges/sec)\n", max_exec_time, min_exec_rate/1e9);
     
 }
@@ -872,7 +890,7 @@ void Net<Weight>::inferenceReLU(const int32_t tid) {
 
 template<typename Weight>
 void Net<Weight>::data_x_model(const int32_t tid) {
-    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    //int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     uint32_t leader_rowgroup = Env::rank;
     const int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -883,7 +901,8 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
     uint32_t nrows = A_tile.spmat->nrows;
-    const uint32_t ncols = layers[sid][0]->ncols;
+    //const uint32_t ncols = layers[sid][0]->ncols;
+	const uint32_t ncols = layers[0]->ncols;
     uint32_t start, end;
     uint32_t sub_start = 0, sub_end = 0;
     
@@ -931,17 +950,19 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     pthread_barrier_wait(&Env::thread_barrier);
     
     auto start_t = std::chrono::high_resolution_clock::now();  
-    for (uint32_t l = 0; l < maxLayers; l++) {
+    for (uint32_t l = 0; l < nmax_layers; l++) {
         //auto now1 = std::chrono::high_resolution_clock::now();
         std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
         
         //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
-        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
+        //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
+		struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
         
         std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
         std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
         
-        b_bias = biasWeightVecs[sid][l];
+        b_bias = biasWeightVecs[l];
+		//b_bias = biasWeightVecs[sid][l];
         nrows = A_SPMAT->nrows;
         
         
@@ -985,12 +1006,12 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
 
     const std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
-    data_x_model_validate_prediction(A_SPMAT, A_tile.start_row, trueCategories, nCategories, leader_tid, tid);
+    data_x_model_validate_prediction(A_SPMAT, A_tile.start_row, true_categories, predicted_nistances, leader_tid, tid);
 }
 
 template<typename Weight>
 void Net<Weight>::data_x_data(const int32_t tid) {
-    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    //int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -999,7 +1020,7 @@ void Net<Weight>::data_x_data(const int32_t tid) {
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
     uint32_t nrows = inputFeatures->tiles[leader_rowgroup][0].spmat->nrows;
-    const uint32_t ncols = layers[sid][0]->ncols;
+    const uint32_t ncols = layers[0]->ncols;
     uint32_t start, end;
     const uint32_t off = 0;
     
@@ -1013,18 +1034,18 @@ void Net<Weight>::data_x_data(const int32_t tid) {
     }
     
     auto start_t = std::chrono::high_resolution_clock::now();  
-    for (uint32_t l = 0; l < maxLayers; l++) {
+    for (uint32_t l = 0; l < nmax_layers; l++) {
         //auto now1 = std::chrono::high_resolution_clock::now();
         
         struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                  : output->tiles[leader_rowgroup][0];
         std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
-        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];    
+        struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
         std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
         struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
                                                  : inputFeatures->tiles[leader_rowgroup][0];
         std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-        b_bias = biasWeightVecs[sid][l];  
+        b_bias = biasWeightVecs[l];  
 
         data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
                            nrows, ncols, start, end, off, 
@@ -1050,7 +1071,7 @@ void Net<Weight>::data_x_data(const int32_t tid) {
     
     struct Tile<Weight>& A_tile = inputFeatures->tiles[leader_rowgroup][0];
     const std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
-    data_x_data_validate_prediction(A_SPMAT, A_tile.start_row, trueCategories, nCategories, leader_tid, tid);
+    data_x_data_validate_prediction(A_SPMAT, A_tile.start_row, true_categories, predicted_nistances, leader_tid, tid);
 }
 
 template<typename Weight>
@@ -1062,7 +1083,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     auto start_t = std::chrono::high_resolution_clock::now();  
     
     uint32_t my_start_layer = hybrid_x_data(Env::my_threads[tid], my_rowgroup, tid);
-    if(my_start_layer < maxLayers) {
+    if(my_start_layer < nmax_layers) {
         if(dual_spmat) {      
             has_dual_spmat = true;
             if(compression_type == COMPRESSED_FORMAT::_CSC_) {
@@ -1100,13 +1121,13 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     else {
         A_SPMAT = A_tile.spmat;
     }
-    data_x_data_validate_prediction(A_SPMAT, A_tile.start_row, trueCategories, nCategories, leader_tid, tid);
+    data_x_data_validate_prediction(A_SPMAT, A_tile.start_row, true_categories, predicted_nistances, leader_tid, tid);
 }
 
 template<typename Weight>
 uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32_t my_rowgroup, const int32_t tid) {
-    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
-    int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    //int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    int32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     
     //uint32_t my_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
@@ -1116,7 +1137,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
     uint32_t nrows = inputFeatures->tiles[my_rowgroup][0].spmat->nrows;
-    const uint32_t ncols = layers[sid][0]->ncols;
+    const uint32_t ncols = layers[0]->ncols;
     uint32_t start, end;
     const uint32_t off = 0;
     uint32_t start_row = 0;
@@ -1130,8 +1151,8 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
     }
     bool breaking = false;
     uint32_t l = 0; 
-    for (l = 0; l < maxLayers; l++) {
-        if((l >= maxLayers*recruiting_ratio) and add_to_my_follower_threads(my_threads, my_rowgroup, l, 0, nrows, ncols, tid, tid)) {
+    for (l = 0; l < nmax_layers; l++) {
+        if((l >= nmax_layers*recruiting_ratio) and add_to_my_follower_threads(my_threads, my_rowgroup, l, 0, nrows, ncols, tid, tid)) {
             if(not(l%2)) 
                 break;
             else     
@@ -1140,18 +1161,18 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
         struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[my_rowgroup][0]
                                              : output->tiles[my_rowgroup][0];
         std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
-        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];    
+        struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
         std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
         struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[my_rowgroup][0]
                                                  : inputFeatures->tiles[my_rowgroup][0];
         std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-        b_bias = biasWeightVecs[sid][l];      
+        b_bias = biasWeightVecs[l];      
         
         data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
                            nrows, ncols, start, end, off, 
                            thread_st, leader_tid, tid); 
         
-        Env::scores[sid1][tid]++;     
+        Env::scores[sid][tid]++;     
 
         double elapsed = Env::toc(Env::global_time);
         Env::data_counters[tid].push_back({elapsed, Env::rank, tid, 1, 0,0});        
@@ -1163,8 +1184,8 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
 
 template<typename Weight>
 void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t my_rowgroup, const uint32_t leader_start_layer, const int32_t leader_tid, const int32_t tid) {
-    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
-    int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    //int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    int32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     struct Env::thread_struct& thread_st = Env::threads[tid];    
     struct Tile<Weight>& A_tile =  inputFeatures->tiles[my_rowgroup][0];
     struct Tile<Weight>& C_tile = output->tiles[my_rowgroup][0];
@@ -1176,20 +1197,20 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
     std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = nullptr;
     
     uint32_t nrows = A_tile.spmat->nrows;
-    const uint32_t ncols = layers[sid][0]->ncols;
+    const uint32_t ncols = layers[0]->ncols;
     uint32_t start, end;
     const uint32_t off = 0;   
     double start_time = 0;
-    for (uint32_t l = leader_start_layer; l < maxLayers; l++) {
+    for (uint32_t l = leader_start_layer; l < nmax_layers; l++) {
         (void)add_to_my_follower_threads(my_threads, my_rowgroup, l, 0, nrows, ncols, leader_tid, tid);
         start_time = Env::tic();   
             Env::decrease_num_threads(1, leader_tid, tid);
             Env::init_num_threads(my_threads.size(), leader_tid, tid);
         Env::hybrid_probe_time[tid] += Env::toc(start_time);     
 
-        struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
+        struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
         
-        b_bias = biasWeightVecs[sid][l];
+        b_bias = biasWeightVecs[l];
         if(dual_spmat) {
             A_SPMAT = A_tile.spmat1;
             B_SPMAT = B_tile.spmat1;
@@ -1224,7 +1245,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
                nrows, ncols, start, end, off,
                my_threads, thread_st, leader_tid, tid);
      //    printf("4.tid=%d %d\n", tid, l);                          
-       if(tid == leader_tid) Env::scores[sid1][tid]++;
+       if(tid == leader_tid) Env::scores[sid][tid]++;
        
        double elapsed = Env::toc(Env::global_time);
        if(tid == leader_tid) {
@@ -1246,14 +1267,14 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, const uint3
     uint32_t num_new_threads = 0;
     uint32_t min_score_value = (uint32_t) INT32_MAX;
     uint32_t max_score_value = 0;
-    int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    int32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     
     if(!follower_threads.empty()) {
         pthread_mutex_lock(&Env::numa_thread_mutex[socket_id]);  
         if(!follower_threads.empty()) {
-            if((sid1 == socket_id) and ((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) or (scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_))) { 
+            if((sid == socket_id) and ((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) or (scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_))) { 
                 for(std::vector<uint32_t>::iterator it = Env::scores[socket_id].begin() + Env::queue_indices[socket_id].first ; it != Env::scores[socket_id].begin() + Env::queue_indices[socket_id].second ; it++) {
-                    if((*it >= maxLayers) or (*it == 0)) continue;
+                    if((*it >= nmax_layers) or (*it == 0)) continue;
                     
                     if(*it > max_score_value) {
                         max_score_value = *it;
@@ -1265,10 +1286,10 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& my_threads, const uint3
                 }
             }
             
-            bool pick = (((sid1 == socket_id) and ((scheduling_type == SCHEDULING_TYPE::_EARLIEST_FIRST_) or 
+            bool pick = (((sid == socket_id) and ((scheduling_type == SCHEDULING_TYPE::_EARLIEST_FIRST_) or 
                                                    ((scheduling_type == SCHEDULING_TYPE::_SLOWER_FIRST_) and ((Env::scores[socket_id][tid] - min_score_value) < schduling_threshold)) or
                                                    ((scheduling_type == SCHEDULING_TYPE::_FASTER_FIRST_) and ((max_score_value  - Env::scores[socket_id][tid]) < schduling_threshold)))) or
-                         (sid1 != socket_id));
+                         (sid != socket_id));
             //printf("Rank=%d tid=%2d layer=%d min=%d max=%d pick=%d\n", Env::rank, tid, start_layer, min_score_value, max_score_value, pick);
             //uint32_t nworking = Env::nthreads_per_socket[socket_id] - Env::numa_num_finished_threads[socket_id];
             //uint32_t nfinished = Env::numa_num_finished_threads[socket_id];
@@ -1330,17 +1351,17 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
     if(tid == leader_tid) {
         double start_time = 0;
         start_time = Env::tic();
-        int32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+        int32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
         if(numa_queues) {
             for(int32_t s = 0; s < Env::nsockets; s++) {
                 int32_t si = (s + Env::threads_socket_id[tid]) % Env::nsockets;
-                if((si == sid1) or (Env::nthreads_per_socket[si] and (Env::numa_follower_threads[si].size() == (uint32_t) Env::nthreads_per_socket[si]))) {
+                if((si == sid) or (Env::nthreads_per_socket[si] and (Env::numa_follower_threads[si].size() == (uint32_t) Env::nthreads_per_socket[si]))) {
                     found |= thread_scheduling(my_threads, my_rowgroup, Env::numa_follower_threads[si], si, start_layer, start_row, nrows, ncols, leader_tid, tid);
                 }
             }
         }
         else {
-            found = thread_scheduling(my_threads, my_rowgroup, Env::numa_follower_threads[sid1], sid1, start_layer, start_row, nrows, ncols, leader_tid, tid);
+            found = thread_scheduling(my_threads, my_rowgroup, Env::numa_follower_threads[sid], sid, start_layer, start_row, nrows, ncols, leader_tid, tid);
         }
         Env::hybrid_probe_time[tid] += Env::toc(start_time);  
     }
@@ -1350,12 +1371,12 @@ bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& my_threads, co
 
 template<typename Weight>
 bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int32_t tid) {
-    uint32_t sid1 = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    uint32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     bool status = true;
     uint32_t all_done = 0;
 
-    pthread_mutex_lock(&Env::numa_thread_mutex[sid1]);
-    Env::numa_follower_threads[sid1].push_back(tid);
+    pthread_mutex_lock(&Env::numa_thread_mutex[sid]);
+    Env::numa_follower_threads[sid].push_back(tid);
     if(not my_threads.empty()) {
         my_threads.erase(my_threads.begin(), my_threads.end());
     }
@@ -1368,7 +1389,7 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int
 
     
     if(all_done == (uint32_t) Env::nthreads) {         
-        pthread_mutex_unlock(&Env::numa_thread_mutex[sid1]);   
+        pthread_mutex_unlock(&Env::numa_thread_mutex[sid]);   
         for(int32_t s = 0; s < Env::nsockets; s++) {
             pthread_mutex_lock(&Env::numa_thread_mutex[s]);
             
@@ -1381,8 +1402,8 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int
         status = false;
     }
     else {
-        pthread_cond_wait(&Env::numa_thread_cond[sid1], &Env::numa_thread_mutex[sid1]); 
-        pthread_mutex_unlock(&Env::numa_thread_mutex[sid1]); 
+        pthread_cond_wait(&Env::numa_thread_cond[sid], &Env::numa_thread_mutex[sid]); 
+        pthread_mutex_unlock(&Env::numa_thread_mutex[sid]); 
         
         all_done = 0;
         for(std::deque<int32_t>& numa_thread: Env::numa_follower_threads) {
@@ -1402,7 +1423,7 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& my_threads, const int
 
 template<typename Weight>
 void Net<Weight>::manager_x_worker(const int32_t tid) {
-    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    //int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     uint32_t leader_rowgroup = 0;
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -1413,7 +1434,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
     uint32_t nrows;
-    const uint32_t ncols = layers[sid][0]->ncols;
+    const uint32_t ncols = layers[0]->ncols;
     uint32_t start, end;
     const uint32_t off = 0;
     auto start_t = std::chrono::high_resolution_clock::now();  
@@ -1431,16 +1452,16 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
             break;
         }
         
-        for (uint32_t l = 0; l < maxLayers; l++) {
+        for (uint32_t l = 0; l < nmax_layers; l++) {
             struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                      : output->tiles[leader_rowgroup][0];
             std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
-            struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];    
+            struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
             std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
             struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
                                                      : inputFeatures->tiles[leader_rowgroup][0];
             std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-            b_bias = biasWeightVecs[sid][l];    
+            b_bias = biasWeightVecs[l];    
             
             nrows = A_SPMAT->nrows;
             if(compression_type == COMPRESSED_FORMAT::_CSC_) {
@@ -1460,13 +1481,13 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
 
-    manager_x_worker_validate_prediction(inputFeatures->tiles, trueCategories, nCategories, leader_tid, tid);
+    manager_x_worker_validate_prediction(inputFeatures->tiles, true_categories, predicted_nistances, leader_tid, tid);
 }
 
 
 template<typename Weight>
 void Net<Weight>::work_x_stealing(const int32_t tid) {
-    int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
+    //int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     uint32_t leader_rowgroup = 0;
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -1475,7 +1496,7 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
     std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
     uint32_t nrows;
-    const uint32_t ncols = layers[sid][0]->ncols;
+    const uint32_t ncols = layers[0]->ncols;
     uint32_t start, end;
     const uint32_t off = 0;
     
@@ -1500,16 +1521,16 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
         tiles_left &= found;
         if(not tiles_left) continue;
         
-        for (uint32_t l = 0; l < maxLayers; l++) {
+        for (uint32_t l = 0; l < nmax_layers; l++) {
             struct Tile<Weight>& A_tile = (not(l%2)) ? inputFeatures->tiles[leader_rowgroup][0]
                                                      : output->tiles[leader_rowgroup][0];
             std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
-            struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];    
+            struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
             std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
             struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
                                                      : inputFeatures->tiles[leader_rowgroup][0];
             std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-            b_bias = biasWeightVecs[sid][l];  
+            b_bias = biasWeightVecs[l];  
             
             nrows = A_SPMAT->nrows;
             if(compression_type == COMPRESSED_FORMAT::_CSC_) {
@@ -1530,7 +1551,7 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
 
-    work_x_stealing_validate_prediction(inputFeatures->tiles, trueCategories, nCategories, leader_tid, tid);
+    work_x_stealing_validate_prediction(inputFeatures->tiles, true_categories, predicted_nistances, leader_tid, tid);
 }
 
 #endif 
