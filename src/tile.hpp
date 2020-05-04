@@ -57,7 +57,7 @@ void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type_, const boo
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
         std::exit(Env::finalize());
     }
-    
+
     if(not triples.empty()){
         spmat->populate(triples, start_row, end_row, start_col, end_col);
         if(dual_spmat) {
