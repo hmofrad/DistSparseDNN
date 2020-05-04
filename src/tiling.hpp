@@ -28,26 +28,26 @@ class Tiling {
         ~Tiling() {};
         
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
-               const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
+               const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_, 
                const std::string input_file, const INPUT_TYPE input_type,
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, 
                std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat = false, const bool repartition = false);
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, 
                const uint32_t nranks_, const uint32_t rank_nthreads_, const uint32_t nthreads_,
-               const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
+               const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_, 
                const std::string input_file, const INPUT_TYPE input_type, 
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
                std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat = false, const bool repartition = false);               
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
-               const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, 
+               const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_, 
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
                std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat = false, const bool repartition = false);
                 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_,
                const uint32_t rank_nthreads_, const uint32_t nthreads_, 
-               const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+               const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_,
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
                std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat = false, const bool repartition = false);
 
@@ -60,7 +60,7 @@ class Tiling {
         uint32_t nthreads, thread_ntiles, thread_nrowgrps, thread_ncolgrps;
         uint32_t rowgrp_nthreads, colgrp_nthreads;
         
-        uint64_t nnz;        
+        uint64_t nnzs;        
         uint32_t nrows, ncols;
         
         uint32_t tile_height, tile_width;
@@ -101,12 +101,12 @@ class Tiling {
 /* Process-based tiling based on MPI ranks*/ 
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
-                       const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+                       const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
                        const TILING_TYPE tiling_type_, 
                        const COMPRESSED_FORMAT compression_type, std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat, const bool repartition) 
         : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
-          nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
+          nnzs(nnzs_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
     
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;
    
@@ -227,18 +227,12 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows         x ncols         = [%d x %d]\n", nrows, ncols);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                           = [%d]\n", nnz);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                           = [%d]\n", nnzs);
     
-    std::vector<struct Triple<Weight>> triples;
-    if(INPUT_TYPE::_TEXT_ == input_type) {
-        triples = IO::text_file_read<Weight>(input_file, one_rank);
-    }
-    else {
-        triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows, ncols);
-    }
-    insert_triples(triples);
-    delete_triples(triples);
-    
+    std::vector<struct Triple<Weight>> triples = IO::read_file_ijw<Weight>(input_file, input_type, hasher, one_rank, nrows, ncols);
+	Tiling<Weight>::insert_triples(triples);
+    Tiling<Weight>::delete_triples(triples);
+
     if(not one_rank) {
         exchange_triples();
         tile_load();
@@ -269,19 +263,20 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         print_tiling("nedges");
         print_tiling("height");
     }
+	
     compress_triples(compression_type, dual_spmat); 
 }
 
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_,  const uint32_t nranks_, 
                        const uint32_t rank_nthreads_, const uint32_t nthreads_, 
-                       const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+                       const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_,
                        const std::string input_file, const INPUT_TYPE input_type,
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
                        std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat, const bool repartition)
                      : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        rank_nthreads(rank_nthreads_), nthreads(nthreads_),
-                       nnz(nnz_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
+                       nnzs(nnzs_), nrows(nrows_), ncols(ncols_), tiling_type(tiling_type_) {
     
     one_rank = ((nranks == 1) and (nranks != (uint32_t) Env::nranks)) ? true : false;              
     
@@ -410,17 +405,11 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: thread_nrowgrps  x thread_ncolgrps  = [%d x %d]\n", thread_nrowgrps, thread_ncolgrps);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows            x ncols            = [%d x %d]\n", nrows, ncols);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height      x tile_width       = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                                 = [%d]\n", nnz);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                                 = [%d]\n", nnzs);
     
-    std::vector<struct Triple<Weight>> triples;
-    if(INPUT_TYPE::_TEXT_ == input_type) {
-        triples = IO::text_file_read<Weight>(input_file, one_rank);
-    }
-    else {
-        triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows, ncols);
-    }
-    insert_triples(triples);
-    delete_triples(triples);
+	std::vector<struct Triple<Weight>> triples = IO::read_file_ijw<Weight>(input_file, input_type, hasher, one_rank, nrows, ncols);
+	Tiling<Weight>::insert_triples(triples);
+    Tiling<Weight>::delete_triples(triples);
 
     if(not one_rank) {
         exchange_triples();
@@ -460,11 +449,11 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
-                       const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+                       const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_,
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
                        std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat, const bool repartition)
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
-                       nnz(nnz_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
+                       nnzs(nnzs_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
                            
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
@@ -548,7 +537,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows            x ncols            = [%d x %d]\n", nrows, ncols);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height      x tile_width       = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                                 = [%d]\n", nnz);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                                 = [%d]\n", nnzs);
     
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
@@ -567,12 +556,12 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                        const uint32_t rank_nthreads_, const uint32_t nthreads_, 
-                       const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_,
+                       const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_,
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
                        std::shared_ptr<struct TwoDHasher> hasher, const bool dual_spmat, const bool repartition)
                      : ntiles(ntiles_), nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
                        nthreads(nthreads_),
-                       nnz(nnz_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
+                       nnzs(nnzs_), nrows(nrows_), ncols(ncols_), tile_height(nrows / nrowgrps), tile_width(ncols / ncolgrps), tiling_type(tiling_type_) {
     if((rank_ntiles * nranks != ntiles) or (nrowgrps * ncolgrps != ntiles)) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed\n");
         std::exit(Env::finalize()); 
@@ -666,7 +655,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: thread_nrowgrps  x thread_ncolgrps  = [%d x %d]\n", thread_nrowgrps, thread_ncolgrps);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows            x ncols            = [%d x %d]\n", nrows, ncols);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height      x tile_width       = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnz                                 = [%d]\n", nnz);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                                 = [%d]\n", nnzs);
     
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
@@ -991,9 +980,9 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
     std::vector<MPI_Request> send_requests;      
     std::vector<MPI_Request> recv_requests;  
     
-    uint64_t balanced_nnz_per_tile = nnz/ntiles; 
-    std::vector<std::vector<uint32_t>> nnz_local;
-    std::vector<uint32_t> nnz_global;    
+    uint64_t balanced_nnzs_per_tile = nnzs/ntiles; 
+    std::vector<std::vector<uint32_t>> nnzs_local;
+    std::vector<uint32_t> nnzs_global;    
 
     if (tiling_type == TILING_TYPE::_1D_ROW_) {
         const RowSort<Weight> f_row;
@@ -1006,9 +995,9 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             }
         }  
         
-        nnz_local.resize(rank_nrowgrps);
+        nnzs_local.resize(rank_nrowgrps);
         for(uint32_t k = 0; k < rank_nrowgrps; k++) {
-            nnz_local[k].resize(tile_height);
+            nnzs_local[k].resize(tile_height);
         }
         
         uint32_t k = 0;
@@ -1020,7 +1009,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                     if(not triples.empty()) {
                         uint32_t height = tile.height;
                         for(auto triple: triples) {
-                            nnz_local[k][triple.row%height]++;
+                            nnzs_local[k][triple.row%height]++;
                         }
                     }
                     k++;
@@ -1049,17 +1038,17 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
 
         if(not one_rank) {   
             if(Env::rank == 0) {
-                nnz_global.resize(nrows);                
+                nnzs_global.resize(nrows);                
                 for(uint32_t r = 1; r < nranks; r++) { 
                     for(uint32_t k = 0; k < rank_nrowgrps; k++) {
-                        MPI_Irecv(nnz_global.data() + offsets[(r*rank_nrowgrps)+k], tile_height, MPI_UNSIGNED, r, r, MPI_COMM_WORLD, &request);
+                        MPI_Irecv(nnzs_global.data() + offsets[(r*rank_nrowgrps)+k], tile_height, MPI_UNSIGNED, r, r, MPI_COMM_WORLD, &request);
                         requests.push_back(request);
                     }
                 }
             } 
             else {
                 for(uint32_t k = 0; k < rank_nrowgrps; k++) {
-                    MPI_Isend(nnz_local[k].data(), nnz_local[k].size(), MPI_UNSIGNED, 0, Env::rank, MPI_COMM_WORLD, &request); 
+                    MPI_Isend(nnzs_local[k].data(), nnzs_local[k].size(), MPI_UNSIGNED, 0, Env::rank, MPI_COMM_WORLD, &request); 
                     requests.push_back(request);
                 }
             }
@@ -1072,18 +1061,18 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
         
         std::vector<uint32_t> partitions_start(ntiles);
         std::vector<uint32_t> partitions_end(ntiles);
-        std::vector<uint32_t> partitions_nnz(ntiles);
+        std::vector<uint32_t> partitions_nnzs(ntiles);
         if(((not one_rank) and Env::rank == 0) or (one_rank)) {
             for(uint32_t k = 0; k < rank_nrowgrps; k++) {
                 if(one_rank) {
-                    std::copy(nnz_local[k].begin(), nnz_local[k].end(), nnz_global.begin() + offsets[k]);
+                    std::copy(nnzs_local[k].begin(), nnzs_local[k].end(), nnzs_global.begin() + offsets[k]);
                 }
                 else {
-                    std::copy(nnz_local[k].begin(), nnz_local[k].end(), nnz_global.begin() + offsets[(Env::rank*rank_nrowgrps)+k]);
+                    std::copy(nnzs_local[k].begin(), nnzs_local[k].end(), nnzs_global.begin() + offsets[(Env::rank*rank_nrowgrps)+k]);
                 }
             }
-            uint64_t global_sum_nnz = std::accumulate(nnz_global.begin(), nnz_global.end(), 0);
-            if(global_sum_nnz != nnz) {
+            uint64_t global_sum_nnzs = std::accumulate(nnzs_global.begin(), nnzs_global.end(), 0);
+            if(global_sum_nnzs != nnzs) {
                 Logging::print(Logging::LOG_LEVEL::ERROR, "Repartitioning error\n");
                 std::exit(Env::finalize()); 
             }
@@ -1094,19 +1083,19 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             uint32_t end = 0;
             uint32_t t = 0;
             for(uint32_t i = 0; i < nrows; i++) {
-                n += nnz_global[i];
-                if(((int64_t) (balanced_nnz_per_tile - n) < 0) or ((i+1) == nrows)) {
+                n += nnzs_global[i];
+                if(((int64_t) (balanced_nnzs_per_tile - n) < 0) or ((i+1) == nrows)) {
                     partitions_start[t] = (t == 0)         ? 0         : partitions_end[t-1];
                     partitions_end[t]   = (t == ntiles-1)  ? nrows     : i;
-                    partitions_nnz[t]   = (t == ntiles-1)  ? (nnz - m) : (n - nnz_global[i]);
+                    partitions_nnzs[t]   = (t == ntiles-1)  ? (nnzs - m) : (n - nnzs_global[i]);
                     i                   = (t == ntiles-1)  ? nrows     : (i - 1);
-                    m += partitions_nnz[t];
+                    m += partitions_nnzs[t];
                     n = 0;
                     t++;
                 }
             }
-            global_sum_nnz = std::accumulate(partitions_nnz.begin(), partitions_nnz.end(), 0);
-            if(global_sum_nnz != nnz) {
+            global_sum_nnzs = std::accumulate(partitions_nnzs.begin(), partitions_nnzs.end(), 0);
+            if(global_sum_nnzs != nnzs) {
                 Logging::print(Logging::LOG_LEVEL::ERROR, "Repartitioning error\n");
                 std::exit(Env::finalize()); 
             }
@@ -1121,11 +1110,11 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
         }
     
         for(uint32_t k = 0; k < rank_nrowgrps; k++) {
-            nnz_local[k].clear();
-            nnz_local[k].shrink_to_fit();
+            nnzs_local[k].clear();
+            nnzs_local[k].shrink_to_fit();
         }
-        nnz_local.clear();
-        nnz_local.shrink_to_fit();
+        nnzs_local.clear();
+        nnzs_local.shrink_to_fit();
 
         if(not one_rank) {
             std::vector<uint32_t> partitions(ntiles*3);
@@ -1134,7 +1123,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                 for(uint32_t t = 0; t < ntiles; t++) {
                     partitions[(t*3)] = partitions_start[t];
                     partitions[(t*3)+1] = partitions_end[t];
-                    partitions[(t*3)+2] = partitions_nnz[t];
+                    partitions[(t*3)+2] = partitions_nnzs[t];
                 }
                 
                 for(uint32_t r = 1; r < nranks; r++) {
@@ -1150,7 +1139,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                 for(uint32_t t = 0; t < ntiles; t++) {
                     partitions_start[t] = partitions[(t*3)];
                     partitions_end[t] = partitions[(t*3)+1];
-                    partitions_nnz[t] = partitions[(t*3)+2];
+                    partitions_nnzs[t] = partitions[(t*3)+2];
                 }
             }
             Env::barrier();
@@ -1162,7 +1151,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                 tile.start_row = partitions_start[i];
                 tile.end_row = partitions_end[i];
                 tile.height = tile.end_row - tile.start_row;
-                tile.nedges = partitions_nnz[i];
+                tile.nedges = partitions_nnzs[i];
                 if(tile.rank == Env::rank) {
                     auto& triples = tile.triples;
                     triples.clear();
@@ -1175,17 +1164,10 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             bounds[i] = tiles[i][0].end_row;
         }
         
-        std::vector<struct Triple<Weight>> triples;
-        if(INPUT_TYPE::_TEXT_ == input_type) {
-            triples = IO::text_file_read<Weight>(input_file, one_rank);
-        }
-        else {
-            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows, ncols);
-        }
-        
-        insert_triples(triples);
-        delete_triples(triples);
-
+		std::vector<struct Triple<Weight>> triples = IO::read_file_ijw<Weight>(input_file, input_type, hasher, one_rank, nrows, ncols);
+		Tiling<Weight>::insert_triples(triples);
+		Tiling<Weight>::delete_triples(triples);
+		
         if(not one_rank) {
             exchange_triples();
         }
@@ -1215,11 +1197,11 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             }
         }  
         
-        nnz_local.resize(rank_ncolgrps);
+        nnzs_local.resize(rank_ncolgrps);
         for(uint32_t k = 0; k < rank_ncolgrps; k++) {
-            nnz_local[k].resize(tile_width);
+            nnzs_local[k].resize(tile_width);
         }
-        nnz_global.resize(ncols);
+        nnzs_global.resize(ncols);
         
         uint32_t k = 0;
         for (uint32_t i = 0; i < nrowgrps; i++) {
@@ -1230,7 +1212,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                     if(not triples.empty()) {
                         uint32_t width = tile.width;
                         for(auto triple: triples) {
-                            nnz_local[k][triple.col%width]++;
+                            nnzs_local[k][triple.col%width]++;
                         }
                     }                     
                     k++;
@@ -1260,14 +1242,14 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             if(Env::rank == 0) {        
                 for(uint32_t r = 1; r < nranks; r++) { 
                     for(uint32_t k = 0; k < rank_ncolgrps; k++) {
-                        MPI_Irecv(nnz_global.data() + offsets[(r*rank_ncolgrps)+k], tile_width, MPI_UNSIGNED, r, r, MPI_COMM_WORLD, &request);
+                        MPI_Irecv(nnzs_global.data() + offsets[(r*rank_ncolgrps)+k], tile_width, MPI_UNSIGNED, r, r, MPI_COMM_WORLD, &request);
                         requests.push_back(request);
                     }
                 }
             } 
             else {
                 for(uint32_t k = 0; k < rank_ncolgrps; k++) {
-                    MPI_Isend(nnz_local[k].data(), nnz_local[k].size(), MPI_UNSIGNED, 0, Env::rank, MPI_COMM_WORLD, &request); 
+                    MPI_Isend(nnzs_local[k].data(), nnzs_local[k].size(), MPI_UNSIGNED, 0, Env::rank, MPI_COMM_WORLD, &request); 
                     requests.push_back(request);
                 }
             }
@@ -1281,19 +1263,19 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
 
         std::vector<uint32_t> partitions_start(ntiles);
         std::vector<uint32_t> partitions_end(ntiles);
-        std::vector<uint32_t> partitions_nnz(ntiles);
+        std::vector<uint32_t> partitions_nnzs(ntiles);
     
         if(((not one_rank) and Env::rank == 0) or (one_rank)) {
             for(uint32_t k = 0; k < rank_ncolgrps; k++) {
                 if(one_rank) {
-                    std::copy(nnz_local[k].begin(), nnz_local[k].end(), nnz_global.begin() + offsets[k]);
+                    std::copy(nnzs_local[k].begin(), nnzs_local[k].end(), nnzs_global.begin() + offsets[k]);
                 }
                 else {
-                    std::copy(nnz_local[k].begin(), nnz_local[k].end(), nnz_global.begin() + offsets[(Env::rank*rank_ncolgrps)+k]);
+                    std::copy(nnzs_local[k].begin(), nnzs_local[k].end(), nnzs_global.begin() + offsets[(Env::rank*rank_ncolgrps)+k]);
                 }
             }
-            uint64_t global_sum_nnz = std::accumulate(nnz_global.begin(), nnz_global.end(), 0);
-            if(global_sum_nnz != nnz) {
+            uint64_t global_sum_nnzs = std::accumulate(nnzs_global.begin(), nnzs_global.end(), 0);
+            if(global_sum_nnzs != nnzs) {
                 Logging::print(Logging::LOG_LEVEL::ERROR, "Repartitioning error\n");
                 std::exit(Env::finalize()); 
             }
@@ -1304,19 +1286,19 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             uint32_t end = 0;
             uint32_t t = 0;
             for(uint32_t j = 0; j < ncols; j++) {
-                n += nnz_global[j];
-                if(((int64_t) (balanced_nnz_per_tile - n) < 0) or ((j+1) == ncols)) {
+                n += nnzs_global[j];
+                if(((int64_t) (balanced_nnzs_per_tile - n) < 0) or ((j+1) == ncols)) {
                     partitions_start[t] = (t == 0)         ? 0         : partitions_end[t-1];
                     partitions_end[t]   = (t == ntiles-1)  ? ncols     : j;
-                    partitions_nnz[t]   = (t == ntiles-1)  ? (nnz - m) : (n - nnz_global[j]);
+                    partitions_nnzs[t]   = (t == ntiles-1)  ? (nnzs - m) : (n - nnzs_global[j]);
                     j                   = (t == ntiles-1)  ? ncols     : (j - 1);
-                    m += partitions_nnz[t];
+                    m += partitions_nnzs[t];
                     n = 0;
                     t++;
                 }
             }
-            global_sum_nnz = std::accumulate(partitions_nnz.begin(), partitions_nnz.end(), 0);
-            if(global_sum_nnz != nnz) {
+            global_sum_nnzs = std::accumulate(partitions_nnzs.begin(), partitions_nnzs.end(), 0);
+            if(global_sum_nnzs != nnzs) {
                 Logging::print(Logging::LOG_LEVEL::ERROR, "Repartitioning error\n");
                 std::exit(Env::finalize()); 
             }
@@ -1331,11 +1313,11 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
         }
     
         for(uint32_t k = 0; k < rank_ncolgrps; k++) {
-            nnz_local[k].clear();
-            nnz_local[k].shrink_to_fit();
+            nnzs_local[k].clear();
+            nnzs_local[k].shrink_to_fit();
         }
-        nnz_local.clear();
-        nnz_local.shrink_to_fit();
+        nnzs_local.clear();
+        nnzs_local.shrink_to_fit();
         
         if(not one_rank) {
             std::vector<uint32_t> partitions(ntiles*3);
@@ -1344,7 +1326,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                 for(uint32_t t = 0; t < ntiles; t++) {
                     partitions[(t*3)] = partitions_start[t];
                     partitions[(t*3)+1] = partitions_end[t];
-                    partitions[(t*3)+2] = partitions_nnz[t];
+                    partitions[(t*3)+2] = partitions_nnzs[t];
                 }
                 
                 for(uint32_t r = 1; r < nranks; r++) {
@@ -1360,7 +1342,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                 for(uint32_t t = 0; t < ntiles; t++) {
                     partitions_start[t] = partitions[(t*3)];
                     partitions_end[t] = partitions[(t*3)+1];
-                    partitions_nnz[t] = partitions[(t*3)+2];
+                    partitions_nnzs[t] = partitions[(t*3)+2];
                 }
             }
             Env::barrier();
@@ -1372,7 +1354,7 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
                 tile.start_col = partitions_start[j];
                 tile.end_col = partitions_end[j];
                 tile.width = tile.end_col - tile.start_col;
-                tile.nedges = partitions_nnz[j];
+                tile.nedges = partitions_nnzs[j];
                 if(tile.rank == Env::rank) {
                     auto& triples = tile.triples;
                     triples.clear();
@@ -1385,17 +1367,10 @@ void Tiling<Weight>::repartition_tiles(const std::string input_file, const INPUT
             bounds[j] = tiles[0][j].end_col;
         }
         
-        std::vector<struct Triple<Weight>> triples;
-        if(INPUT_TYPE::_TEXT_ == input_type) {
-            triples = IO::text_file_read<Weight>(input_file, one_rank);
-        }
-        else {
-            triples = IO::binary_file_read<Weight>(input_file, one_rank, hasher, nrows, ncols);
-        }
-        
-        insert_triples(triples);
-        delete_triples(triples);
-        
+		std::vector<struct Triple<Weight>> triples = IO::read_file_ijw<Weight>(input_file, input_type, hasher, one_rank, nrows, ncols);
+		Tiling<Weight>::insert_triples(triples);
+		Tiling<Weight>::delete_triples(triples);
+
         if(not one_rank) {
             exchange_triples();
         }
