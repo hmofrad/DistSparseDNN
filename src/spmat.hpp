@@ -23,11 +23,11 @@ struct Compressed_Format {
     public:
         Compressed_Format() {}
         virtual ~Compressed_Format() {}
-        virtual void populate(std::vector<struct Triple<Weight>>& triples) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        //virtual void populate(std::vector<struct Triple<Weight>>& triples) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         // Fixed tile height and width; tile height = nrows / nranks or tile width = ncols / nranks 
         virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         // If tile height and width are not necessarily multiples of nrows and ncols 
-        virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        //virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
@@ -56,12 +56,12 @@ struct CSR: public Compressed_Format<Weight> {
     public:
         CSR(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_);
         CSR(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id);
-        CSR(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width, const int32_t socket_id);
+        //CSR(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width, const int32_t socket_id);
         ~CSR(){};
         
-        void populate(std::vector<struct Triple<Weight>>& triples);
-        void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width){}
-        void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
+        //void populate(std::vector<struct Triple<Weight>>& triples);
+        void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width);
+        //void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
         void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
         void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid){};
         void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
@@ -89,12 +89,12 @@ struct CSC: public Compressed_Format<Weight> {
     public:
         CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_);
         CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id);        
-        CSC(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width, const int32_t socket_id);
+        //CSC(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width, const int32_t socket_id);
         ~CSC(){};
         
-        void populate(std::vector<struct Triple<Weight>>& triples);
+        //void populate(std::vector<struct Triple<Weight>>& triples);
         void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width);
-        void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
+        //void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
         void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
         void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
@@ -155,6 +155,7 @@ CSR<Weight>::CSR(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncol
     CSR::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSR::nnz, Env::rank_socket_id));
 }
 
+/*
 template<typename Weight>
 CSR<Weight>::CSR(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width, const int32_t socket_id) {
     std::shared_ptr<struct CSC<Weight>> other_csc = std::static_pointer_cast<struct CSC<Weight>>(other_spmat);
@@ -228,6 +229,7 @@ void CSR<Weight>::populate(std::vector<struct Triple<Weight>>& triples) {
     CSR::nnz_i = CSR::nnz; 
 }
 
+
 template<typename Weight>
 void CSR<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, 
                                                                              const uint32_t start_col, const uint32_t tile_width) {    
@@ -258,6 +260,38 @@ void CSR<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const ui
         IA[i] = IA[i - 1];
     }
     CSR::nnz_i = CSR::nnz; 
+}
+*/
+
+template<typename Weight>
+void CSR<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width) {
+    const RowSort<Weight> f_row;
+    std::sort(triples.begin(), triples.end(), f_row);    
+    
+    uint32_t* IA = CSR::IA_blk->ptr;
+    uint32_t* JA = CSR::JA_blk->ptr;
+    Weight* A = CSR::A_blk->ptr;
+        
+    uint32_t i = 1;
+    uint32_t j = 0; 
+    IA[0] = 0;
+    for(auto &triple: triples) {
+		std::pair pair = std::make_pair((triple.row % tile_height), (triple.col % tile_width));
+        while((i - 1) != pair.first) {
+            i++;
+            IA[i] = IA[i - 1];
+        }                  
+        IA[i]++;
+        JA[j] = pair.second;
+        A[j] = triple.weight;
+        j++;
+    }
+    
+    while(i < CSR::nrows) {
+        i++;
+        IA[i] = IA[i - 1];
+    }
+    CSR::nnz_i = CSR::nnz; 	
 }
 
 template<typename Weight>
@@ -622,7 +656,7 @@ CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncol
     CSC::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(CSC::nnz, Env::rank_socket_id));
     CSC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(CSC::nnz, Env::rank_socket_id));
 }
-
+/*
 template<typename Weight>
 CSC<Weight>::CSC(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width, const int32_t socket_id) {
     std::shared_ptr<struct CSR<Weight>> other_csr = std::static_pointer_cast<struct CSR<Weight>>(other_spmat);
@@ -698,37 +732,6 @@ void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples) {
 }
 
 template<typename Weight>
-void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width) {
-    const ColSort<Weight> f_col;
-    std::sort(triples.begin(), triples.end(), f_col);  
-    
-    uint32_t* IA = CSC::IA_blk->ptr;
-    uint32_t* JA = CSC::JA_blk->ptr;
-    Weight* A = CSC::A_blk->ptr;
-    
-    uint32_t i = 0;
-    uint32_t j = 1; 
-    JA[0] = 0;
-    for(auto &triple: triples) {
-        std::pair pair = std::make_pair((triple.row % tile_height), (triple.col % tile_width));
-        while((j - 1) != pair.second) {
-            j++;
-            JA[j] = JA[j - 1];
-        }                  
-        JA[j]++;
-        IA[i] = pair.first;
-        A[i] = triple.weight;
-        i++;
-    }
-    
-    while(j < CSC::ncols) {
-        j++;
-        JA[j] = JA[j - 1];
-    }
-    CSC::nnz_i = CSC::nnz;
-}
-
-template<typename Weight>
 void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, 
                                                                              const uint32_t start_col, const uint32_t tile_width) {    
     const ColSort<Weight> f_col;
@@ -759,91 +762,38 @@ void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const ui
         JA[j] = JA[j - 1];
     }
     CSC::nnz_i = CSC::nnz;   
+}
+*/
+
+template<typename Weight>
+void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width) {
+    const ColSort<Weight> f_col;
+    std::sort(triples.begin(), triples.end(), f_col);  
     
-    /*
-    if(Env::print) {
-        
-    for(uint32_t j = 0; j < 11; j++) {
-        //if(j == 8 or j == 16 or j == 24 or j == 32) {
-            printf("%d ", j);
-            for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
-                printf("%d ", IA[i]);
-            }
-            printf("\n");
-        //}
-    }
-    std::exit(0);
-    }
-    else {
-        Env::print = true;
-    }
-    */
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight* A = CSC::A_blk->ptr;
     
-    /*
-    std::vector<int> cols(CSC::nrows);
-    std::vector<int> rows(CSC::ncols);
-    std::vector<int> c(CSC::ncols);
-    std::vector<int> r(CSC::nrows);
-    for(uint32_t j = 0; j < CSC::ncols; j++) {
-        int nc = JA[j + 1] - JA[j];
-        cols[nc]++;
-        
-        //printf("%d(%d): ", j, JA[j + 1] - JA[j]);
-        for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
-          //  printf("%d ", IA[i]);
-            //cols[j]++;
-            r[IA[i]]++;
-            c[j]++;
-        }
-        //printf("\n");
+    uint32_t i = 0;
+    uint32_t j = 1; 
+    JA[0] = 0;
+    for(auto &triple: triples) {
+        std::pair pair = std::make_pair((triple.row % tile_height), (triple.col % tile_width));
+        while((j - 1) != pair.second) {
+            j++;
+            JA[j] = JA[j - 1];
+        }                  
+        JA[j]++;
+        IA[i] = pair.first;
+        A[i] = triple.weight;
+        i++;
     }
-    */
-    /*
-    for(uint32_t i = 0; i < CSC::ncols; i++) {
-        printf("%d %d\n", i, cols[i]);
-    }
-    */
-    /*
-    if(0 and !Env::rank) {
-        //printf("%lu\n", CSC::nnz_i);
-        
-        for(uint32_t i = 0; i < CSC::ncols; i++) {
-            printf("%d %d\n", i, c[i]);
-        }
-        
-       
-        for(uint32_t i = 0; i < CSC::nrows; i++) {
-            printf("%d %d\n", i, r[i]);
-        }
-        
-        
-    }
-    Env::barrier();
-    if(Env::rank) {
-        //printf("%lu\n", CSC::nnz_i);
-        
-        for(uint32_t i = 0; i < CSC::ncols; i++) {
-            printf("%d %d\n", i, c[i]);
-        }
-        
-        
-        for(uint32_t i = 0; i < CSC::nrows; i++) {
-            printf("%d %d\n", i, r[i]);
-        }
-        
-    }
-    Env::barrier();
-    */
-    /*
-    for(uint32_t i = 0; i < CSC::nrows; i++) {
-        rows[r[i]]++;
-    }
-    for(uint32_t i = 0; i < CSC::ncols; i++) {
-        printf("%d %d\n", i, rows[i]);
-    }
-    */
     
-    //std::exit(0);
+    while(j < CSC::ncols) {
+        j++;
+        JA[j] = JA[j - 1];
+    }
+    CSC::nnz_i = CSC::nnz;
 }
 
 template<typename Weight>
