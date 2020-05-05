@@ -61,7 +61,6 @@ int main(int argc, char **argv) {
         std::exit(Env::finalize());
     }    
     
-    
     std::string feature_file = feature_file_prefix + "/input";
     feature_file += (input_type == INPUT_TYPE::_TEXT_) ? ".txt" : ".bin";
 	
