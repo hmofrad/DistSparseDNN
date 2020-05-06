@@ -1,10 +1,7 @@
 /*
- * allocator.hpp: Allocate/deallocate/reallocate 
- * contiguous region of memory using mmap/mremap
- * To keep the realloced memory valid, 
- * we always return the new virtual address
- *
- * (c) Mohammad Hasanzadeh Mofrad, 2019
+ * allocator.hpp: Allocate/deallocate/reallocate contiguous region of memory using mmap/mremap
+ * To keep the realloced memory valid we always return the new virtual address
+ * (c) Mohammad Hasanzadeh Mofrad, 2020
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
 
