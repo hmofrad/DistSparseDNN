@@ -13,6 +13,9 @@
 #include <deque>
 #include "hashers.hpp"
 
+//template<typename Weight>
+//Weight activation_function(Weight w) {return (w < 0) ? 0 : (w > 32) ? 32 : w;}
+
 /* Input x layers */
 enum PARALLELISM_TYPE {_DATA_X_MODEL_, _DATA_X_DATA_, _HYBRID_X_HYBRID_, _MANAGER_X_WORKER_, _WORK_X_STEALING_, _SIZE_};
 const char* PARALLELISM_TYPES[] = {"_DATA_X_MODEL_", "_DATA_X_DATA_", "_HYBRID_X_HYBRID_", "_MANAGER_X_WORKER_", "_WORK_X_STEALING_"};
@@ -30,10 +33,11 @@ class Net {
 			const uint32_t nneurons_, const uint32_t nmax_layers_, const  std::vector<std::string> layer_files,
             const Weight bias_value, const VALUE_TYPE bias_type, const std::vector<std::string> bias_files,
 			const uint32_t ncategories, const VALUE_TYPE category_type, const  std::string category_file, 
+			Weight(*activation_function_)(Weight),
 			const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_,
             const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
             const COMPRESSED_FORMAT compression_type_ = COMPRESSED_FORMAT::_CSC_,
-            const HASHING_TYPE hashing_type_ = HASHING_TYPE::_BOTH_);
+            const HASHING_TYPE hashing_type_ = HASHING_TYPE::_NO_);
 
         std::unique_ptr<struct Tiling<Weight>> input_features = nullptr;
         std::vector<uint32_t> true_categories;
@@ -50,6 +54,8 @@ class Net {
 		uint32_t nneurons = 0;
         uint32_t nmax_layers = 0;
         uint32_t ncategories = 0;
+		
+		Weight (*activation_function)(Weight);
 		
 		uint32_t predicted_nistances;
         
@@ -95,18 +101,24 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
 				 const uint32_t nneurons_, const uint32_t nmax_layers_, const std::vector<std::string> layer_files,
 				 const Weight bias_value, const VALUE_TYPE bias_type, const std::vector<std::string> bias_files,
 				 const uint32_t ncategories_, const VALUE_TYPE category_type, const std::string category_file, 
+				 Weight(*activation_function_)(Weight),
 				 const INPUT_TYPE input_type, const PARALLELISM_TYPE parallelism_type_, 
 				 const COMPRESSED_FORMAT compression_type_, const HASHING_TYPE hashing_type_)
 				     : input_ninstanses(input_ninstanses_), input_nfeatures(input_nfeatures_), 
 					   nneurons(nneurons_), nmax_layers(nmax_layers_), ncategories(ncategories_), 
+					   activation_function(activation_function_),
 					   parallelism_type(parallelism_type_), compression_type(compression_type_), hashing_type(hashing_type_) {
-						   
     auto start = std::chrono::high_resolution_clock::now();
-	input_ninstanses++;
+	input_ninstanses+=2;
+	input_ninstanses += (input_ninstanses % Env::nthreads) ? (Env::nthreads - (input_ninstanses % Env::nthreads)) : 0; 
+	input_nfeatures+=2;
+	input_nfeatures += (input_nfeatures % Env::nthreads) ? (Env::nthreads - (input_nfeatures % Env::nthreads)) : 0; 
+	nneurons+=2;
+	nneurons += (nneurons % Env::nthreads) ? (Env::nthreads - (nneurons % Env::nthreads)) : 0; 
 	scheduling_type = (parallelism_type != PARALLELISM_TYPE::_HYBRID_X_HYBRID_) ? SCHEDULING_TYPE::_NONE_ : scheduling_type;
     hashers.push_back(std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, input_ninstanses, input_nfeatures, 1, 1)));
     input_nnzs = IO::get_nnzs<Weight>(feature_file, input_type, hashers[0], input_ninstanses);
-	input_nfeatures += (input_nfeatures % Env::nthreads) ? (Env::nthreads - (input_nfeatures % Env::nthreads)) : 0;  
+	 
 	
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         input_features = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
@@ -194,19 +206,19 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
 	
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
-                                                            0, input_ninstanses, input_nfeatures, 
+                                                            0, input_ninstanses, nneurons, 
                                                             TILING_TYPE::_1D_ROW_, compression_type, hashers[0]));
     }
     else if((parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) or (parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_)) {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads * split_factor, Env::nranks * Env::nthreads * split_factor, 1, Env::nranks, 
                                                             Env::nthreads, Env::nranks * Env::nthreads, 
-                                                            0, input_ninstanses, input_nfeatures, 
+                                                            0, input_ninstanses, nneurons, 
                                                             TILING_TYPE::_1D_ROW_, compression_type, hashers[0]));
     }
     else {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks * Env::nthreads, Env::nranks * Env::nthreads, 1, Env::nranks, 
                                                             Env::nthreads, Env::nranks * Env::nthreads, 
-                                                            0, input_ninstanses, input_nfeatures, 
+                                                            0, input_ninstanses, nneurons, 
                                                             TILING_TYPE::_1D_ROW_, compression_type, hashers[0]));
     }
     output->set_tile_info(input_features->tiles);
@@ -705,104 +717,74 @@ void Net<Weight>::inferenceReLU(const int32_t tid) {
 
 template<typename Weight>
 void Net<Weight>::data_x_model(const int32_t tid) {
-    //int32_t sid = (replication) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
-	printf("MODEL: tid=%d\n", tid);
-	std::exit(0);
-    uint32_t leader_rowgroup = Env::rank;
+	uint32_t leader_rowgroup = Env::rank;
     const int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
 
     struct Tile<Weight>& A_tile = input_features->tiles[leader_rowgroup][0];
     struct Tile<Weight>& C_tile = output->tiles[leader_rowgroup][0];
-    std::shared_ptr<struct Data_Block<Weight>> s_spa = spa_vectors[tid];
-    std::shared_ptr<struct Data_Block<Weight>> b_bias;
     
-    uint32_t nrows = A_tile.spmat->nrows;
+    
+    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0;
     //const uint32_t ncols = layers[sid][0]->ncols;
-	const uint32_t ncols = layers[0]->ncols;
+	//uint32_t ncols = layers[0]->ncols;
     uint32_t start, end;
     uint32_t sub_start = 0, sub_end = 0;
-    
-    if(tid == leader_tid) {	
-        for(int32_t i = 0; i < Env::nthreads; i++) {	
-            Env::threads[i].start_col = ((ncols/Env::nthreads) * i);	
-            Env::threads[i].end_col = (i == (Env::nthreads-1)) ? ncols : ((ncols/Env::nthreads) * (i+1));	
-            
-            Env::threads[i].start_row = ((nrows/Env::nthreads) * i);	
-            Env::threads[i].end_row = (i == (Env::nthreads-1)) ? nrows : ((nrows/Env::nthreads) * (i+1));	
-        }	
-    }	
-    pthread_barrier_wait(&Env::thread_barrier);
-    
-    if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-        start = Env::threads[tid].start_col;
-        end = Env::threads[tid].end_col;
-        sub_start = 0;
-        sub_end   = 0;
-        
-        /*
-        B_start = 0;
-        B_end = layers[sid][0]->ncols;
-        B_sub_start = 0;
-        B_sub_end   = 0;
-        */
-    }
-    else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
-        start = Env::threads[tid].start_row;
-        end = Env::threads[tid].end_row;
-        sub_start = 0;
-        sub_end   = 0;
-        
-        /*
-        B_start = 0;
-        B_end = layers[sid][0]->nrows;
-        B_sub_start = layers[sid][0]->start_row;
-        B_sub_end   = layers[sid][0]->end_row;
-        */
-    }
-    else {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
-        std::exit(Env::finalize());
-    }
-    pthread_barrier_wait(&Env::thread_barrier);
+
     
     auto start_t = std::chrono::high_resolution_clock::now();  
-    for (uint32_t l = 0; l < nmax_layers; l++) {
-        //auto now1 = std::chrono::high_resolution_clock::now();
-        std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
-        
-        //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][tid];
-        //struct Tile<Weight>& B_tile = layers[sid][l]->tiles[0][0];
+    for (uint32_t l = 0; l < nmax_layers; l++) {	
+		std::shared_ptr<struct Compressed_Format<Weight>>& A_SPMAT = A_tile.spmat;
 		struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
-        
-        std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
-        std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-        
-        b_bias = bias_vectors[l];
-		//b_bias = bias_vectors[sid][l];
-        nrows = A_SPMAT->nrows;
-        
-        
-        /*
-        B_start_col = 0;
-        B_end_col = B_CSC->ncols;
-        B_sub_start_col = B_tile.start_col;
-        B_sub_end_col   = B_tile.end_col;
-        */
-        
-        //B_start_col = Env::threads[tid].start_col;	
-        //B_end_col = Env::threads[tid].end_col;	
-        //B_sub_start_col = 0;	
-        //B_sub_end_col   = 0;
-        
-        
-        data_x_model_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
-                            nrows, ncols, 
+        std::shared_ptr<struct Compressed_Format<Weight>>& B_SPMAT = B_tile.spmat;
+        std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
+		std::shared_ptr<struct Data_Block<Weight>>& s_spa = spa_vectors[tid];
+        std::shared_ptr<struct Data_Block<Weight>>& b_bias = bias_vectors[l];
+		
+		A_nrows = A_SPMAT->nrows;
+		B_nrows = B_SPMAT->nrows;
+		B_ncols = B_SPMAT->ncols;
+		//layers[l]->tiles[0][0]
+		//B_nrows = layers[0]->nrows;
+		//B_ncols = layers[0]->ncols;
+		if(tid == leader_tid) {
+			for(int32_t i = 0; i < Env::nthreads; i++) {
+				Env::threads[i].start_row = ((B_nrows/Env::nthreads) * i);	
+				Env::threads[i].end_row = (i == (Env::nthreads-1)) ? B_nrows : ((B_nrows/Env::nthreads) * (i+1));	
+				
+				Env::threads[i].start_col = ((B_ncols/Env::nthreads) * i);	
+				Env::threads[i].end_col = (i == (Env::nthreads-1)) ? B_ncols : ((B_ncols/Env::nthreads) * (i+1));	
+			}	
+		}	
+		pthread_barrier_wait(&Env::thread_barrier);
+		
+		if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+			start = Env::threads[tid].start_col;
+			end = Env::threads[tid].end_col;
+			sub_start = 0, sub_end   = 0;
+		}
+		else {
+			Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
+			std::exit(Env::finalize());
+		}
+
+
+
+		
+        data_x_model_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
+                            A_nrows, B_ncols, 
                             start, end, 
                             sub_start, sub_end, 
                             thread_st, leader_tid, tid); 
         
-        /*
+		
+        //printf("MODEL DOne: layer=%d tid=%d nrows=%d ncols=%d\n", l, tid, A_nrows, B_ncols);
+		//pthread_barrier_wait(&Env::thread_barrier);
+		//std::exit(0);
+	
+        
+		
+		/*
         auto now = std::chrono::high_resolution_clock::now();
         double elapsed = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(now - start).count());
         uint64_t B_SIZE = B_CSC->JA_blk->nbytes + B_CSC->IA_blk->nbytes + B_CSC->A_blk->nbytes;
@@ -864,10 +846,11 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
         b_bias = bias_vectors[l];  
 
-        data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
+        data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
                            nrows, ncols, start, end, off, 
                            thread_st, leader_tid, tid);  
-                         
+        
+		
         //auto now = std::chrono::high_resolution_clock::now();
         //double elapsed = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(now - start).count());
         //uint64_t B_SIZE = B_CSC->JA_blk->nbytes + B_CSC->IA_blk->nbytes + B_CSC->A_blk->nbytes;
@@ -989,7 +972,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& my_threads, const int32
         std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
         b_bias = bias_vectors[l];      
         
-        data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
+        data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
                            nrows, ncols, start, end, off, 
                            thread_st, leader_tid, tid); 
         
@@ -1064,7 +1047,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& my_threads, const uint32_t
             }
         //}
    // printf("3.tid=%d %d leader_rowgroup=%d leader=%d \n", tid, l, my_rowgroup, leader_tid);
-        data_x_model_hybrid_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
+        data_x_model_hybrid_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
                nrows, ncols, start, end, off,
                my_threads, thread_st, leader_tid, tid);
      //    printf("4.tid=%d %d\n", tid, l);                          
@@ -1296,7 +1279,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
                 end = A_SPMAT->nrows;
             }
             
-            data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
+            data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
                                nrows, ncols, start, end, off, 
                                thread_st, leader_tid, tid);       
         }   
@@ -1365,7 +1348,7 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
                 end = A_SPMAT->nrows;
             }
             
-            data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, 
+            data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
                                nrows, ncols, start, end, off, 
                                thread_st, leader_tid, tid);       
         }   
