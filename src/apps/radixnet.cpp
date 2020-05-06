@@ -5,7 +5,7 @@
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
  
-// make clean && make && time mpirun.mpich -np 1 bin/./sparse_mnist -m 1000 1024 -n 1024 -l 120 -c 0 data/radixnet/bin/MNIST data/radixnet/bin/DNN -p 0
+// make clean && make && time mpirun.mpich -np 1 bin/./radixnet -m 60000 1024 -n 1024 -l 120 -c 0 data/radixnet/bin/MNIST data/radixnet/bin/DNN -p 0
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +24,10 @@
 #include "allocator.hpp"
 
 using WGT = float;
+
+const WGT YMIN = 0;  const WGT YMAX = 32;
+WGT relu(WGT w) {return (w < YMIN) ? YMIN : (w > YMAX) ? YMAX : w;}
+
 
 int main(int argc, char **argv) {
     Logging::enabled = true;
@@ -99,8 +103,9 @@ uint32_t input_ninstances = atoi(argv[2]);
 	
 	Net<WGT> N(input_ninstances, input_nfeatures, feature_file,
 			   nneurons, nmax_layers, layer_files, 
-			   bias_value, bias_type, bias_files, 
+			   bias_value, bias_type, bias_files,
 			   ncategories, category_type, category_file, 
+			   relu,
 			   input_type, parallelism_type, compression_type, hashing_type);
     
     return(Env::finalize());
