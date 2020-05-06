@@ -61,7 +61,8 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d], SPA[%lu]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
             std::exit(1); 
         }
-
+		//printf("SpMM dimensions tid=%d A[%d %d] B[%d %d], SPA[%lu] [%d %d]\n", tid, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems, start, end);
+		//printf("tid=%d start=%d end=%d\n", tid, start, end);
         for(uint32_t j = start; j < end; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
@@ -125,12 +126,16 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
     return std::make_tuple(nnzmax, nrows, ncols);
 }
 
+
+
+
 template<typename Weight>
 inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
                       std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT,
                       std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
                       std::shared_ptr<struct Data_Block<Weight>> s,
                       const std::shared_ptr<struct Data_Block<Weight>> b,
+					  Weight(*activation_function)(Weight),
                       const uint32_t start,
                       const uint32_t end,
                       const uint32_t off,
@@ -191,7 +196,7 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
             std::exit(1); 
         }
-
+		//printf("SpMM dimensions tid=%d C[%d %d] != A[%d %d] B[%d %d], SPA[%lu] [%d %d]\n", tid, C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems, start, end);
         for(uint32_t j = start; j < end; j++) {
             for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
                 uint32_t l = B_IA[k];
@@ -199,7 +204,10 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
                     s_A[A_IA[n]] += (B_A[k] * A_A[n]);
                 }
             }
-            C_CSC->populate_spa(&s_A, b_A, off + j, idx_nnz, tid);
+			//printf("%d %d %d %d\n", j, B_JA[j], B_JA[j+1], B_JA[j+1]-B_JA[j]);
+            //C_CSC->populate_spa(&s_A, b_A, off + j, idx_nnz, tid);
+			C_CSC->populate_spa(&s_A, b_A, off + j, idx_nnz, activation_function, tid);
+			//if(tid==Env::nthreads-1) printf("%d %d %lu\n", off, j, idx_nnz);
         }
     }
     else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
@@ -255,6 +263,7 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
                                 std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT, 
                                 std::shared_ptr<struct Data_Block<Weight>> s_spa,
                                 const std::shared_ptr<struct Data_Block<Weight>> b_bias,
+								Weight(*activation_function)(Weight),
                                 const uint32_t nrows,
                                 const uint32_t ncols,
                                 const uint32_t start,
@@ -268,19 +277,23 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
     COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;   
     if((compression_type == COMPRESSED_FORMAT::_CSC_) or (compression_type == COMPRESSED_FORMAT::_CSR_)) {
         double start_time = 0;
+		//printf("spmm_symb start tid=%d\n", tid);
         start_time = Env::tic(); 
             std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, tid);
             pthread_barrier_wait(&Env::thread_barrier);
         Env::spmm_symb_time[tid] += Env::toc(start_time);   
-
+		//printf("spmm_symb done tid=%d %lu\n", tid, thread_st.off_nnz);
+		
         start_time = Env::tic();
             uint64_t nnz = Env::adjust_nnz(leader_tid, tid);
             C_SPMAT->reallocate(nnz, nrows, ncols, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
-
+		//printf("spmm_symb done tid=%d nnz=%lu\n", tid, nnz);
+		//pthread_barrier_wait(&Env::thread_barrier);
+		//std::exit(0);
         start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barrier);
-            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, start, end, sub_start, thread_st.idx_nnz, tid);
+            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, sub_start, thread_st.idx_nnz, tid);
             pthread_barrier_wait(&Env::thread_barrier);
             Env::adjust_displacement(tid);
             C_SPMAT->adjust(leader_tid, tid);	
@@ -288,8 +301,7 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
 
         start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barrier);
-            A_SPMAT->repopulate(C_SPMAT, start, end, thread_st.dis_nnz, leader_tid, tid);
-            //A_SPMAT->repopulate(C_SPMAT, B_sub_start, B_sub_end, thread_st.dis_nnz, leader_tid, tid);
+            A_SPMAT->repopulate(C_SPMAT, thread_st.dis_nnz, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
         //A_SPMAT->walk_dxm(false, leader_tid, tid);
    }
@@ -386,6 +398,7 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
                                std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT, 
                                std::shared_ptr<struct Data_Block<Weight>> s_spa,
                                const std::shared_ptr<struct Data_Block<Weight>> b_bias,
+							   Weight(*activation_function)(Weight),
                                const uint32_t nrows,
                                const uint32_t ncols,
                                const uint32_t start,
@@ -410,7 +423,7 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
         
         start_time = Env::tic();
             thread_st.idx_nnz = 0;
-            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, start, end, off, thread_st.idx_nnz, tid);
+            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, off, thread_st.idx_nnz, tid);
             Env::adjust_displacement(tid);
             C_SPMAT->adjust(tid);
         Env::spmm_real_time[tid] += Env::toc(start_time);                              
@@ -512,6 +525,7 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<
                                 std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT, 
                                 std::shared_ptr<struct Data_Block<Weight>> s_spa,
                                 const std::shared_ptr<struct Data_Block<Weight>> b_bias,
+								Weight(*activation_function)(Weight),
                                 const uint32_t nrows,
                                 const uint32_t ncols,
                                 const uint32_t start,
@@ -538,7 +552,7 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<
 
         if(tid ==leader_tid) start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
-            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, start, end, off, thread_st.idx_nnz, tid);
+            spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, off, thread_st.idx_nnz, tid);
             pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
             Env::adjust_displacement(my_threads, leader_tid, tid);
             C_SPMAT->adjust(my_threads, leader_tid, tid);	
