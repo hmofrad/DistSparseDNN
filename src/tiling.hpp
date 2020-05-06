@@ -558,6 +558,15 @@ std::deque<uint32_t> Tiling<Weight>::set_rank_indices() {
 	return rank_rgs;
 }
 
+/*
+// Faster one
+template<typename Weight>
+void Tiling<Weight>::integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b) {
+	int d = sqrt(n);
+	while(n%d != 0) d--;
+	a=d, b=n/d;
+}
+*/
 template<typename Weight>
 void Tiling<Weight>::integer_factorize(const uint32_t n, uint32_t& a, uint32_t& b) {
     a = b = sqrt(n);
