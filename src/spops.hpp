@@ -247,7 +247,7 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
                     s_A[B_JA[n]] += (A_A[k] * B_A[n]);
                 }
             }
-            C_CSR->populate_spa(&s_A, b_A, off + i, idx_nnz, tid);
+            C_CSR->populate_spa(&s_A, b_A, off + i, idx_nnz, activation_function, tid);
         }        
     }
     else {
@@ -303,7 +303,7 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
             pthread_barrier_wait(&Env::thread_barrier);
             A_SPMAT->repopulate(C_SPMAT, thread_st.dis_nnz, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
-        //A_SPMAT->walk_dxm(false, leader_tid, tid);
+        A_SPMAT->walk_dxm(false, leader_tid, tid);
    }
    else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
@@ -315,7 +315,7 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
 template<typename Weight>
 inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
                                              const uint32_t start_row,
-                                             const std::vector<uint32_t> trueCategories,
+                                             const std::vector<uint32_t> true_categories,
                                              const uint32_t npredicted_instances,
                                              const int32_t leader_tid, 
                                              const int32_t tid) {                  
@@ -338,6 +338,25 @@ inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compre
             A_JA   = A_CSC->JA_blk->ptr;
             A_A   = A_CSC->A_blk->ptr;
             
+		
+		double checksum = 0;
+		uint64_t checkcount = 0;
+		for(uint32_t j = 0; j < A_ncols; j++) { 
+            //std::cout << "j=" << j << "," << j << ": " << A_JA[j] << "--" << A_JA[j + 1] << ": " <<  A_JA[j + 1] - A_JA[j] << std::endl;    
+			for(uint32_t i = A_JA[j]; i < A_JA[j + 1]; i++) {
+				(void) A_IA[i];
+				(void) A_A[i];
+				checksum += A_A[i];
+				checkcount++;
+				if(A_IA[i]==3) {
+					printf("A[%d %d]=%f\n", A_IA[i], j, A_A[i]);
+					//std::cout << "    i=" << i << ",i=" << A_IA[i] <<  ",value=" << A_A[i] << std::endl;
+				}
+			}
+		}   
+		printf("checksum=%f checkcount=%lu\n", checksum, checkcount);
+		printf("%d %d\n", true_categories[0], true_categories[1]);
+			
             allCategories.resize(A_nrows);
             for(uint32_t j = 0; j < A_ncols; j++) {
                 for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
@@ -369,7 +388,7 @@ inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compre
 
         int count = 0;
         for(uint32_t i = 0; i < A_nrows; i++) {
-            if(trueCategories[start_row + i] != allCategories[i]) {
+            if(true_categories[start_row + i] != allCategories[i]) {
                 break;
             }
             if(allCategories[i]) {
@@ -438,6 +457,7 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
                                 const uint32_t start_row,
                                 const std::vector<uint32_t> true_categories,
                                 const uint32_t npredicted_instances,
+								bool with_classifier,
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
 
@@ -475,28 +495,24 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
         A_JA   = A_CSR->JA_blk->ptr;
         A_A   = A_CSR->A_blk->ptr;
         
-        allCategories.resize(A_nrows);
-        for(uint32_t i = 0; i < A_nrows; i++) {
-            for(uint32_t j = A_IA[i]; j < A_IA[i+1]; j++) {
-                allCategories[i] = 1;
-            }
-        }
+		allCategories.resize(A_nrows);
+		if(with_classifier) {
+			for(uint32_t i = 1; i < A_nrows; i++) allCategories[i]= A_IA[i+1]-A_IA[i] ? A_JA[A_IA[i]] : 0;
+		}
+		else {
+			for(uint32_t i = 0; i < A_nrows; i++) allCategories[i]= A_IA[i+1]-A_IA[i] ? 1 : 0;
+		}
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
         std::exit(Env::finalize());
     }    
-
+	
     int count = 0;
-    for(uint32_t i = 0; i < A_nrows; i++) {
-        if(true_categories[start_row + i] != allCategories[i]) {
-            break;
-        }
-        if(allCategories[i]) {
-            count++;
-        }
-    }
-
+	for(uint32_t i = 0; i < A_nrows; i++) {
+		if(true_categories[start_row + i] == allCategories[i]) count++;
+	}
+	
     Env::counters[tid].checkcount = count;
     pthread_barrier_wait(&Env::thread_barrier);
     if(tid == leader_tid) {
@@ -514,6 +530,7 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
         else {
             Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
         }
+		Logging::print(Logging::LOG_LEVEL::INFO, "Inference accuracy=%f\n", (double) count/A_nrows);
     }
     pthread_barrier_wait(&Env::thread_barrier);
     Env::barrier();
