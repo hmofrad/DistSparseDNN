@@ -25,9 +25,7 @@
 
 using WGT = float;
 
-const WGT YMIN = 0;  const WGT YMAX = 32;
-WGT relu(WGT w) {return (w < YMIN) ? YMIN : (w > YMAX) ? YMAX : w;}
-
+WGT relu(WGT w) {return (w < 0) ? 0 : (w > 32) ? 32 : w;}
 
 int main(int argc, char **argv) {
     Logging::enabled = true;
