@@ -45,8 +45,7 @@ void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type_, const boo
 
     if(not triples.empty()){
         spmat->populate(triples, height, width);
-		//spmat->populate(triples, start_row, end_row, start_col, end_col);
-        spmat->walk_dxm(one_rank, 0, 0);
+        //spmat->walk_dxm(one_rank, 0, 0);
         triples.clear();
         triples.shrink_to_fit();
     }
