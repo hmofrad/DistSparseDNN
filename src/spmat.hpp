@@ -28,7 +28,7 @@ struct Compressed_Format {
         virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         // If tile height and width are not necessarily multiples of nrows and ncols 
         //virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
-        virtual void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        //virtual void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
 		void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid){Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
@@ -63,8 +63,8 @@ struct CSR: public Compressed_Format<Weight> {
         //void populate(std::vector<struct Triple<Weight>>& triples);
         void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width);
         //void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
-        void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
-		void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid){};
+        //void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
+		void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid);
         void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid){};
         void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid);
@@ -97,7 +97,7 @@ struct CSC: public Compressed_Format<Weight> {
         //void populate(std::vector<struct Triple<Weight>>& triples);
         void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t tile_height, const uint32_t tile_width);
         //void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
-        void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
+        //void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
 		void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid);
         void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
@@ -294,12 +294,41 @@ void CSR<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const ui
         i++;
         IA[i] = IA[i - 1];
     }
-	std::exit(0);
+
     CSR::nnz_i = CSR::nnz; 	
 }
-
+/*
 template<typename Weight>
 void CSR<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t row, uint64_t& index, const int32_t tid) {
+    uint64_t&  k = index;
+    uint32_t   r = row + 1;
+    uint32_t* IA = CSR::IA_blk->ptr;
+    uint32_t* JA = CSR::JA_blk->ptr;
+    Weight*    A = CSR::A_blk->ptr;
+    Weight*    s = *spa;
+    const Weight* b = bias;
+    
+    // ReLU activation function thresholds 
+    const Weight YMIN = 0; 
+    const Weight YMAX = 32;
+    
+    for(uint32_t j = 0; j < CSR::ncols; j++) {
+        if(s[j]) {
+            s[j] += b[j];
+            s[j] = (s[j] < YMIN) ? YMIN : (s[j] > YMAX) ? YMAX : s[j];
+            if(s[j]) {
+                JA[k] = j;
+                A[k] = s[j];
+                k++;
+                s[j] = 0;
+            }
+        }
+    }
+    IA[r] = k;
+}
+*/
+template<typename Weight>
+void CSR<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t row, uint64_t& index, Weight(*activation_function)(Weight), const int32_t tid) {
     uint64_t&  k = index;
     uint32_t   r = row + 1;
     uint32_t* IA = CSR::IA_blk->ptr;
@@ -315,7 +344,8 @@ void CSR<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
     for(uint32_t j = 0; j < CSR::ncols; j++) {
         if(s[j]) {
             s[j] += b[j];
-            s[j] = (s[j] < YMIN) ? YMIN : (s[j] > YMAX) ? YMAX : s[j];
+            //s[j] = (s[j] < YMIN) ? YMIN : (s[j] > YMAX) ? YMAX : s[j];
+			s[j]=activation_function(s[j]);
             if(s[j]) {
                 JA[k] = j;
                 A[k] = s[j];
@@ -430,10 +460,10 @@ void CSR<Weight>::walk_dxd(const bool one_rank, const int32_t leader_tid, const 
 
 template<typename Weight>
 void CSR<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid) {
-    if(CSR::ncols != ncols_) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot reallocate.\n");
-        std::exit(Env::finalize());     
-    }
+    //if(CSR::ncols != ncols_) {
+      //  Logging::print(Logging::LOG_LEVEL::ERROR, "Cannot reallocate.\n");
+        //std::exit(Env::finalize());     
+    //}
     if((leader_tid == -1) or (tid == leader_tid)) {
         CSR::nnz = nnz_;
         CSR::nnz_i = 0;
@@ -809,7 +839,7 @@ void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples, const ui
     }
     CSC::nnz_i = CSC::nnz;
 }
-
+/*
 template<typename Weight>
 void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t col, uint64_t& index, const int32_t tid) {
     uint64_t&  k = index;
@@ -820,7 +850,7 @@ void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
     Weight*    s = *spa;
     const Weight* b = bias;
     
-    /* ReLU activation function thresholds */
+    // ReLU activation function thresholds 
     const Weight YMIN = 0; 
     const Weight YMAX = 32;
     
@@ -842,7 +872,7 @@ void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
 		//printf("col=%d c=%d index=%lu\n", col, c, index);
 	}
 }
-
+*/
 template<typename Weight>
 void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t col, uint64_t& index, Weight(*activation_function)(Weight), const int32_t tid) {
     uint64_t&  k = index;
