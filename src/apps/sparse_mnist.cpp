@@ -24,6 +24,7 @@
 #include "allocator.hpp"
 
 using WGT = float;
+//WGT relu(WGT w) {return w;}
 WGT relu(WGT w) {return (w < 0) ? 0 : w;}
 
 int main(int argc, char **argv) {
@@ -98,7 +99,7 @@ int main(int argc, char **argv) {
         std::exit(Env::finalize());
     }
 	
-	COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSR_;
+	COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSC_;
 	HASHING_TYPE hashing_type = HASHING_TYPE::_NO_;
 
     Net<WGT> N(input_ninstances, input_nfeatures, feature_file,
