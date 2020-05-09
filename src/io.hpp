@@ -17,8 +17,6 @@
 #include "hashers.hpp"
 enum INPUT_TYPE {_TEXT_, _BINARY_};
 enum VALUE_TYPE {_CONSTANT_, _NONZERO_INSTANCES_ONLY_, _INSTANCE_AND_VALUE_PAIRS_};
-enum CATEGORY_TYPE {_NONZERO_INSTANCES_ONLY_1, _INSTANCE_AND_PREDICTED_CLASS_PAIRS_1};
-enum BIAS_TYPE {_CONSTANTS_, _VECTORS_};
 
 namespace IO {
 	template<typename Weight>
@@ -346,6 +344,7 @@ uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_t
 			std::exit(Env::finalize());
 		}
 	}	
+	if(value_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) ninstances++; // Take account of zero
     Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Total number of instances %d\n", ninstances);
     Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Done reading file %s\n", input_file.c_str());
     Env::barrier();
