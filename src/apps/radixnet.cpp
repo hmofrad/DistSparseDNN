@@ -5,7 +5,7 @@
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
  
-// make clean && make && time mpirun.mpich -np 1 bin/./radixnet -m 60000 1024 -n 1024 -l 120 -c 0 data/radixnet/bin/MNIST data/radixnet/bin/DNN -p 0
+// make clean && make && time mpirun.mpich -np 4 bin/./radixnet -m 60000 1024 -n 1024 -l 120 -c 0 data/radixnet/bin/MNIST data/radixnet/bin/DNN -p 0
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -96,7 +96,7 @@ uint32_t input_ninstances = atoi(argv[2]);
         std::exit(Env::finalize());
     }
 	
-	COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSC_;
+	COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSR_;
 	HASHING_TYPE hashing_type = HASHING_TYPE::_BOTH_;
 	
 	Net<WGT> N(input_ninstances, input_nfeatures, feature_file,
