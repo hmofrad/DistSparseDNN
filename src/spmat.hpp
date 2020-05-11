@@ -9,6 +9,7 @@
 
 #include <numeric>
 #include <limits.h>
+#include <tuple>
 
 #include "allocator.hpp"
 #include "triple.hpp"
@@ -415,8 +416,9 @@ void CSR<Weight>::walk_dxd(const bool one_rank, const int32_t leader_tid, const 
     checknnz   = CSR::nnz_i;
 
     for(uint32_t i = 0; i < CSR::nrows; i++) { 
+		//printf("",);
         //if(!Env::rank and !tid)
-        //    std::cout << "i=" << i << "," << i << ": " << IA[i] << "--" << IA[i + 1] << ": " <<  IA[i + 1] - IA[i] << std::endl;    
+            //std::cout << "i=" << i << "," << i << ": " << IA[i] << "--" << IA[i + 1] << ": " <<  IA[i + 1] - IA[i] << std::endl;    
         for(uint32_t j = IA[i]; j < IA[i + 1]; j++) {
             (void) JA[j];
             (void) A[j];
@@ -591,13 +593,13 @@ void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
     //    fprintf(stderr, "Error: Cannot repopulate CSR\n");
      //   exit(1);
     //}
-    
+    //printf("%d %d %lu %lu\n", o_nrows, o_ncols, o_nnz, o_nnz_i);
     if(tid == leader_tid) {
         CSR::nnz = o_nnz_i;
         CSR::nnz_i = o_nnz_i;
 		CSR::nrows = o_nrows;
 		CSR::ncols = o_ncols;
-		CSR::IA_blk->reallocate(CSR::nrows);
+		CSR::IA_blk->reallocate(CSR::nrows+1);
         CSR::IA_blk->clear();
         CSR::JA_blk->reallocate(CSR::nnz_i);
         CSR::JA_blk->clear();
@@ -614,15 +616,35 @@ void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
     uint32_t* JA = CSR::JA_blk->ptr;
     uint32_t* IA = CSR::IA_blk->ptr;
     Weight*    A = CSR::A_blk->ptr;
-    
+	
+	/*
+	if(tid==leader_tid) {
+		for(int t: Env::my_threads[leader_tid]) {
+			printf("tid=%d: off=%lu idx=%lu dis=%lu\n", t, Env::threads[t].off_nnz, Env::threads[t].idx_nnz, Env::threads[t].dis_nnz);
+		}
+		
+	}
+	pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+	std::exit(0);
+	*/
+	
+	
+	
+	
+	
+	
+	
+	
+    const uint32_t start_row = Env::threads[tid].start_row;
+    const uint32_t end_row   = Env::threads[tid].end_row;	
+   
     for(uint32_t j = 0; j < Env::threads[tid].index; j++) {
         int32_t tt = Env::my_threads[leader_tid][j];
-        IA[Env::threads[tid].start_row+1] += (Env::threads[tt].idx_nnz - Env::threads[tt].off_nnz);
+        IA[start_row+1] += (Env::threads[tt].idx_nnz - Env::threads[tt].off_nnz);
     }
     
-    const uint32_t start_row = Env::threads[tid].start_row;
-    const uint32_t end_row   = Env::threads[tid].end_row;
 
+	//printf("tid=%d start=%d end=%d off=%lu idx=%lu dis=%lu\n", tid, start_row, end_row, Env::threads[tid].off_nnz, Env::threads[tid].idx_nnz, Env::threads[tid].dis_nnz);
     for(uint32_t i = start_row; i < end_row; i++) {
         IA[i+1] = (i == start_row) ? IA[i+1] : IA[i];
         uint32_t& k = IA[i+1];
@@ -634,7 +656,55 @@ void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
         }
     }
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
-    
+	
+	/*
+	if(leader_tid == tid) {
+		
+		
+		
+		double checksum = 0;
+		uint64_t checkcount = 0;
+		uint32_t displacement = 0;
+		int t = 0;
+		for(uint32_t i = 0; i < o_nrows; i++) { 
+			int m = 0;
+			int32_t tt = Env::my_threads[leader_tid][t];
+			if(i == Env::threads[tt].start_row) {
+				displacement = Env::threads[tt].dis_nnz; 
+				t++;
+			}
+			else {
+				displacement = 0;        
+			}
+		   //if(!Env::rank)
+			 //   std::cout << "j=" << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
+			//printf("i=%d d=%d\n", i, o_IA[i + 1]-o_IA[i]);
+			for(uint32_t j = o_IA[i] + displacement; j < o_IA[i + 1]; j++) {
+				(void) o_JA[j];
+				(void) o_A[j];
+				checksum += o_A[j];
+				checkcount++;
+			}
+		}
+		printf("1.checksum=%f checkcount=%lu\n", checksum, checkcount);
+		checksum=0;
+		checkcount=0;
+		for(uint32_t i = 0; i < CSR::nrows; i++) { 
+		//printf("i=%d d=%d\n", i, IA[i + 1]-IA[i]);
+			for(uint32_t j = IA[i]; j < IA[i + 1]; j++) {
+				(void) JA[j];
+				(void) A[j];
+				checksum += A[j];
+				checkcount++;
+			}
+		}
+		printf("2.checksum=%f checkcount=%lu\n", checksum, checkcount);
+	}
+	
+	
+	pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+	*/
+    //std::exit(0);
     /*
     // It's ugly but I have to :-/
     for(uint32_t j = 0; j < Env::threads[tid].index; j++) {
@@ -889,7 +959,7 @@ void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
     
     for(uint32_t i = 0; i < CSC::nrows; i++) {
         if(s[i]) {
-            s[i] += b[c];
+            s[i] += b[c-1];
             //s[i] = (s[i] < YMIN) ? YMIN : (s[i] > YMAX) ? YMAX : s[i];
 			s[i]=activation_function(s[i]);
             if(s[i]) {
@@ -901,9 +971,9 @@ void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
         }
     }
     JA[c] = k;
-	if(tid == Env::nthreads-1) {
+	//if(tid == Env::nthreads-1) {
 		//printf("col=%d c=%d index=%lu\n", col, c, index);
-	}
+	//}
 }
 
 template<typename Weight>
@@ -943,8 +1013,9 @@ void CSC<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const 
 
             if(count_ranks != nnz_ranks) {
                 Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!!\n");
+				Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!! (%lu != %lu)\n", count_ranks, nnz_ranks);
             }
-            Logging::print(Logging::LOG_LEVEL::INFO, "tid=%d CSC: Iteration=%d, Total checksum=%f, Total count=%d %d\n", tid, Env::iteration, sum_ranks, count_ranks, CSC::ncols);
+            Logging::print(Logging::LOG_LEVEL::INFO, "tid=%d CSC: Iteration=%d, Total checksum=%f, Total count=%d\n", tid, Env::iteration, sum_ranks, count_ranks);
         } 
     }    
 }
@@ -965,7 +1036,7 @@ void CSC<Weight>::walk_dxd(const bool one_rank, const int32_t leader_tid, const 
 
     for(uint32_t j = 0; j < CSC::ncols; j++) { 
         //if(!Env::rank and !tid)
-        //    std::cout << "j=" << j << "," << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;    
+           // std::cout << "j=" << j << "," << j+1 << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;    
         for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
             (void) IA[i];
             (void) A[i];
@@ -975,7 +1046,36 @@ void CSC<Weight>::walk_dxd(const bool one_rank, const int32_t leader_tid, const 
             //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
         }
     }   
-    
+ 
+	/*
+	std::vector<std::vector<std::pair<int,Weight>>> rows(CSC::nrows);
+	for(uint32_t j = 0; j < CSC::ncols; j++) { 
+        //if(!Env::rank and !tid)
+           // std::cout << "j=" << j << "," << j+1 << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;    
+        for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
+			rows[IA[i]].push_back({j,A[i]});
+            //(void) IA[i];
+            //(void) A[i];
+            //checksum += A[i];
+            //checkcount++;
+            //if(!Env::rank and !tid)
+            //std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
+        }
+    }  
+	 
+	
+	for(uint32_t i = 0; i < rows.size(); i++){
+		printf("i=%d: ", i);
+		for(auto c: rows[i]) {
+			printf("j=%d v=%f\n", c.first, c.second);
+			if(c.first>50) break;
+		}
+		printf("\n");
+	}
+	*/
+	
+	
+	
     Env::barrier();
     pthread_barrier_wait(&Env::thread_barrier);
     if(tid == leader_tid) {
@@ -1005,6 +1105,9 @@ void CSC<Weight>::walk_dxd(const bool one_rank, const int32_t leader_tid, const 
             Logging::print(Logging::LOG_LEVEL::INFO, "CSC: Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
         }
     }
+
+
+	
 }
 
 template<typename Weight>
@@ -1036,7 +1139,7 @@ void CSC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
 template<typename Weight>
 void CSC<Weight>::adjust(const int32_t tid){
     CSC::nnz_i = Env::threads[tid].idx_nnz;
-    Env::nnzs[tid].push_back(Env::threads[tid].idx_nnz);
+    //Env::nnzs[tid].push_back(Env::threads[tid].idx_nnz);
 }
 
 template<typename Weight>
@@ -1045,7 +1148,7 @@ void CSC<Weight>::adjust(const int32_t leader_tid, const int32_t tid){
         CSC::nnz_i = 0;
         for(uint32_t i = 0; i < Env::threads.size(); i++) {    
             CSC::nnz_i += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
-            Env::nnzs[i].push_back(Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
+            //Env::nnzs[i].push_back(Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
         }
     }
     pthread_barrier_wait(&Env::thread_barrier);
@@ -1058,7 +1161,7 @@ void CSC<Weight>::adjust(const std::deque<int32_t> my_threads, const int32_t lea
         for(uint32_t i = 0; i < my_threads.size(); i++) {    
             int32_t t = my_threads[i];
             CSC::nnz_i += (Env::threads[t].idx_nnz - Env::threads[t].off_nnz);
-            Env::nnzs[t].push_back(Env::threads[t].idx_nnz - Env::threads[t].off_nnz);
+           // Env::nnzs[t].push_back(Env::threads[t].idx_nnz - Env::threads[t].off_nnz);
         }
     }
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
@@ -1146,7 +1249,6 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
 	//if(tid==Env::nthreads-1) printf("%d\n", JA[start_col+1]); //13057400
 	//printf(">>>%d %d %d\n", tid, JA[end_col], JA[end_col]);
     for(uint32_t j = start_col; j < end_col; j++) {
-		
         JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
         uint32_t& k = JA[j+1];
         uint32_t m = (j == start_col) ? dis_nnz : 0;
@@ -1157,6 +1259,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
             k++;
         }
     }
+	
 
 	
 	
@@ -1221,7 +1324,6 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
         Compressed_Format<Weight>::nnz_i = CSC::nnz_i;
 		Compressed_Format<Weight>::nrows = CSC::nrows;
 		Compressed_Format<Weight>::ncols = CSC::ncols;
-		Env::threads[Env::nthreads-1].end_col = CSC::ncols;
     }
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
     
@@ -1250,18 +1352,55 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
     }
     pthread_barrier_wait(&Env::thread_barrier);
     */
-    
-
+	/*
+    if(tid==leader_tid) {
+		for(int t: Env::my_threads[leader_tid]) {
+			printf("tid=%d: off=%lu idx=%lu dis=%lu\n", t, Env::threads[t].off_nnz, Env::threads[t].idx_nnz, Env::threads[t].dis_nnz);
+		}
+		
+	}
+	pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+	std::exit(0);
+*/
     
     // It's ugly but I have to :-/
+	const uint32_t start_col = Env::threads[tid].start_col;
+    const uint32_t end_col   = Env::threads[tid].end_col;
+	
     for(uint32_t j = 0; j < Env::threads[tid].index; j++) {
         int32_t tt = Env::my_threads[leader_tid][j];
-        JA[Env::threads[tid].start_col+1] += (Env::threads[tt].idx_nnz - Env::threads[tt].off_nnz);
+        JA[start_col+1] += (Env::threads[tt].idx_nnz - Env::threads[tt].off_nnz);
     }
     
-    const uint32_t start_col = Env::threads[tid].start_col;
-    const uint32_t end_col   = Env::threads[tid].end_col;
+	printf("#####tid=%d, JA[start_col+1]=%d\n", tid, JA[start_col+1]);
+    for(uint32_t j = start_col; j < end_col; j++) {
+        JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
+        uint32_t& k = JA[j+1];
+        uint32_t m = (j == start_col) ? Env::threads[tid].dis_nnz : 0;
+		//if(tid == Env::nthreads-1) printf("%d %d\n", j, k);
+        for(uint32_t i = o_JA[j] + m; i < o_JA[j+1]; i++) {
+            IA[k] = o_IA[i];
+            A[k]  = o_A[i];
+            k++;
+        }
+    }
+	
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+	printf("#####tid=%d start=%d end=%d index=%lu offset=%lu dis=%lu JA=%d\n", tid, start_col, end_col, Env::threads[tid].idx_nnz, Env::threads[tid].off_nnz, Env::threads[tid].dis_nnz, JA[end_col]);
+	
+		//const uint32_t start_col = Env::threads[tid].start_col;
+    //const uint32_t end_col   = Env::threads[tid].end_col;
+	//printf("%d [%d %d] [%d %d]\n", tid, start_col, end_col, CSC::nrows, CSC::ncols);
+    //for(int32_t i = 0; i < tid; i++) {
+      //  JA[start_col+1] += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
+    //}
+	//if(tid==Env::nthreads-1) printf("%d\n", JA[start_col+1]); //13057400
+	//printf(">>>%d %d %d\n", tid, JA[end_col], JA[end_col]);
 
+	
+	
+
+	/*
     for(uint32_t i = o_JA[start_col] + Env::threads[tid].dis_nnz; i < o_JA[start_col + 1]; i++) {
         IA[JA[start_col+1]] = o_IA[i];
         A[JA[start_col+1]]  = o_A[i];
@@ -1276,7 +1415,9 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
             JA[j+1]++;
         }
     }
-    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+	pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+	*/
+    
 }
 
 template<typename Weight>
