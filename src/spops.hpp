@@ -611,7 +611,7 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<
             uint64_t nnz = Env::adjust_nnz(my_threads, leader_tid, tid);
             C_SPMAT->reallocate(nnz, nrows, ncols, leader_tid, tid);
         if(tid ==leader_tid) Env::memory_allocation_time[tid] += Env::toc(start_time);
-		//if(tid==leader_tid)printf("tid=%d nnz=%lu\n", tid ,nnz);
+		if(tid==leader_tid)printf("tid=%d nnz=%lu\n", tid ,nnz);
         if(tid ==leader_tid) start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
             spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, off, thread_st.idx_nnz, tid);
@@ -619,14 +619,14 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<
             Env::adjust_displacement(my_threads, leader_tid, tid);
             C_SPMAT->adjust(my_threads, leader_tid, tid);	
         if(tid ==leader_tid) Env::spmm_real_time[tid] += Env::toc(start_time);
-		//if(tid==leader_tid)printf("tid=%d spmm done\n",tid);
+		if(tid==leader_tid)printf("tid=%d spmm done\n",tid);
         if(tid ==leader_tid) start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
             A_SPMAT->repopulate(C_SPMAT, my_threads, leader_tid, tid);
         if(tid ==leader_tid) Env::memory_allocation_time[tid] += Env::toc(start_time);
-		//if(tid==leader_tid)printf("tid=%d layer done\n",tid);
+		if(tid==leader_tid)printf("tid=%d layer done\n",tid);
 		
-		//pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+			//pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
 		//std::exit(0);
     }
     else {
