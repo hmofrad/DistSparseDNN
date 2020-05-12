@@ -1362,17 +1362,55 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
 	pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
 	std::exit(0);
 */
-    
-    // It's ugly but I have to :-/
 	const uint32_t start_col = Env::threads[tid].start_col;
     const uint32_t end_col   = Env::threads[tid].end_col;
 	
-    for(uint32_t j = 0; j < Env::threads[tid].index; j++) {
+	//other_spmat->walk_dxm1(true, leader_tid, tid);
+    //pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+    // It's ugly but I have to :-/
+
+	
+
+    
+	/*
+	printf("tid=%d/%d [%d %d] i,o,d[%lu %lu %lu] JA=%d nnzi=%lu\n", tid, leader_tid, start_col, end_col, Env::threads[tid].off_nnz, Env::threads[tid].idx_nnz, Env::threads[tid].dis_nnz, JA[start_col+1], CSC::nnz_i);
+	if(tid == leader_tid) {
+		int t = 0;
+		printf("nnzi=%lu\n", CSC::nnz_i);
+        for(uint32_t j = 0; j < CSC::ncols; j++) { 
+		printf("1.%d\n", j);
+			uint32_t displacement = 0;
+            int32_t tt = Env::my_threads[leader_tid][t];
+            if(j == Env::threads[tt].start_col) {
+				
+                displacement = Env::threads[tt].dis_nnz; 
+                t++;
+            }
+            else {
+                displacement = 0;        
+            }
+			JA[j+1]=JA[j];
+			uint32_t& k = JA[j+1];
+		printf("2.j=%d d=%d ja=%d k=%d o=%d\n", j, displacement, o_JA[j], k, o_JA[j+1]-o_JA[j]+displacement);
+            for(uint32_t i = o_JA[j] + displacement; i < o_JA[j+1]; i++) {
+                IA[k] = o_IA[i];
+				A[k]  = o_A[i];
+				k++;
+            }
+			printf("3.j=%d k=%d\n", j, k);
+        }
+	}
+	
+	pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+	*/
+	printf("tid=%d/%d/%d [%d %d] i,o,d,d[%lu %lu %lu %lu] JA=%d nnzi=%lu\n", tid, leader_tid, Env::threads[tid].index, start_col, end_col, Env::threads[tid].off_nnz, Env::threads[tid].idx_nnz, Env::threads[tid].idx_nnz-Env::threads[tid].off_nnz, Env::threads[tid].dis_nnz, JA[start_col+1], CSC::nnz_i);
+	for(uint32_t j = 0; j < Env::threads[tid].index; j++) {
         int32_t tt = Env::my_threads[leader_tid][j];
         JA[start_col+1] += (Env::threads[tt].idx_nnz - Env::threads[tt].off_nnz);
     }
-    
-	printf("#####tid=%d, JA[start_col+1]=%d\n", tid, JA[start_col+1]);
+	
+	
+	
     for(uint32_t j = start_col; j < end_col; j++) {
         JA[j+1] = (j == start_col) ? JA[j+1] : JA[j];
         uint32_t& k = JA[j+1];
@@ -1384,9 +1422,12 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
             k++;
         }
     }
+	printf("tid=%d/%d/%d, JA[end_col]=%d nnzi=%lu\n", tid, leader_tid, Env::threads[tid].index, JA[end_col], CSC::nnz_i);
+	//pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+	//printf("tid=%d/%d leaving...\n", tid, leader_tid);
+	pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+    
 	
-    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
-	printf("#####tid=%d start=%d end=%d index=%lu offset=%lu dis=%lu JA=%d\n", tid, start_col, end_col, Env::threads[tid].idx_nnz, Env::threads[tid].off_nnz, Env::threads[tid].dis_nnz, JA[end_col]);
 	
 		//const uint32_t start_col = Env::threads[tid].start_col;
     //const uint32_t end_col   = Env::threads[tid].end_col;
@@ -1435,13 +1476,13 @@ void CSC<Weight>::walk_dxm1(const bool one_rank, const int32_t leader_tid, const
             int32_t tt = Env::my_threads[leader_tid][t];
             if(j == Env::threads[tt].start_col) {
                 displacement = Env::threads[tt].dis_nnz; 
-                tt++;
+                t++;
             }
             else {
                 displacement = 0;        
             }
            //if(!Env::rank)
-             //   std::cout << "j=" << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
+                std::cout << "j=" << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
 
             for(uint32_t i = JA[j] + displacement; i < JA[j + 1]; i++) {
                 (void) IA[i];
@@ -1453,7 +1494,8 @@ void CSC<Weight>::walk_dxm1(const bool one_rank, const int32_t leader_tid, const
 
         Env::barrier();
         if(one_rank) {
-            Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d 1\n", Env::iteration, checksum, checkcount);
+            Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, checksum, checkcount);
+			if(checkcount==0) std::exit(0);
         }
         else {
             uint64_t nnz_ = CSC::nnz_i;
