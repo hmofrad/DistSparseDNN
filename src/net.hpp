@@ -13,9 +13,6 @@
 #include <deque>
 #include "hashers.hpp"
 
-//template<typename Weight>
-//Weight activation_function(Weight w) {return (w < 0) ? 0 : (w > 32) ? 32 : w;}
-
 /* Input x layers */
 enum PARALLELISM_TYPE {_DATA_X_MODEL_, _DATA_X_DATA_, _HYBRID_X_HYBRID_, _MANAGER_X_WORKER_, _WORK_X_STEALING_, _SIZE_};
 const char* PARALLELISM_TYPES[] = {"_DATA_X_MODEL_", "_DATA_X_DATA_", "_HYBRID_X_HYBRID_", "_MANAGER_X_WORKER_", "_WORK_X_STEALING_"};
@@ -33,6 +30,7 @@ class Net {
 			const uint32_t nneurons_, const uint32_t nmax_layers_, const  std::vector<std::string> layer_files,
             const Weight bias_value, const VALUE_TYPE bias_type, const std::vector<std::string> bias_files,
 			const uint32_t ncategories, const VALUE_TYPE category_type_, const  std::string category_file, 
+			Weight(*noop_function_)(Weight),
 			Weight(*activation_function_)(Weight),
 			const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_,
             const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
@@ -56,6 +54,7 @@ class Net {
         uint32_t ncategories = 0;
 		VALUE_TYPE category_type = VALUE_TYPE::_NONZERO_INSTANCES_ONLY_;
 		
+		Weight (*noop_function)(Weight);
 		Weight (*activation_function)(Weight);
 		
 		uint32_t predicted_nistances;
@@ -102,12 +101,12 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
 				 const uint32_t nneurons_, const uint32_t nmax_layers_, const std::vector<std::string> layer_files,
 				 const Weight bias_value, const VALUE_TYPE bias_type, const std::vector<std::string> bias_files,
 				 const uint32_t ncategories_, const VALUE_TYPE category_type_, const std::string category_file, 
-				 Weight(*activation_function_)(Weight),
+				Weight(*noop_function_)(Weight), Weight(*activation_function_)(Weight),
 				 const INPUT_TYPE input_type, const PARALLELISM_TYPE parallelism_type_, 
 				 const COMPRESSED_FORMAT compression_type_, const HASHING_TYPE hashing_type_)
 				     : input_ninstanses(input_ninstanses_), input_nfeatures(input_nfeatures_), 
 					   nneurons(nneurons_), nmax_layers(nmax_layers_), ncategories(ncategories_), category_type(category_type_),
-					   activation_function(activation_function_),
+					   noop_function(noop_function_), activation_function(activation_function_),
 					   parallelism_type(parallelism_type_), compression_type(compression_type_), hashing_type(hashing_type_) {
     auto start = std::chrono::high_resolution_clock::now();
 	input_ninstanses+=2;
@@ -148,7 +147,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
     input_ninstanses = input_features->nrows;
 	input_nfeatures = input_features->ncols;
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing the category files for %d neurons and %d layers.\n", nneurons, nmax_layers); 
-	predicted_nistances = IO::read_file_iv<uint32_t>(category_file, input_type, hashers[0], category_type, true_categories, input_features->nrows);
+	predicted_nistances = IO::read_file_iv<uint32_t>(category_file, input_type, hashers[0], true, category_type, true_categories, input_features->nrows);
 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Processing %d layer files (silent).\n", nmax_layers); 
     //nmax_layers = 2;
@@ -176,7 +175,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
 		else if(bias_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
 			std::string bias_file = bias_files[i];
 			std::vector<Weight> bias_values;
-			uint32_t c = IO::read_file_iv<Weight>(bias_file, input_type, hashers[i+1], bias_type, bias_values, layer_ncols);
+			uint32_t c = IO::read_file_iv<Weight>(bias_file, input_type, hashers[i+1], false, bias_type, bias_values, layer_ncols);
 			Weight* b_A = bias_vectors[i]->ptr;
 			for(uint32_t j = 0; j < layer_ncols; j++) b_A[j] = bias_values[j];
 		}
@@ -763,11 +762,11 @@ void Net<Weight>::data_x_model(const int32_t tid) {
 			std::exit(Env::finalize());
 		}
 
-        data_x_model_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
+        data_x_model_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                             A_nrows, B_ncols, 
                             start, end, 
                             sub_start, sub_end, 
-                            thread_st, leader_tid, tid); 
+                            thread_st, false, leader_tid, tid); 
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
@@ -808,10 +807,10 @@ void Net<Weight>::data_x_data(const int32_t tid) {
 			Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
 			std::exit(Env::finalize());
 		}
-		
-		data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
+		bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
+		data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
 						   A_nrows, B_ncols, start, end, off, 
-                           thread_st, leader_tid, tid);
+                           thread_st, last_layer, leader_tid, tid);
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
@@ -896,9 +895,9 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& leader_owned_threads, c
         //}
 		//
 		//printf("2.tid=%d l=%d A[%d %d] B[%d %d] [%lu %lu]\n", tid, l, A_nrows, A_ncols, B_nrows, B_ncols, A_SPMAT->nnz, B_SPMAT->nnz);
-		data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
+		data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                            A_nrows, B_ncols, start, end, off, 
-                           thread_st, leader_tid, tid); 
+                           thread_st, false, leader_tid, tid); 
 						   
         Env::scores[sid][tid]++;     
         //printf("3.tid=%d l=%d\n", tid, l);
@@ -981,9 +980,9 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& leader_owned_threads, cons
 		uint32_t A_ncols = A_SPMAT->ncols;
 		//printf("M:tid=%d/%d/%lu l=%d r=%d A[%d %d] B[%d %d] [%d %d] [%lu %lu]\n", tid, leader_tid, leader_owned_threads.size(), l, leader_rowgroup, A_nrows, A_ncols, B_nrows, B_ncols, start, end, A_SPMAT->nnz, B_SPMAT->nnz);
 		if(tid==leader_tid) {for(auto t: leader_owned_threads) {printf("%d ", t);} printf("l=%d\n", l);}
-        data_x_model_hybrid_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
+        data_x_model_hybrid_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                A_nrows, B_ncols, start, end, off,
-               leader_owned_threads, thread_st, leader_tid, tid);
+               leader_owned_threads, thread_st, false, leader_tid, tid);
 		//pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
        if(tid == leader_tid) Env::scores[sid][tid]++;
     }
@@ -1223,9 +1222,9 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
 				std::exit(Env::finalize());
 			}
             
-            data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
+            data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                                A_nrows, B_ncols, start, end, off, 
-                               thread_st, leader_tid, tid);       
+                               thread_st, false, leader_tid, tid);       
         }   
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
@@ -1284,9 +1283,9 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
 				std::exit(Env::finalize());
 			}
             
-            data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function,
+            data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                                A_nrows, B_ncols, start, end, off, 
-                               thread_st, leader_tid, tid);       
+                               thread_st, false, leader_tid, tid);       
         }   
     }
 
