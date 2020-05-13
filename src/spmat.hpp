@@ -30,7 +30,8 @@ struct Compressed_Format {
         // If tile height and width are not necessarily multiples of nrows and ncols 
         //virtual void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         //virtual void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
-		void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid){Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+		virtual void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid){Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+		//virtual void populate_spa_softmax(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid){Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
@@ -66,6 +67,7 @@ struct CSR: public Compressed_Format<Weight> {
         //void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
         //void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
 		void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid);
+		//void populate_spa_softmax(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid);
         void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid){};
         void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid);
@@ -100,6 +102,7 @@ struct CSC: public Compressed_Format<Weight> {
         //void populate(std::vector<struct Triple<Weight>>& triples, const uint32_t start_row, const uint32_t tile_height, const uint32_t start_col, const uint32_t tile_width);
         //void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, const int32_t tid);
 		void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid);
+		//void populate_spa_softmax(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid);
         void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid);
@@ -328,6 +331,37 @@ void CSR<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
     IA[r] = k;
 }
 */
+
+/*
+template<typename Weight>
+void CSR<Weight>::populate_spa_softmax(Weight** spa, const Weight* bias, const uint32_t row, uint64_t& index, Weight(*activation_function)(Weight), const int32_t tid) {
+    uint64_t&  k = index;
+    uint32_t   r = row + 1;
+    uint32_t* IA = CSR::IA_blk->ptr;
+    uint32_t* JA = CSR::JA_blk->ptr;
+    Weight*    A = CSR::A_blk->ptr;
+    Weight*    s = *spa;
+    const Weight* b = bias;
+	
+	uint32_t idx = 0;
+	Weight val = s[0] ? s[0]+b[0] : s[0];
+	s[0]=0;
+	for(uint32_t j = 1; j < CSR::ncols; j++) {
+		Weight w = s[j] ? s[j] + b[j] : s[j];
+		if(w > val) {
+			idx = j;
+			val = w;
+		}
+		s[j]=0;
+	}
+	
+	JA[k] = idx;
+	A[k] = val;
+	k++;
+	IA[r] = k;
+}
+*/
+
 template<typename Weight>
 void CSR<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t row, uint64_t& index, Weight(*activation_function)(Weight), const int32_t tid) {
     uint64_t&  k = index;
@@ -337,10 +371,6 @@ void CSR<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
     Weight*    A = CSR::A_blk->ptr;
     Weight*    s = *spa;
     const Weight* b = bias;
-    
-    /* ReLU activation function thresholds */
-    const Weight YMIN = 0; 
-    const Weight YMAX = 32;
     
     for(uint32_t j = 0; j < CSR::ncols; j++) {
         if(s[j]) {
@@ -353,7 +383,7 @@ void CSR<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
                 k++;
                 s[j] = 0;
             }
-        }
+       }
     }
     IA[r] = k;
 }
@@ -416,7 +446,6 @@ void CSR<Weight>::walk_dxd(const bool one_rank, const int32_t leader_tid, const 
     checknnz   = CSR::nnz_i;
 
     for(uint32_t i = 0; i < CSR::nrows; i++) { 
-		//printf("",);
         //if(!Env::rank and !tid)
             //std::cout << "i=" << i << "," << i << ": " << IA[i] << "--" << IA[i + 1] << ": " <<  IA[i + 1] - IA[i] << std::endl;    
         for(uint32_t j = IA[i]; j < IA[i + 1]; j++) {
@@ -943,6 +972,65 @@ void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
 	}
 }
 */
+
+/*
+	uint32_t idx = 0;
+	Weight val = s[0] ? s[0]+b[0] : s[0];
+	s[0]=0;
+	for(uint32_t j = 1; j < CSR::ncols; j++) {
+		Weight w = s[j] ? s[j] + b[j] : s[j];
+		if(w > val) {
+			idx = j;
+			val = w;
+		}
+		s[j]=0;
+	}
+	
+	JA[k] = idx;
+	A[k] = val;
+	k++;
+	IA[r] = k;
+*/
+/*
+template<typename Weight>
+void CSC<Weight>::populate_spa_softmax(Weight** spa, const Weight* bias, const uint32_t col, uint64_t& index, Weight(*activation_function)(Weight), const int32_t tid) {
+    uint64_t&  k = index;
+    uint32_t   c = col + 1;
+    uint32_t* IA = CSC::IA_blk->ptr;
+    uint32_t* JA = CSC::JA_blk->ptr;
+    Weight*    A = CSC::A_blk->ptr;
+    Weight*    s = *spa;
+    const Weight* b = bias;
+    */
+	/*
+	uint32_t idx = 0;
+	Weight val = s[0] ? s[0]+b[0] : s[0];
+	s[0]=0;
+	for(uint32_t i = 1; i < CSC::nrows; i++) {
+		Weight w = s[i] ? s[i] + b[c-1] : s[i];
+		if(w > val) {
+			idx = i;
+			val = w;
+		}
+		s[i]=0;
+	}
+    */
+	/*
+    for(uint32_t i = 0; i < CSC::nrows; i++) {
+        if(s[i]) {
+            s[i] += b[c-1];
+            if(s[i]) {
+                IA[k] = i;
+                A[k] = s[i];
+                k++;
+                s[i] = 0;
+            }
+        }
+    }
+    JA[c] = k;
+}
+*/
+
 template<typename Weight>
 void CSC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t col, uint64_t& index, Weight(*activation_function)(Weight), const int32_t tid) {
     uint64_t&  k = index;
