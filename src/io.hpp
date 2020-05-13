@@ -24,7 +24,7 @@ namespace IO {
 	template<typename Weight>
     std::vector<struct Triple<Weight>> read_file_ijw(const std::string input_file, const INPUT_TYPE input_type, std::shared_ptr<struct TwoDHasher> hasher, bool one_rank, const uint32_t nrows, const uint32_t ncols);
 	template<typename Weight>
-    uint32_t read_file_iv(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const VALUE_TYPE value_type, std::vector<Weight>& values, const uint32_t nrows);
+    uint32_t read_file_iv(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const bool dimension, const VALUE_TYPE value_type, std::vector<Weight>& values, const uint32_t nrows);
 }
 
 template<typename Weight>
@@ -244,7 +244,7 @@ std::vector<struct Triple<Weight>> IO::read_file_ijw(const std::string input_fil
 }
 
 template<typename Weight>
-uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const VALUE_TYPE value_type, std::vector<Weight>& values, const uint32_t nrows) {
+uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const bool dimension, const VALUE_TYPE value_type, std::vector<Weight>& values, const uint32_t nrows) {
 	Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Start reading file %s\n", input_file.c_str());
 	values.resize(nrows);
 	uint32_t ninstances = 0;
@@ -271,7 +271,8 @@ uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_t
 			iss.str(line);
 			if(value_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
 				iss >> instance;
-				instance = hasher->hasher_r->hash(instance);
+				if(dimension) { instance = hasher->hasher_r->hash(instance); }
+				else { instance = hasher->hasher_c->hash(instance); }
 				if(instance < nrows) {
 					values[instance] = 1;
 					ninstances++;
@@ -279,7 +280,8 @@ uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_t
 			}
 			else if(value_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
 				iss >> instance >>  value;
-				instance = hasher->hasher_r->hash(instance);
+				if(dimension) { instance = hasher->hasher_r->hash(instance); }
+				else { instance = hasher->hasher_c->hash(instance); }
 				if(instance < nrows) {
 					values[instance] = value;
 					ninstances++;
@@ -316,7 +318,8 @@ uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_t
 			if(value_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
 				fin.read(reinterpret_cast<char*>(&instance), sizeof(uint32_t));
 				offset += sizeof(uint32_t);
-				instance = hasher->hasher_r->hash(instance);
+				if(dimension) { instance = hasher->hasher_r->hash(instance); }
+				else { instance = hasher->hasher_c->hash(instance); }
 				if(instance < nrows) {
 					values[instance] = 1;
 					ninstances++;
@@ -327,7 +330,8 @@ uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_t
 				offset += sizeof(uint32_t);
 				fin.read(reinterpret_cast<char*>(&value), sizeof(Weight));
 				offset += sizeof(Weight);
-				instance = hasher->hasher_r->hash(instance);
+				if(dimension) { instance = hasher->hasher_r->hash(instance); }
+				else { instance = hasher->hasher_c->hash(instance); }
 				if(instance < nrows) {
 					values[instance] = value;
 					ninstances++;
@@ -344,7 +348,7 @@ uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_t
 			std::exit(Env::finalize());
 		}
 	}	
-	if(value_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) ninstances++; // Take account of zero
+	if(value_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) ninstances=std::max(ninstances, nrows); // Take account of zero
     Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Total number of instances %d\n", ninstances);
     Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Done reading file %s\n", input_file.c_str());
     Env::barrier();
