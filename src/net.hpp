@@ -761,12 +761,12 @@ void Net<Weight>::data_x_model(const int32_t tid) {
 			Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
 			std::exit(Env::finalize());
 		}
-
+		bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
         data_x_model_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                             A_nrows, B_ncols, 
                             start, end, 
                             sub_start, sub_end, 
-                            thread_st, false, leader_tid, tid); 
+                            thread_st, last_layer, leader_tid, tid); 
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
@@ -842,7 +842,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
 	uint32_t layer_index = (my_start_layer == nmax_layers) ? nmax_layers-1 : my_start_layer;
-	printf("tid=%d idx=%d my_start=%d max=%d\n", tid, layer_index, my_start_layer, nmax_layers);
+	//printf("tid=%d idx=%d my_start=%d max=%d\n", tid, layer_index, my_start_layer, nmax_layers);
 	struct Tile<Weight>& C_tile = (not(layer_index%2)) ? output->tiles[my_rowgroup][0]
 											           : input_features->tiles[my_rowgroup][0];
     //struct Tile<Weight>& A_tile = input_features->tiles[my_rowgroup][0];
@@ -887,7 +887,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& leader_owned_threads, c
 		
 		uint32_t A_ncols = A_SPMAT->ncols;
         if((l >= nmax_layers*recruiting_ratio) and add_to_my_follower_threads(leader_owned_threads, my_rowgroup, l, l, A_nrows, B_ncols, tid, tid)) {
-			printf("D:tid=%d layer=l=%d rg=%d A[%d %d] B[%d %d] [%lu %lu]\n", tid, l,  my_rowgroup, A_nrows, A_ncols, B_nrows, B_ncols, A_SPMAT->nnz, B_SPMAT->nnz);
+			//printf("D:tid=%d layer=l=%d rg=%d A[%d %d] B[%d %d] [%lu %lu]\n", tid, l,  my_rowgroup, A_nrows, A_ncols, B_nrows, B_ncols, A_SPMAT->nnz, B_SPMAT->nnz);
 			break;
 		}
             //if(not(l%2)) break;
@@ -895,9 +895,10 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& leader_owned_threads, c
         //}
 		//
 		//printf("2.tid=%d l=%d A[%d %d] B[%d %d] [%lu %lu]\n", tid, l, A_nrows, A_ncols, B_nrows, B_ncols, A_SPMAT->nnz, B_SPMAT->nnz);
+		bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
 		data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                            A_nrows, B_ncols, start, end, off, 
-                           thread_st, false, leader_tid, tid); 
+                           thread_st, last_layer, leader_tid, tid); 
 						   
         Env::scores[sid][tid]++;     
         //printf("3.tid=%d l=%d\n", tid, l);
@@ -979,10 +980,11 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& leader_owned_threads, cons
 		}
 		uint32_t A_ncols = A_SPMAT->ncols;
 		//printf("M:tid=%d/%d/%lu l=%d r=%d A[%d %d] B[%d %d] [%d %d] [%lu %lu]\n", tid, leader_tid, leader_owned_threads.size(), l, leader_rowgroup, A_nrows, A_ncols, B_nrows, B_ncols, start, end, A_SPMAT->nnz, B_SPMAT->nnz);
-		if(tid==leader_tid) {for(auto t: leader_owned_threads) {printf("%d ", t);} printf("l=%d\n", l);}
+		//if(tid==leader_tid) {for(auto t: leader_owned_threads) {printf("%d ", t);} printf("l=%d\n", l);}
+		bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
         data_x_model_hybrid_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                A_nrows, B_ncols, start, end, off,
-               leader_owned_threads, thread_st, false, leader_tid, tid);
+               leader_owned_threads, thread_st, last_layer, leader_tid, tid);
 		//pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
        if(tid == leader_tid) Env::scores[sid][tid]++;
     }
@@ -1106,7 +1108,7 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& leader_owned_threads, c
                 int ret = pthread_barrier_init(&Env::thread_barriers[tid], NULL, num_threads);
 				num_new_threads = num_threads - old_num_threads;
                 Env::increase_num_threads(num_new_threads, leader, tid);
-                printf("tid=%d/%d n=%d old=%d new=%d dest=%d init=%d\n", leader, tid, num_threads, old_num_threads, num_new_threads, ret1, ret);
+                //printf("tid=%d/%d n=%d old=%d new=%d dest=%d init=%d\n", leader, tid, num_threads, old_num_threads, num_new_threads, ret1, ret);
                 pthread_cond_broadcast(&Env::numa_thread_cond[socket_id]); 
                 
                 found = true;
@@ -1147,7 +1149,7 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& leader_owned_threads,
     uint32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     bool status = true;
     uint32_t all_done = 0;
-	printf("tid=%d addig to queue\n", tid);
+	//printf("tid=%d addig to queue\n", tid);
     pthread_mutex_lock(&Env::numa_thread_mutex[sid]);
     Env::numa_follower_threads[sid].push_back(tid);
     if(not leader_owned_threads.empty()) leader_owned_threads.erase(leader_owned_threads.begin(), leader_owned_threads.end());
@@ -1157,7 +1159,7 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& leader_owned_threads,
     for(std::deque<int32_t>& numa_thread: Env::numa_follower_threads) {
 		all_done += numa_thread.size();
 	}
-    printf("tid=%d all_done=%d nthreads=%d\n", tid, all_done, Env::nthreads);
+    //printf("tid=%d all_done=%d nthreads=%d\n", tid, all_done, Env::nthreads);
     if(all_done == (uint32_t) Env::nthreads) {         
         pthread_mutex_unlock(&Env::numa_thread_mutex[sid]);   
         for(int32_t s = 0; s < Env::nsockets; s++) {
@@ -1221,15 +1223,17 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
 				Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
 				std::exit(Env::finalize());
 			}
-            
+            bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
             data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                                A_nrows, B_ncols, start, end, off, 
-                               thread_st, false, leader_tid, tid);       
+                               thread_st, last_layer, leader_tid, tid);       
         }   
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
-    manager_x_worker_validate_prediction(input_features->tiles, true_categories, predicted_nistances, category_type, leader_tid, tid);
+	
+	std::vector<std::vector<struct Tile<Weight>>> C_tiles = (not((nmax_layers-1)%2)) ? output->tiles : input_features->tiles;
+    manager_x_worker_validate_prediction(C_tiles, true_categories, predicted_nistances, category_type, leader_tid, tid);
 }
 
 
@@ -1282,17 +1286,18 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
 				Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
 				std::exit(Env::finalize());
 			}
-            
+            bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
             data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                                A_nrows, B_ncols, start, end, off, 
-                               thread_st, false, leader_tid, tid);       
+                               thread_st, last_layer, leader_tid, tid);       
         }   
     }
 
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
 
-    work_x_stealing_validate_prediction(input_features->tiles, true_categories, predicted_nistances, category_type, leader_tid, tid);
+	std::vector<std::vector<struct Tile<Weight>>> C_tiles = (not((nmax_layers-1)%2)) ? output->tiles : input_features->tiles;
+    work_x_stealing_validate_prediction(C_tiles, true_categories, predicted_nistances, category_type, leader_tid, tid);
 }
 
 #endif 
