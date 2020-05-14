@@ -24,7 +24,7 @@
 #include "allocator.hpp"
 
 using WGT = float;
-
+WGT noop(WGT w) {return w;}
 WGT relu(WGT w) {return (w < 0) ? 0 : (w > 32) ? 32 : w;}
 
 int main(int argc, char **argv) {
@@ -96,14 +96,14 @@ uint32_t input_ninstances = atoi(argv[2]);
         std::exit(Env::finalize());
     }
 	
-	COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSR_;
+	COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSC_;
 	HASHING_TYPE hashing_type = HASHING_TYPE::_BOTH_;
 	
 	Net<WGT> N(input_ninstances, input_nfeatures, feature_file,
 			   nneurons, nmax_layers, layer_files, 
 			   bias_value, bias_type, bias_files,
 			   ncategories, category_type, category_file, 
-			   relu,
+			   noop, relu,
 			   input_type, parallelism_type, compression_type, hashing_type);
     
     return(Env::finalize());
