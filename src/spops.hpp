@@ -127,9 +127,6 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
     return std::make_tuple(nnzmax, nrows, ncols);
 }
 
-
-
-
 template<typename Weight>
 inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
                       std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT,
@@ -313,114 +310,6 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
    }
 }
 
-
-template<typename Weight>
-inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
-                                             const uint32_t start_row,
-                                             const std::vector<uint32_t> true_categories,
-                                             const uint32_t predicted_nistances,
-											 const VALUE_TYPE category_type,
-                                             const int32_t leader_tid, 
-                                             const int32_t tid) {                  
-	if(tid == leader_tid) {
-		uint64_t A_nnz;
-		uint32_t A_nrows;
-		uint32_t A_ncols;
-		uint32_t* A_IA;
-		uint32_t* A_JA;
-		Weight*    A_A;   
-		
-		std::vector<uint32_t> all_categories;
-		COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;  
-		if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-			const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
-			A_nnz   = A_CSC->nnz;
-			A_nrows = A_CSC->nrows;
-			A_ncols = A_CSC->ncols;
-			A_IA   = A_CSC->IA_blk->ptr;
-			A_JA   = A_CSC->JA_blk->ptr;
-			A_A   = A_CSC->A_blk->ptr;
-			
-			all_categories.resize(A_nrows);
-			if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
-				for(uint32_t j = 0; j < A_ncols; j++) {
-					for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
-						all_categories[A_IA[i]] = 1;
-					}
-				}
-			}
-			else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-				std::vector<Weight> values(A_nrows);
-				for(uint32_t j = 0; j < A_ncols; j++) {
-					for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
-						if(values[A_IA[i]]) {
-							if(values[A_IA[i]]<A_A[i]) {
-								values[A_IA[i]] = A_A[i];
-								all_categories[A_IA[i]]=j;	
-							}
-						}
-						else {
-							values[A_IA[i]] = A_A[i];
-							all_categories[A_IA[i]]=j;
-						}
-					}
-				}
-			}
-		}
-		else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
-			const std::shared_ptr<struct CSR<Weight>> A_CSR = std::static_pointer_cast<struct CSR<Weight>>(A_SPMAT);
-			A_nnz   = A_CSR->nnz;
-			A_nrows = A_CSR->nrows;
-			A_ncols = A_CSR->ncols;
-			A_IA   = A_CSR->IA_blk->ptr;
-			A_JA   = A_CSR->JA_blk->ptr;
-			A_A   = A_CSR->A_blk->ptr;
-			
-			all_categories.resize(A_nrows);
-			if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
-				for(uint32_t i = 0; i < A_nrows; i++) all_categories[i]= A_IA[i+1]-A_IA[i] ? 1 : 0;
-			}
-			else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-				for(uint32_t i = 0; i < A_nrows; i++) {
-					int index = 0;
-					Weight value = 0;
-					for(uint32_t j=A_IA[i]; j < A_IA[i+1]; j++) {
-						if(A_A[j]>value) { value = A_A[j]; index = A_JA[j]; }
-					}
-					all_categories[i]= index;
-				}
-			}
-		}
-		else {
-			Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
-			std::exit(Env::finalize());
-		}    
-		
-		int count = 0;
-		if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
-			for(uint32_t i = 0; i < A_nrows; i++) count += (true_categories[start_row + i] and true_categories[start_row + i] == all_categories[i]) ? 1 : 0;
-		}
-		else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-			for(uint32_t i = 0; i < A_nrows; i++) count += (true_categories[start_row + i] == all_categories[i]) ? 1 : 0;
-		}
-
-        uint32_t counts = 0;
-        MPI_Allreduce(&count, &counts, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
-        
-        bool passed = (counts == predicted_nistances);
-        if(passed) {
-            Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
-        }
-        else {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
-        }
-		Logging::print(Logging::LOG_LEVEL::INFO, "Inference accuracy=%f\n", (double) counts/predicted_nistances);
-	}
-	pthread_barrier_wait(&Env::thread_barrier);
-    Env::barrier();
-}
-
-
 template<typename Weight>
 inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT, 
                                std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT, 
@@ -466,151 +355,6 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
    }
 }
 
-
-template<typename Weight>
-inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
-                                const uint32_t start_row,
-                                const std::vector<uint32_t> true_categories,
-                                const uint32_t predicted_nistances,
-								const VALUE_TYPE category_type,
-                                const int32_t leader_tid, 
-                                const int32_t tid) {
-    uint64_t A_nnz;
-    uint32_t A_nrows;
-    uint32_t A_ncols;
-    uint32_t* A_IA;
-    uint32_t* A_JA;
-    Weight*    A_A;   
-	
-	std::vector<uint32_t> all_categories;
-	COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;  
-	if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-		const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
-		A_nnz   = A_CSC->nnz;
-		A_nrows = A_CSC->nrows;
-		A_ncols = A_CSC->ncols;
-		A_IA   = A_CSC->IA_blk->ptr;
-		A_JA   = A_CSC->JA_blk->ptr;
-		A_A   = A_CSC->A_blk->ptr;
-		
-		all_categories.resize(A_nrows);
-		if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
-			for(uint32_t j = 0; j < A_ncols; j++) {
-				for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
-					all_categories[A_IA[i]] = 1;
-				}
-			}
-		}
-		else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-			std::vector<Weight> values(A_nrows);
-			for(uint32_t j = 0; j < A_ncols; j++) {
-				for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
-					if(values[A_IA[i]]) {
-						if(values[A_IA[i]]<A_A[i]) {
-							values[A_IA[i]] = A_A[i];
-							all_categories[A_IA[i]]=j;	
-						}
-					}
-					else {
-						values[A_IA[i]] = A_A[i];
-						all_categories[A_IA[i]]=j;
-					}
-				}
-			}
-		}
-	}
-	else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
-		const std::shared_ptr<struct CSR<Weight>> A_CSR = std::static_pointer_cast<struct CSR<Weight>>(A_SPMAT);
-		A_nnz   = A_CSR->nnz;
-		A_nrows = A_CSR->nrows;
-		A_ncols = A_CSR->ncols;
-		A_IA   = A_CSR->IA_blk->ptr;
-		A_JA   = A_CSR->JA_blk->ptr;
-		A_A   = A_CSR->A_blk->ptr;
-
-		all_categories.resize(A_nrows);
-		if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
-			for(uint32_t i = 0; i < A_nrows; i++) all_categories[i]= A_IA[i+1]-A_IA[i] ? 1 : 0;
-		}
-		else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-			for(uint32_t i = 0; i < A_nrows; i++) {
-				int index = 0;
-				Weight value = INT_MIN;
-				for(uint32_t j=A_IA[i]; j < A_IA[i+1]; j++) {
-					if(A_A[j]>value) { value = A_A[j]; index = A_JA[j]; }
-				}
-				all_categories[i]= index;
-				//all_categories[i]= A_JA[A_IA[i]];
-			}
-		}
-	}
-	else {
-		Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
-		std::exit(Env::finalize());
-	}    
-	
-	int count = 0;
-	if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
-		for(uint32_t i = 0; i < A_nrows; i++) count += (true_categories[start_row + i] and true_categories[start_row + i] == all_categories[i]) ? 1 : 0;
-	}
-	else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-		for(uint32_t i = 0; i < A_nrows; i++) count += (true_categories[start_row + i] == all_categories[i]) ? 1 : 0;
-	}
-	
-	/*
-	for(uint32_t i = 0; i < A_nrows; i++) {
-		printf("%d--%d: ", i, A_IA[i+1]-A_IA[i]);
-		for(uint32_t j=A_IA[i]; j < A_IA[i+1]; j++) {
-			printf("[%d, %f] ", A_JA[j], A_A[j]);
-		}
-		printf("\n");
-	}
-	printf("\n");
-	*/
-	
-	for(uint32_t i = 0; i < A_nrows; i++) {
-		if(true_categories[start_row + i] != all_categories[i]) {
-			printf("i=%d groundtruth=%d <> inferred=%d\n", i, true_categories[start_row + i], all_categories[i]);
-			if(compression_type == COMPRESSED_FORMAT::_CSR_) {
-				printf("%d[%d:%d--%d]\n", i, A_IA[i+1]-A_IA[i], A_IA[i], A_IA[i+1]);
-				if(A_IA[i+1]-A_IA[i]) {
-					for(uint32_t j=A_IA[i]; j < A_IA[i+1]; j++) {
-						printf("%d  ", A_JA[j]);
-					}
-					printf("\n");
-					for(uint32_t j=A_IA[i]; j < A_IA[i+1]; j++) {
-						printf("%f ", A_A[j]);
-					}
-					printf("\n");
-				}
-			}
-		}
-		
-	}
-	
-	
-    Env::counters[tid].checkcount = count;
-    pthread_barrier_wait(&Env::thread_barrier);
-    if(tid == leader_tid) {
-        uint32_t counts = 0;
-        for(auto counter: Env::counters) {
-            counts += counter.checkcount;
-        }
-        uint32_t countss = 0;
-        MPI_Allreduce(&counts, &countss, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
-        //printf("%d %d %d\n", countss, predicted_nistances, A_nrows);
-		bool passed=(countss == predicted_nistances);
-        if(passed) {
-            Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n");
-        }
-        else {
-            Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n");
-        }
-		Logging::print(Logging::LOG_LEVEL::INFO, "Inference accuracy=%f [%d|%d]\n", (double) countss/predicted_nistances, countss, predicted_nistances-countss);
-    }
-    pthread_barrier_wait(&Env::thread_barrier);
-    Env::barrier();
-}
 
 template<typename Weight>
 inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT, 
@@ -671,6 +415,154 @@ inline void data_x_model_hybrid_1_iter(std::shared_ptr<struct Compressed_Format<
 }
 
 template<typename Weight>
+uint32_t infer(const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
+               const uint32_t C_start_row, 
+			   const std::vector<uint32_t> true_categories,
+			   const VALUE_TYPE category_type) {
+				   
+	std::vector<uint32_t> all_categories;
+	
+	uint64_t C_nnz;
+	uint32_t C_nrows;
+	uint32_t C_ncols;
+	uint32_t* C_IA;
+	uint32_t* C_JA;
+	Weight*   C_A;   
+	COMPRESSED_FORMAT compression_type = C_SPMAT->compression_type;  
+	if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+		const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_SPMAT);
+		C_nnz   = C_CSC->nnz;
+		C_nrows = C_CSC->nrows;
+		C_ncols = C_CSC->ncols;
+		C_IA   = C_CSC->IA_blk->ptr;
+		C_JA   = C_CSC->JA_blk->ptr;
+		C_A   = C_CSC->A_blk->ptr;
+		
+		all_categories.resize(C_nrows);
+		if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
+			for(uint32_t j = 0; j < C_ncols; j++) {
+				for(uint32_t i = C_JA[j]; i < C_JA[j+1]; i++) {
+					all_categories[C_IA[i]] = 1;
+				}
+			}
+		}
+		else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
+			std::vector<Weight> values(C_nrows);
+			for(uint32_t j = 0; j < C_ncols; j++) {
+				for(uint32_t i = C_JA[j]; i < C_JA[j+1]; i++) {
+					if(values[C_IA[i]]) {
+						if(values[C_IA[i]]<C_A[i]) {
+							values[C_IA[i]] = C_A[i];
+							all_categories[C_IA[i]]=j;	
+						}
+					}
+					else {
+						values[C_IA[i]] = C_A[i];
+						all_categories[C_IA[i]]=j;
+					}
+				}
+			}
+		}
+	}
+	else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+		const std::shared_ptr<struct CSR<Weight>> C_CSR = std::static_pointer_cast<struct CSR<Weight>>(C_SPMAT);
+		C_nnz   = C_CSR->nnz;
+		C_nrows = C_CSR->nrows;
+		C_ncols = C_CSR->ncols;
+		C_IA   = C_CSR->IA_blk->ptr;
+		C_JA   = C_CSR->JA_blk->ptr;
+		C_A    = C_CSR->A_blk->ptr;
+		
+		all_categories.resize(C_nrows);
+		if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
+			for(uint32_t i = 0; i < C_nrows; i++) all_categories[i]= C_IA[i+1]-C_IA[i] ? 1 : 0;
+		}
+		else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
+			for(uint32_t i = 0; i < C_nrows; i++) {
+				int index = 0;
+				Weight value = 0;
+				for(uint32_t j=C_IA[i]; j < C_IA[i+1]; j++) {
+					if(C_A[j]>value) { value = C_A[j]; index = C_JA[j]; }
+				}
+				all_categories[i]= index;
+			}
+		}
+	}
+	else {
+		Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
+		std::exit(Env::finalize());
+	}
+	
+	int count = 0;
+	if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
+		for(uint32_t i = 0; i < C_nrows; i++) count += (true_categories[C_start_row + i] and true_categories[C_start_row + i] == all_categories[i]) ? 1 : 0;
+	}
+	else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
+		for(uint32_t i = 0; i < C_nrows; i++) count += (true_categories[C_start_row + i] == all_categories[i]) ? 1 : 0;
+	}
+	
+	for(uint32_t i = 0; i < C_nrows; i++) {
+		if(true_categories[C_start_row + i] != all_categories[i]) {
+			printf("i=%d groundtruth=%d != inferred=%d\n", i, true_categories[C_start_row + i], all_categories[i]);
+		}
+	}
+
+	return count;
+}
+
+template<typename Weight>
+inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
+                                             const uint32_t C_start_row,
+                                             const std::vector<uint32_t> true_categories,
+                                             const uint32_t predicted_nistances,
+											 const VALUE_TYPE category_type,
+                                             const int32_t leader_tid, 
+                                             const int32_t tid) {                  
+	if(tid == leader_tid) {
+		uint32_t count = infer(C_SPMAT, C_start_row, true_categories, category_type);
+		
+        uint32_t counts = 0;
+        MPI_Allreduce(&count, &counts, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
+        
+        bool passed = (counts == predicted_nistances);
+        if(passed) { Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n"); }
+        else { Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n"); }
+		Logging::print(Logging::LOG_LEVEL::INFO, "Inference accuracy=%f\n", (double) counts/predicted_nistances);
+	}
+	pthread_barrier_wait(&Env::thread_barrier);
+    Env::barrier();
+}
+
+
+template<typename Weight>
+inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
+                                const uint32_t C_start_row,
+                                const std::vector<uint32_t> true_categories,
+                                const uint32_t predicted_nistances,
+								const VALUE_TYPE category_type,
+                                const int32_t leader_tid, 
+                                const int32_t tid) {
+									
+	uint32_t count = infer(C_SPMAT, C_start_row, true_categories, category_type);
+		
+    Env::counters[tid].checkcount = count;
+    pthread_barrier_wait(&Env::thread_barrier);
+    if(tid == leader_tid) {
+        uint32_t counts = 0;
+        for(auto counter: Env::counters) { counts += counter.checkcount; }
+        uint32_t countss = 0;
+        MPI_Allreduce(&counts, &countss, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
+		bool passed=(countss == predicted_nistances);
+        if(passed) { Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n"); }
+        else { Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n"); }
+		Logging::print(Logging::LOG_LEVEL::INFO, "Inference accuracy=%f [%d|%d]\n", (double) countss/predicted_nistances, countss, predicted_nistances-countss);
+    }
+    pthread_barrier_wait(&Env::thread_barrier);
+    Env::barrier();
+}
+
+
+template<typename Weight>
 inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct Tile<Weight>>> tiles,
                                 const std::vector<uint32_t> true_categories,
                                 const uint32_t predicted_nistances,
@@ -681,90 +573,10 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
     if(tid == leader_tid) {
         int count = 0;
         for(uint32_t rowgroup:  Env::processed_rowgroups) {
-            uint32_t start_row;
-            
-            uint64_t A_nnz;
-            uint32_t A_nrows;
-            uint32_t A_ncols;
-            uint32_t* A_IA;
-            uint32_t* A_JA;
-            Weight*    A_A;
-            
-            struct Tile<Weight>& A_tile = tiles[rowgroup][0];
-            start_row = A_tile.start_row;
-            std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
-            std::vector<uint32_t> all_categories;
-            COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;  
-            if(compression_type == COMPRESSED_FORMAT::_CSC_) {
-                const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
-                A_nnz   = A_CSC->nnz;
-                A_nrows = A_CSC->nrows;
-                A_ncols = A_CSC->ncols;
-                A_IA   = A_CSC->IA_blk->ptr;
-                A_JA   = A_CSC->JA_blk->ptr;
-                A_A   = A_CSC->A_blk->ptr;
-
-                all_categories.resize(A_nrows);  
-				if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
-					for(uint32_t j = 0; j < A_ncols; j++) {
-						for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
-							all_categories[A_IA[i]] = 1;
-						}
-					}
-				}
-				else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-					std::vector<Weight> values(A_nrows);
-					for(uint32_t j = 0; j < A_ncols; j++) {
-						for(uint32_t i = A_JA[j]; i < A_JA[j+1]; i++) {
-							if(values[A_IA[i]]) {
-								if(values[A_IA[i]]<A_A[i]) {
-									values[A_IA[i]] = A_A[i];
-									all_categories[A_IA[i]]=j;	
-								}
-							}
-							else {
-								values[A_IA[i]] = A_A[i];
-								all_categories[A_IA[i]]=j;
-							}
-						}
-					}
-				}
-            }
-            else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
-                const std::shared_ptr<struct CSR<Weight>> A_CSR = std::static_pointer_cast<struct CSR<Weight>>(A_SPMAT);
-                A_nnz   = A_CSR->nnz;
-                A_nrows = A_CSR->nrows;
-                A_ncols = A_CSR->ncols;
-                A_IA   = A_CSR->IA_blk->ptr;
-                A_JA   = A_CSR->JA_blk->ptr;
-                A_A   = A_CSR->A_blk->ptr;
-                
-				all_categories.resize(A_nrows);
-				if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
-					for(uint32_t i = 0; i < A_nrows; i++) all_categories[i]= A_IA[i+1]-A_IA[i] ? 1 : 0;
-				}
-				else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-					for(uint32_t i = 0; i < A_nrows; i++) {
-						int index = 0;
-						Weight value = 0;
-						for(uint32_t j=A_IA[i]; j < A_IA[i+1]; j++) {
-							if(A_A[j]>value) { value = A_A[j]; index = A_JA[j]; }
-						}
-						all_categories[i]= index;
-					}
-				}
-            }
-            else {
-                Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
-                std::exit(Env::finalize());
-            }    
-            
-            if(category_type == VALUE_TYPE::_NONZERO_INSTANCES_ONLY_) {
-				for(uint32_t i = 0; i < A_nrows; i++) count += (true_categories[start_row + i] and true_categories[start_row + i] == all_categories[i]) ? 1 : 0;
-			}
-			else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-				for(uint32_t i = 0; i < A_nrows; i++) count += (true_categories[start_row + i] == all_categories[i]) ? 1 : 0;
-			}
+			struct Tile<Weight>& C_tile = tiles[rowgroup][0];
+            uint32_t C_start_row = C_tile.start_row;;
+			std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
+			count += infer(C_SPMAT, C_start_row, true_categories, category_type);	
         }
         
         uint32_t counts = 0;
