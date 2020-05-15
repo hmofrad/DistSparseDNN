@@ -953,8 +953,8 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& leader_owned_threads, cons
 					if(num_threads > B_ncols) {
 						for(uint32_t i = 0; i < num_threads; i++) {
 							int32_t t = leader_owned_threads[i];
-							Env::threads[t].start_row = (i<B_ncols) ? i : 0;
-							Env::threads[t].end_row   = (i<B_ncols) ? i+1 : 0;
+							Env::threads[t].start_col = (i<B_ncols) ? i : 0;
+							Env::threads[t].end_col   = (i<B_ncols) ? i+1 : 0;
 						}
 					}
 					else {
