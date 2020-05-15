@@ -14,7 +14,7 @@ from scipy.stats import rankdata
 import tensorflow_model_optimization as tfmot
 
 #Train a dense model
-PATH="../data/sparse_mnist/data/"
+PATH="../data/sparse_mnist/data/text/"
 path.Path(PATH).mkdir(parents=True, exist_ok=True)
 
 (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
@@ -44,19 +44,19 @@ for l in range(0, nlayers):
 dense_model.summary()
 dense_model.compile(loss=tf.keras.losses.categorical_crossentropy, optimizer='adam', metrics=['accuracy'])
 
-ACCURACY_THRESHOLD=.97
-class myCallback(tf.keras.callbacks.Callback): 
-    def on_epoch_end(self, epoch, logs={}): 
-        if(logs.get('accuracy') > ACCURACY_THRESHOLD): 
-            print("\nReached %2.2f%% accuracy, early stopping!!" %(ACCURACY_THRESHOLD*100)) 
-            self.model.stop_training = True
-callbacks = [myCallback()]
+#ACCURACY_THRESHOLD=.97
+#class myCallback(tf.keras.callbacks.Callback): 
+#    def on_epoch_end(self, epoch, logs={}): 
+#        if(logs.get('accuracy') > ACCURACY_THRESHOLD): 
+#            print("\nReached %2.2f%% accuracy, early stopping!!" %(ACCURACY_THRESHOLD*100)) 
+#            self.model.stop_training = True
+#callbacks = [myCallback()]
 
-dense_model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1, validation_data=(x_test, y_test), callbacks=callbacks)
-dense_score = dense_model.evaluate(x_test, y_test, verbose=0)
-print("Dense Network accuracy:", dense_score[1])
-sparse_model_file=PATH+"dense_model.h5"
-sparse_model.save(sparse_model_file, include_optimizer=False)
+#dense_model.fit(x_train, y_train, batch_size=batch_size, epochs=epochs, verbose=1, validation_data=(x_test, y_test), callbacks=callbacks)
+#dense_score = dense_model.evaluate(x_test, y_test, verbose=0)
+#print("Dense Network accuracy:", dense_score[1])
+#sparse_model_file=PATH+"dense_model.h5"
+#sparse_model.save(sparse_model_file, include_optimizer=False)
 
 #dense_model_file=PATH+"dense_model.h5"
 #dense_model = tf.keras.models.load_model(dense_model_file, compile=False)
@@ -108,9 +108,10 @@ for l in range(0,weights.shape[0]):
     else:
         for i in range(0,weights[l].shape[0]):
             v=weights[l][i]
-            rows[k]=i
-            vals[k]=v
-            k+=1
+            if(v != 0):
+                rows[k]=i
+                vals[k]=v
+                k+=1
         name=PATH+"bias"+str(l//2)+".txt"
         B=np.stack([rows,vals]).T
         np.savetxt(name,B,"%d %f")
@@ -151,8 +152,8 @@ for l in range(0,weights.shape[0]):
     f.write(S);
 S="Number of parameters="+str(total_dense_parameters)+"\n"
 f.write(S)
-S="Network Accuracy="+str(dense_score[1])+"\n"
-f.write(S)
+#S="Network Accuracy="+str(dense_score[1])+"\n"
+#f.write(S)
 
 f.write("\n\nSparse MNIST Network:\n")
 nonzeros=np.count_nonzero(x_train)
