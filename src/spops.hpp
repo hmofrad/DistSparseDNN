@@ -527,7 +527,7 @@ inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compre
         bool passed = (counts == predicted_nistances);
         if(passed) { Logging::print(Logging::LOG_LEVEL::INFO, "Challenge PASSED.\n"); }
         else { Logging::print(Logging::LOG_LEVEL::ERROR, "Challenge FAILED.\n"); }
-		Logging::print(Logging::LOG_LEVEL::INFO, "Inference accuracy=%f\n", (double) counts/predicted_nistances);
+		Logging::print(Logging::LOG_LEVEL::INFO, "Inference accuracy=%f [%d|%d]\n", (double) counts/predicted_nistances, counts, predicted_nistances-counts);
 	}
 	pthread_barrier_wait(&Env::thread_barrier);
     Env::barrier();
