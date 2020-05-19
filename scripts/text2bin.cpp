@@ -83,8 +83,7 @@ int main(int argc, char **argv) {
     fout.close();
     fin.close();
 	
-    std::cout << "File \"" << filepath_in << "\": [" << num_rows+1 << " x " << num_cols+1 << "]" << ", nnz=" <<  num_edges << " convertd into" << std::endl;
-    std::cout << "File \"" << filepath_out << "\"." << std::endl;
+    std::cout << "File \"" << filepath_in << "\": [" << num_rows+1 << " x " << num_cols+1 << "]" << ", nnz=" <<  num_edges << " convertd into File \"" << filepath_out << "\"." << std::endl;
 
 	return(0);
 }
