@@ -5,7 +5,7 @@
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
  
-// make clean && make && time mpirun.mpich -np 1 bin/./sparse_mnist -m 60000 784 -n 1024 -l 30 -c 10 data/sparse_mnist/bin/ data/sparse_mnist/bin/ -p 0
+// make clean && make && time mpirun.mpich -np 1 bin/./mnist -m 60000 784 -n 1024 -l 120 -c 10 data/mnist/bin/ data/mnist/bin/ -p 0
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,33 +74,33 @@ int main(int argc, char **argv) {
     }
     std::string category_file = layer_file_prefix;
     category_file += (input_type == INPUT_TYPE::_TEXT_) ? "predictions.txt" : "predictions.bin";
-	VALUE_TYPE category_type = VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_;
+    VALUE_TYPE category_type = VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_;
 	
-	std::vector<std::string> layer_files;
-	for(uint32_t i = 0; i < nmax_layers; i++) {
-		std::string layer_file = layer_file_prefix + "/weights" + std::to_string(i);
-		layer_file += (input_type == INPUT_TYPE::_TEXT_) ? ".txt" : ".bin";
-		layer_files.push_back(layer_file);
-	}
+    std::vector<std::string> layer_files;
+    for(uint32_t i = 0; i < nmax_layers; i++) {
+	std::string layer_file = layer_file_prefix + "/weights" + std::to_string(i);
+	layer_file += (input_type == INPUT_TYPE::_TEXT_) ? ".txt" : ".bin";
+	layer_files.push_back(layer_file);
+    }
 	
-	std::vector<std::string> bias_files;
-	for(uint32_t i = 0; i < nmax_layers; i++) {
-		std::string bias_file = layer_file_prefix + "/bias" + std::to_string(i);
-		bias_file += (input_type == INPUT_TYPE::_TEXT_) ? ".txt" : ".bin";
-		bias_files.push_back(bias_file);
-	}
-	WGT bias_value = 0;
-	VALUE_TYPE bias_type = VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_;
+    std::vector<std::string> bias_files;
+    for(uint32_t i = 0; i < nmax_layers; i++) {
+	std::string bias_file = layer_file_prefix + "/bias" + std::to_string(i);
+	bias_file += (input_type == INPUT_TYPE::_TEXT_) ? ".txt" : ".bin";
+	bias_files.push_back(bias_file);
+    }
+    WGT bias_value = 0;
+    VALUE_TYPE bias_type = VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_;
 	
-	int x = atoi(argv[13]);
+    int x = atoi(argv[13]);
     PARALLELISM_TYPE parallelism_type = (PARALLELISM_TYPE)x;
     if(parallelism_type >= (PARALLELISM_TYPE::_SIZE_)) {
         Logging::print(Logging::LOG_LEVEL::FATAL, "Incorrect parallelism type\n");
         std::exit(Env::finalize());
     }
 	
-	COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSC_;
-	HASHING_TYPE hashing_type = HASHING_TYPE::_NO_;
+    COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSC_;
+    HASHING_TYPE hashing_type = HASHING_TYPE::_NO_;
 
     Net<WGT> N(input_ninstances, input_nfeatures, feature_file,
 			   nneurons, nmax_layers, layer_files, 
