@@ -196,8 +196,11 @@ def save_metadata_sparse1(time, score, PATH):
     f.close()
     
 def write_binary(directory, dataset, nlayers):
+    cmd=" chmod +x ./text2bin.sh"
+    print("CMD=" + cmd + "\n")
+    process=subprocess.Popen([cmd], shell=True) 
     cmd="./text2bin.sh " +directory+"/"+dataset+"/ "+str(nlayers)
-    print("CMD= " + cmd + "\n")
+    print("CMD=" + cmd + "\n")
     process=subprocess.Popen([cmd], shell=True) 
     
 def generate_dense_model(nfeatures, nneurons, nclasses, nlayers):
