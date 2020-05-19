@@ -15,7 +15,7 @@ NUMACTL = /ihome/rmelhem/moh18/numactl/libnuma
 LIBNUMA = /ihome/rmelhem/moh18/numactl/libnuma/usr/local/lib
 SYSLIBS = -lnuma -I $(NUMACTL) -L$(LIBNUMA)
 
-OBJS = radixnet sparse_mnist
+OBJS = radixnet mnist
 
 all: dir $(OBJS)
 
