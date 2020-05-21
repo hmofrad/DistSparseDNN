@@ -17,23 +17,29 @@ from scipy.stats import rankdata
 import tensorflow_model_optimization as tfmot
 
 if(len(sys.argv) != 3):
-    print("USAGE: python %s <dataset [mnist|cifar10]> <directory>\n" %(sys.argv[0]))
-    sys.exit(0)
+    print("USAGE: python %s <directory> <dataset [mnist|cifar10|fashion_mnist]>\n" %(sys.argv[0]))
+    sys.exit()
+    
 binary=sys.argv[0]
-dataset=sys.argv[1]
-directory=sys.argv[2]
+directory=sys.argv[1]
+dataset=sys.argv[2]
 
 def read(binary, dataset):
-    if(dataset == "mnist"):
-        return mnist()
-    elif(dataset == "cifar10"):
-        return cifar10()
+    if(dataset == "mnist" or dataset == "fashion_mnist"):
+        return mnist(dataset)
+    elif(dataset == "cifar10" or dataset == "cifar100"):
+        return cifar(dataset)
+    elif(dataset == "imdb"):
+        return imdb()
     else:
-        print("USAGE: python %s <dataset [mnist|cifar10]> <directory>\n" %(binary))
-        sys.exit(0)
+        print("USAGE: python %s <directory> <dataset [mnist|cifar10|fashion_mnist]>\n" %(binary))
+        sys.exit()
 
-def mnist():
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+def mnist(dataset):
+    if(dataset == "mnist"):
+        (x_train, y_train), (x_test, y_test) = tf.keras.datasets.mnist.load_data()
+    elif(dataset == "fashion_mnist"):
+        (x_train, y_train), (x_test, y_test) = tf.keras.datasets.fashion_mnist.load_data()
     npixels = x_train.shape[1] * x_train.shape[2]
     x_train = x_train.reshape(x_train.shape[0], npixels)
     x_test = x_test.reshape(x_test.shape[0], npixels)
@@ -47,8 +53,11 @@ def mnist():
     y_test = tf.keras.utils.to_categorical(y_test)
     return (x_train, y_train), (x_test, y_test)
 
-def cifar10():    
-    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+def cifar(dataset):    
+    if(dataset == "cifar10"):
+        (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar10.load_data()
+    elif(dataset == "cifar100"):
+        (x_train, y_train), (x_test, y_test) = tf.keras.datasets.cifar100.load_data()
     x_train = tf.image.rgb_to_grayscale(x_train)
     x_test = tf.image.rgb_to_grayscale(x_test)
     x_train = tf.squeeze(x_train)
@@ -64,6 +73,21 @@ def cifar10():
     x_test = np.array(x_test);
     y_train = tf.keras.utils.to_categorical(y_train)
     y_test = tf.keras.utils.to_categorical(y_test)  
+    return (x_train, y_train), (x_test, y_test)    
+
+def imdb():    
+    num_words=10000
+    (x_train, y_train), (x_test, y_test) = tf.keras.datasets.imdb.load_data(num_words=num_words)
+    temp = np.zeros((len(x_train), num_words))
+    for i, x in enumerate(x_train):
+        temp[i, x] = 1.
+    x_train = temp;
+    temp = np.zeros((len(x_test), num_words))
+    for i, x in enumerate(x_test):
+        temp[i, x] = 1.
+    x_test = temp;
+    y_train = np.asarray(y_train).astype("float32")
+    y_test = np.asarray(y_test).astype("float32")
     return (x_train, y_train), (x_test, y_test)    
 
 def write_text(model, x_train, directory, dataset, time, score):
@@ -211,9 +235,15 @@ def generate_dense_model(nfeatures, nneurons, nclasses, nlayers):
         elif(l<nlayers-1):
             dense_model.add(tf.keras.layers.Dense(nneurons, input_dim=nneurons, kernel_initializer="normal", activation="relu"))
         else:
-            dense_model.add(tf.keras.layers.Dense(nclasses, kernel_initializer="normal", activation="softmax"))
+            if(nclasses==2):
+                dense_model.add(tf.keras.layers.Dense(nclasses, kernel_initializer="normal", activation="sigmoid"))
+            else:
+                dense_model.add(tf.keras.layers.Dense(nclasses, kernel_initializer="normal", activation="softmax"))
     dense_model.summary()
-    dense_model.compile(loss=tf.keras.losses.categorical_crossentropy, optimizer="adam", metrics=["accuracy"])
+    if(nclasses==2):
+        dense_model.compile(loss=tf.keras.losses.binary_crossentropy, optimizer="adam", metrics=["binary_accuracy"])
+    else:
+        dense_model.compile(loss=tf.keras.losses.categorical_crossentropy, optimizer="adam", metrics=["accuracy"])
     return dense_model
 
 def train_sparse_model(dense_model, batch_size, nepochs, sparsity, begin_step, height, weight):
@@ -232,13 +262,17 @@ tic=time.time()
     
 (x_train, y_train), (x_test, y_test) = read(binary, dataset)
 
-nfeatures, nclasses = x_train.shape[1], y_test.shape[1]
-nlayers = 120
-nneurons = 2048
+nfeatures = x_train.shape[1]
+if(y_test.ndim==1):
+    nclasses = 2
+elif(y_test.ndim==2):
+    nclasses = y_test.shape[1]
+nlayers = 3
+nneurons = 1024
 dense_model = generate_dense_model(nfeatures, nneurons, nclasses, nlayers)
 
 batch_size = 128
-nepochs = 180
+nepochs = 1
 begin_step = nepochs//3;
 sparsity = 0.75; 
 height, weight=1, 1
@@ -247,6 +281,6 @@ sparse_score = sparse_model.evaluate(x_test, y_test, verbose=0)
 print("Sparse Network accuracy:", sparse_score[1])
 
 elapsed_time = time.time()-tic
-write_text(sparse_model, x_train, directory, dataset, elapsed_time, sparse_score[1])
-write_binary(directory, dataset, nlayers)
+#write_text(sparse_model, x_train, directory, dataset, elapsed_time, sparse_score[1])
+#write_binary(directory, dataset, nlayers)
 # And end here
