@@ -17,7 +17,7 @@ from scipy.stats import rankdata
 import tensorflow_model_optimization as tfmot
 
 if(len(sys.argv) != 3):
-    print("USAGE: python %s <directory> <dataset [mnist|cifar10|fashion_mnist]>\n" %(sys.argv[0]))
+    print("USAGE: python %s <directory> <dataset [mnist|cifar|imdb]>\n" %(sys.argv[0]))
     sys.exit()
     
 binary=sys.argv[0]
@@ -32,7 +32,7 @@ def read(binary, dataset):
     elif(dataset == "imdb"):
         return imdb()
     else:
-        print("USAGE: python %s <directory> <dataset [mnist|cifar10|fashion_mnist]>\n" %(binary))
+        print("USAGE: python %s <directory> <dataset [mnist|cifar|imdb]>\n" %(binary))
         sys.exit()
 
 def mnist(dataset):
@@ -90,11 +90,11 @@ def imdb():
     y_test = np.asarray(y_test).astype("float32")
     return (x_train, y_train), (x_test, y_test)    
 
-def write_text(model, x_train, directory, dataset, time, score):
+def write_text(model, nclasses, x_train, directory, dataset, time, score):
     PATH = directory+"/"+dataset+"/text/"
     path.Path(PATH).mkdir(parents=True, exist_ok=True)
     save_model(model, PATH)
-    save_predictions(model, x_train, PATH)
+    save_predictions(model, nclasses, x_train, PATH)
     save_network(model, PATH)
     save_input(x_train, PATH)
     save_metadata(model, x_train, PATH, time, score)
@@ -103,9 +103,14 @@ def save_model(model, PATH):
     model_file = PATH+dataset+".h5"
     model.save(model_file, include_optimizer=False)    
 
-def save_predictions(model, x_train, PATH):
+def save_predictions(model, nclasses, x_train, PATH):
     labels = np.array(range(1,x_train.shape[0]+1))
-    predictions = (np.argmax(model.predict(x_train), axis=-1)).astype(int)
+    if(nclasses==2):
+        predictions = tf.round(model.predict(x_train))
+        predictions = tf.squeeze(predictions)
+        predictions = np.array(predictions).astype(int)
+    else:
+        predictions = (np.argmax(model.predict(x_train), axis=-1)).astype(int)
     C = np.stack([labels,predictions]).T
     predictions_file = PATH+"predictions.txt";
     np.savetxt(predictions_file, C, fmt='%d %d')
@@ -236,25 +241,26 @@ def generate_dense_model(nfeatures, nneurons, nclasses, nlayers):
             dense_model.add(tf.keras.layers.Dense(nneurons, input_dim=nneurons, kernel_initializer="normal", activation="relu"))
         else:
             if(nclasses==2):
-                dense_model.add(tf.keras.layers.Dense(nclasses, kernel_initializer="normal", activation="sigmoid"))
+                dense_model.add(tf.keras.layers.Dense(1, kernel_initializer="normal", activation="sigmoid"))
             else:
                 dense_model.add(tf.keras.layers.Dense(nclasses, kernel_initializer="normal", activation="softmax"))
-    dense_model.summary()
-    if(nclasses==2):
-        dense_model.compile(loss=tf.keras.losses.binary_crossentropy, optimizer="adam", metrics=["binary_accuracy"])
-    else:
-        dense_model.compile(loss=tf.keras.losses.categorical_crossentropy, optimizer="adam", metrics=["accuracy"])
     return dense_model
 
-def train_sparse_model(dense_model, batch_size, nepochs, sparsity, begin_step, height, weight):
+def train_sparse_model(dense_model, nclasses, batch_size, nepochs, sparsity, begin_step, height, weight):
     pruning_params = {'pruning_schedule': tfmot.sparsity.keras.ConstantSparsity(sparsity, begin_step), "block_size": (height, weight), 'block_pooling_type': 'AVG'}
     callbacks = [tfmot.sparsity.keras.UpdatePruningStep()]
     sparse_model = tfmot.sparsity.keras.prune_low_magnitude(dense_model, **pruning_params)
     sparse_model.summary()
-    sparse_model.compile(loss=tf.keras.losses.categorical_crossentropy, optimizer='adam', metrics=['accuracy'])
-    sparse_model.fit(x_train, y_train, batch_size=batch_size, epochs=nepochs, verbose=1, validation_data=(x_test, y_test), callbacks=callbacks)
-    sparse_model = tfmot.sparsity.keras.strip_pruning(sparse_model)
-    sparse_model.compile(loss=tf.keras.losses.categorical_crossentropy, optimizer='adam', metrics=['accuracy'])
+    if(nclasses==2):
+        sparse_model.compile(loss=tf.keras.losses.binary_crossentropy, optimizer="adam", metrics=["binary_accuracy"])
+        sparse_model.fit(x_train, y_train, batch_size=batch_size, epochs=nepochs, verbose=1, validation_data=(x_test, y_test), callbacks=callbacks)
+        sparse_model = tfmot.sparsity.keras.strip_pruning(sparse_model)
+        sparse_model.compile(loss=tf.keras.losses.binary_crossentropy, optimizer="adam", metrics=["binary_accuracy"])
+    else:
+        sparse_model.compile(optimizer="adam", loss=tf.keras.losses.categorical_crossentropy, metrics=["accuracy"])
+        sparse_model.fit(x_train, y_train, batch_size=batch_size, epochs=nepochs, verbose=1, validation_data=(x_test, y_test), callbacks=callbacks)
+        sparse_model = tfmot.sparsity.keras.strip_pruning(sparse_model)
+        sparse_model.compile(optimizer="adam", loss=tf.keras.losses.categorical_crossentropy, metrics=["accuracy"])
     return sparse_model
 
 # Everything starts from here
@@ -267,20 +273,20 @@ if(y_test.ndim==1):
     nclasses = 2
 elif(y_test.ndim==2):
     nclasses = y_test.shape[1]
-nlayers = 3
-nneurons = 1024
+nlayers = 90
+nneurons = 2048
 dense_model = generate_dense_model(nfeatures, nneurons, nclasses, nlayers)
 
 batch_size = 128
-nepochs = 1
+nepochs = 90
 begin_step = nepochs//3;
 sparsity = 0.75; 
 height, weight=1, 1
-sparse_model = train_sparse_model(dense_model, batch_size, nepochs, sparsity, begin_step, height, weight)
+sparse_model = train_sparse_model(dense_model, nclasses, batch_size, nepochs, sparsity, begin_step, height, weight)
 sparse_score = sparse_model.evaluate(x_test, y_test, verbose=0)
 print("Sparse Network accuracy:", sparse_score[1])
 
 elapsed_time = time.time()-tic
-#write_text(sparse_model, x_train, directory, dataset, elapsed_time, sparse_score[1])
-#write_binary(directory, dataset, nlayers)
+write_text(sparse_model, nclasses, x_train, directory, dataset, elapsed_time, sparse_score[1])
+write_binary(directory, dataset, nlayers)
 # And end here
