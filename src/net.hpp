@@ -32,6 +32,7 @@ class Net {
 			const uint32_t ncategories, const VALUE_TYPE category_type_, const  std::string category_file, 
 			Weight(*noop_function_)(Weight),
 			Weight(*activation_function_)(Weight),
+			const std::string classifier_,
 			const INPUT_TYPE input_type = INPUT_TYPE::_BINARY_,
             const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
             const COMPRESSED_FORMAT compression_type_ = COMPRESSED_FORMAT::_CSR_,
@@ -56,6 +57,7 @@ class Net {
 		
 		Weight (*noop_function)(Weight);
 		Weight (*activation_function)(Weight);
+		std::string classifier;
 		
 		uint32_t predicted_nistances;
         
@@ -101,12 +103,12 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
 				 const uint32_t nneurons_, const uint32_t nmax_layers_, const std::vector<std::string> layer_files,
 				 const Weight bias_value, const VALUE_TYPE bias_type, const std::vector<std::string> bias_files,
 				 const uint32_t ncategories_, const VALUE_TYPE category_type_, const std::string category_file, 
-				Weight(*noop_function_)(Weight), Weight(*activation_function_)(Weight),
+				Weight(*noop_function_)(Weight), Weight(*activation_function_)(Weight), const std::string classifier_,
 				 const INPUT_TYPE input_type, const PARALLELISM_TYPE parallelism_type_, 
 				 const COMPRESSED_FORMAT compression_type_, const HASHING_TYPE hashing_type_)
 				     : input_ninstanses(input_ninstanses_), input_nfeatures(input_nfeatures_), 
 					   nneurons(nneurons_), nmax_layers(nmax_layers_), ncategories(ncategories_), category_type(category_type_),
-					   noop_function(noop_function_), activation_function(activation_function_),
+					   noop_function(noop_function_), activation_function(activation_function_), classifier(classifier_),
 					   parallelism_type(parallelism_type_), compression_type(compression_type_), hashing_type(hashing_type_) {
     auto start = std::chrono::high_resolution_clock::now();
 	input_ninstanses+=2;
@@ -179,7 +181,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
 			Weight* b_A = bias_vectors[i]->ptr;
 			for(uint32_t j = 0; j < layer_ncols; j++) b_A[j] = bias_values[j];
 		}
-        Logging::enabled = false; 
+        //Logging::enabled = false; 
         if(i%10==0) printf("|"); 
     }
     Logging::enabled = true;
@@ -718,7 +720,6 @@ void Net<Weight>::inferenceReLU(const int32_t tid) {
 template<typename Weight>
 void Net<Weight>::data_x_model(const int32_t tid) {
 	auto start_t = std::chrono::high_resolution_clock::now();  
-	
 	uint32_t leader_rowgroup = Env::rank;
     const int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
@@ -772,7 +773,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
 
     const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = A_tile.spmat;
-    data_x_model_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, leader_tid, tid);
+    data_x_model_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type,classifier, leader_tid, tid);
 }
 
 template<typename Weight>
@@ -818,7 +819,7 @@ void Net<Weight>::data_x_data(const int32_t tid) {
     struct Tile<Weight>& C_tile = (not((l-1)%2)) ? output->tiles[leader_rowgroup][0] 
 											 : input_features->tiles[leader_rowgroup][0];
     const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-    data_x_data_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, leader_tid, tid);
+    data_x_data_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
 }
 
 template<typename Weight>
@@ -848,7 +849,7 @@ void Net<Weight>::hybrid_x_hybrid(const int32_t tid) {
     //struct Tile<Weight>& A_tile = input_features->tiles[my_rowgroup][0];
     
 	std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-    data_x_data_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, leader_tid, tid);
+    data_x_data_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
 }
 
 template<typename Weight>
@@ -1149,7 +1150,7 @@ bool Net<Weight>::add_to_idle_threads(std::deque<int32_t>& leader_owned_threads,
     uint32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     bool status = true;
     uint32_t all_done = 0;
-	//printf("tid=%d addig to queue\n", tid);
+	//printf("tid=%d adding to queue\n", tid);
     pthread_mutex_lock(&Env::numa_thread_mutex[sid]);
     Env::numa_follower_threads[sid].push_back(tid);
     if(not leader_owned_threads.empty()) leader_owned_threads.erase(leader_owned_threads.begin(), leader_owned_threads.end());
@@ -1233,7 +1234,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
 	
 	std::vector<std::vector<struct Tile<Weight>>> C_tiles = (not((nmax_layers-1)%2)) ? output->tiles : input_features->tiles;
-    manager_x_worker_validate_prediction(C_tiles, true_categories, predicted_nistances, category_type, leader_tid, tid);
+    manager_x_worker_validate_prediction(C_tiles, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
 }
 
 
@@ -1297,7 +1298,7 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
 
 	std::vector<std::vector<struct Tile<Weight>>> C_tiles = (not((nmax_layers-1)%2)) ? output->tiles : input_features->tiles;
-    work_x_stealing_validate_prediction(C_tiles, true_categories, predicted_nistances, category_type, leader_tid, tid);
+    work_x_stealing_validate_prediction(C_tiles, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
 }
 
 #endif 
