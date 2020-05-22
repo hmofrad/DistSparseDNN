@@ -11,6 +11,10 @@
 #include "env.hpp"
 #include "spmat.hpp"
 
+#include <math.h>
+template<typename Weight>
+Weight sigmoid(Weight x) { return 1 / (1 + exp(-x)); }
+
 template<typename Weight>
 inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
                                                           std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT,
@@ -65,9 +69,12 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
 		//printf("tid=%d start=%d end=%d\n", tid, start, end);
 
 		for(uint32_t j = start; j < end; j++) {
+			//printf("c=%d\n", j);
 			for(uint32_t k = B_JA[j]; k < B_JA[j+1]; k++) {
 				uint32_t l = B_IA[k];
+				//printf("k=%d ", k);
 				for(uint32_t n = A_JA[l]; n < A_JA[l+1]; n++) {
+					//printf("r=%d,v=%f\n", A_IA[n], A_A[n]);
 					s_A[A_IA[n]] = 1;
 				}
 			}
@@ -297,7 +304,7 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
             Env::adjust_displacement(tid);
             C_SPMAT->adjust(leader_tid, tid);	
         Env::spmm_real_time[tid] += Env::toc(start_time);
-
+		//printf("spmm is done %d\n", tid);
         start_time = Env::tic();
             pthread_barrier_wait(&Env::thread_barrier);
             A_SPMAT->repopulate(C_SPMAT, thread_st.dis_nnz, leader_tid, tid);
@@ -330,6 +337,7 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
     
     COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;    
     if((A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) or (A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSR_)) {
+		//printf("0.symb %d\n", tid);
         double start_time = 0;
         start_time = Env::tic();
             std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, tid);
@@ -418,7 +426,8 @@ template<typename Weight>
 uint32_t infer(const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
                const uint32_t C_start_row, 
 			   const std::vector<uint32_t> true_categories,
-			   const VALUE_TYPE category_type) {
+			   const VALUE_TYPE category_type,
+			   const std::string classifier) {
 				   
 	std::vector<uint32_t> all_categories;
 	
@@ -447,18 +456,27 @@ uint32_t infer(const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
 			}
 		}
 		else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-			std::vector<Weight> values(C_nrows);
-			for(uint32_t j = 0; j < C_ncols; j++) {
-				for(uint32_t i = C_JA[j]; i < C_JA[j+1]; i++) {
-					if(values[C_IA[i]]) {
-						if(values[C_IA[i]]<C_A[i]) {
-							values[C_IA[i]] = C_A[i];
-							all_categories[C_IA[i]]=j;	
-						}
+			if(classifier == "sigmoid") {
+				for(uint32_t j = 0; j < C_ncols; j++) {
+					for(uint32_t i = C_JA[j]; i < C_JA[j+1]; i++) {
+						all_categories[C_IA[i]]=sigmoid(C_A[i]) < 0.5 ? 0 : 1;
 					}
-					else {
-						values[C_IA[i]] = C_A[i];
-						all_categories[C_IA[i]]=j;
+				}
+			}
+			else if(classifier == "softmax") {	
+				std::vector<Weight> values(C_nrows);
+				for(uint32_t j = 0; j < C_ncols; j++) {
+					for(uint32_t i = C_JA[j]; i < C_JA[j+1]; i++) {
+						if(values[C_IA[i]]) {
+							if(values[C_IA[i]]<C_A[i]) {
+								values[C_IA[i]] = C_A[i];
+								all_categories[C_IA[i]]=j;	
+							}
+						}
+						else {
+							values[C_IA[i]] = C_A[i];
+							all_categories[C_IA[i]]=j;
+						}
 					}
 				}
 			}
@@ -478,13 +496,22 @@ uint32_t infer(const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
 			for(uint32_t i = 0; i < C_nrows; i++) all_categories[i]= C_IA[i+1]-C_IA[i] ? 1 : 0;
 		}
 		else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
-			for(uint32_t i = 0; i < C_nrows; i++) {
-				int index = 0;
-				Weight value = 0;
-				for(uint32_t j=C_IA[i]; j < C_IA[i+1]; j++) {
-					if(C_A[j]>value) { value = C_A[j]; index = C_JA[j]; }
+			if(classifier == "sigmoid") {
+				for(uint32_t i = 0; i < C_nrows; i++) {
+					for(uint32_t j=C_IA[i]; j < C_IA[i+1]; j++) {
+						all_categories[i]=sigmoid(C_A[j]) < 0.5 ? 0 : 1;
+					}
 				}
-				all_categories[i]= index;
+			}
+			else if(classifier == "softmax") {	
+				for(uint32_t i = 0; i < C_nrows; i++) {
+					int index = 0;
+					Weight value = 0;
+					for(uint32_t j=C_IA[i]; j < C_IA[i+1]; j++) {
+						if(C_A[j]>value) { value = C_A[j]; index = C_JA[j]; }
+					}
+					all_categories[i]= index;
+				}
 			}
 		}
 	}
@@ -516,10 +543,11 @@ inline void data_x_model_validate_prediction(const std::shared_ptr<struct Compre
                                              const std::vector<uint32_t> true_categories,
                                              const uint32_t predicted_nistances,
 											 const VALUE_TYPE category_type,
+											 const std::string classifier,
                                              const int32_t leader_tid, 
                                              const int32_t tid) {                  
 	if(tid == leader_tid) {
-		uint32_t count = infer(C_SPMAT, C_start_row, true_categories, category_type);
+		uint32_t count = infer(C_SPMAT, C_start_row, true_categories, category_type, classifier);
 		
         uint32_t counts = 0;
         MPI_Allreduce(&count, &counts, 1, MPI_UNSIGNED, MPI_SUM, MPI_COMM_WORLD);
@@ -540,10 +568,11 @@ inline void data_x_data_validate_prediction(const std::shared_ptr<struct Compres
                                 const std::vector<uint32_t> true_categories,
                                 const uint32_t predicted_nistances,
 								const VALUE_TYPE category_type,
+								const std::string classifier,
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
 									
-	uint32_t count = infer(C_SPMAT, C_start_row, true_categories, category_type);
+	uint32_t count = infer(C_SPMAT, C_start_row, true_categories, category_type, classifier);
 		
     Env::counters[tid].checkcount = count;
     pthread_barrier_wait(&Env::thread_barrier);
@@ -567,6 +596,7 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
                                 const std::vector<uint32_t> true_categories,
                                 const uint32_t predicted_nistances,
 								const VALUE_TYPE category_type,
+								const std::string classifier,
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
     pthread_barrier_wait(&Env::thread_barrier);                                        
@@ -576,7 +606,7 @@ inline void manager_x_worker_validate_prediction(std::vector<std::vector<struct 
 			struct Tile<Weight>& C_tile = tiles[rowgroup][0];
             uint32_t C_start_row = C_tile.start_row;;
 			std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-			count += infer(C_SPMAT, C_start_row, true_categories, category_type);	
+			count += infer(C_SPMAT, C_start_row, true_categories, category_type, classifier);	
         }
         
         uint32_t counts = 0;
@@ -599,6 +629,7 @@ inline void work_x_stealing_validate_prediction(std::vector<std::vector<struct T
                                 const std::vector<uint32_t> true_categories,
                                 const uint32_t predicted_nistances,
 								const VALUE_TYPE category_type,
+								const std::string classifier,
                                 const int32_t leader_tid, 
                                 const int32_t tid) {
     pthread_barrier_wait(&Env::thread_barrier);     
@@ -609,6 +640,6 @@ inline void work_x_stealing_validate_prediction(std::vector<std::vector<struct T
         }
     }
     pthread_barrier_wait(&Env::thread_barrier);   
-    manager_x_worker_validate_prediction(tiles, true_categories, predicted_nistances, category_type, leader_tid, tid);
+    manager_x_worker_validate_prediction(tiles, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
 }
 #endif
