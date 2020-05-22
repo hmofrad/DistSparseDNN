@@ -181,7 +181,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
 			Weight* b_A = bias_vectors[i]->ptr;
 			for(uint32_t j = 0; j < layer_ncols; j++) b_A[j] = bias_values[j];
 		}
-        //Logging::enabled = false; 
+        Logging::enabled = false; 
         if(i%10==0) printf("|"); 
     }
     Logging::enabled = true;
