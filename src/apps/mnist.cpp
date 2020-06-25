@@ -106,7 +106,7 @@ int main(int argc, char **argv) {
 			   nneurons, nmax_layers, layer_files, 
 			   bias_value, bias_type, bias_files, 
 			   ncategories, category_type, category_file, 
-			   noop, relu,
+			   noop, relu, "softmax",
 			   input_type, parallelism_type, compression_type, hashing_type);
     
     return(Env::finalize());
