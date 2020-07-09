@@ -14,8 +14,8 @@
 #include <omp.h>
 #include <thread>
 #include <sys/sysinfo.h>
-//#include <numa.h>
-#include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
+#include <numa.h>
+//#include </ihome/rmelhem/moh18/numactl/libnuma/usr/local/include/numa.h> 
 #include "types.hpp"
 
 namespace Env {
@@ -105,8 +105,8 @@ namespace Env {
         int32_t leader;
         uint32_t rowgroup;
         uint32_t start_layer;
-		uint32_t current_layer;
-		uint32_t start_row;
+        uint32_t current_layer;
+        uint32_t start_row;
         uint32_t end_row;
         uint32_t start_col;
         uint32_t end_col;
@@ -552,7 +552,7 @@ uint64_t Env::adjust_nnz(const std::deque<int32_t> my_threads, const int32_t lea
         Env::threads[tid].off_nnz = 0;                               
         Env::threads[tid].idx_nnz = 0;
     }
-	pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
     return(nnz);
 }
 
@@ -569,7 +569,7 @@ void Env::adjust_displacement(const std::deque<int32_t> my_threads, const int32_
             Env::threads[t].dis_nnz = Env::threads[t].off_nnz - Env::threads[t_minus_1].idx_nnz;
         }
     }
-	pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
+    pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
 }
 
 void Env::init_num_threads(const uint32_t value, const int32_t leader_tid, const int32_t tid) {
