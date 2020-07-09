@@ -26,6 +26,7 @@
 using WGT = float;
 WGT noop(WGT w) {return w;}
 WGT relu(WGT w) {return (w < 0) ? 0 : (w > 32) ? 32 : w;}
+const std::string classifier = "softmax";
 
 int main(int argc, char **argv) {
     Logging::enabled = true;
@@ -103,7 +104,7 @@ uint32_t input_ninstances = atoi(argv[2]);
 			   nneurons, nmax_layers, layer_files, 
 			   bias_value, bias_type, bias_files,
 			   ncategories, category_type, category_file, 
-			   noop, relu, "softmax",
+			   noop, relu, classifier,
 			   input_type, parallelism_type, compression_type, hashing_type);
     
     return(Env::finalize());
