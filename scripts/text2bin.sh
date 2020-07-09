@@ -8,8 +8,8 @@ echo "Run sparse_dnn_generator.py to generate the text files representing the sp
 
 
 if [ "$#" -ne 2 ] || ! [ -d "$1" ]; then
-	echo "USAGE: $0 DIRECTORY NLAYERS"
-	exit 1
+    echo "USAGE: $0 DIRECTORY NLAYERS"
+    exit 1
 fi
 
 DATA_DIR=$1
@@ -22,7 +22,7 @@ mkdir -p ${BIN_DIR}
 
 CONVERTER=text2bin
 if [ ! -f "${CONVERTER}" ]; then
-	g++ -o ${CONVERTER} ${CONVERTER}.cpp -std=c++14 -DNDEBUG -O3 -flto -fwhole-program -march=native
+    g++ -o ${CONVERTER} ${CONVERTER}.cpp -std=c++14 -DNDEBUG -O3 -flto -fwhole-program -march=native
 fi
 
 echo "Converting MINST input from text (${TXT_DIR}) to binary (${BIN_DIR})"
@@ -37,15 +37,15 @@ FILE_BIN=${BIN_DIR}/predictions.bin
 
 NLAYERS=$2
 for (( i=0; i<${NLAYERS}; i++ )); do
-	FILE_TXT=${TXT_DIR}/weights${i}.txt
-	FILE_BIN=${BIN_DIR}/weights${i}.bin
-	./${CONVERTER} ${FILE_TXT} ${FILE_BIN} 3
+    FILE_TXT=${TXT_DIR}/weights${i}.txt
+    FILE_BIN=${BIN_DIR}/weights${i}.bin
+    ./${CONVERTER} ${FILE_TXT} ${FILE_BIN} 3
 done
 
 for (( i=0; i<${NLAYERS}; i++ )); do
-	FILE_TXT=${TXT_DIR}/bias${i}.txt
-	FILE_BIN=${BIN_DIR}/bias${i}.bin
-	./${CONVERTER} ${FILE_TXT} ${FILE_BIN} 4
+    FILE_TXT=${TXT_DIR}/bias${i}.txt
+    FILE_BIN=${BIN_DIR}/bias${i}.bin
+    ./${CONVERTER} ${FILE_TXT} ${FILE_BIN} 4
 done
 
 exit
