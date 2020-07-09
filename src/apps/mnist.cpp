@@ -5,7 +5,7 @@
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
  
-// make clean && make && time mpirun.mpich -np 1 bin/./mnist -m 60000 784 -n 1024 -l 120 -c 10 data/sparse_mnist/bin/ data/sparse_mnist/bin/ -p 0
+// make clean && make && time mpirun.mpich -np 1 bin/./mnist -m 60000 784 -n 1024 -l 120 -c 10 data/mnist/bin/ data/mnist/bin/ -p 0
 
 #include <stdio.h>
 #include <stdlib.h>
