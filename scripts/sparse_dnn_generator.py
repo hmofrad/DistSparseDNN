@@ -2,7 +2,7 @@
 # (c) Mohammad Hasanzadeh Mofrad, 2020
 # (e) m.hasanzadeh.mofrad@gmail.com
 # Datasets: MNIST, Fashion MNIST, CIFAR10, CIFAR100, IMDB
-# Run: python sparse_dataset_generator.py (mnist|cifar10)
+# Run: python sparse_dataset_generator.py directory dataset
 
 import sys
 import time
@@ -15,7 +15,7 @@ from scipy.stats import rankdata
 import tensorflow_model_optimization as tfmot
 
 if(len(sys.argv) != 3):
-    print("USAGE: python %s <directory> <dataset [mnist|cifar|imdb]>\n" %(sys.argv[0]))
+    print("USAGE: python %s <directory> <dataset [mnist|fashion_mnist|cifar10|cifar100|imdb]>\n" %(sys.argv[0]))
     sys.exit()
     
 binary=sys.argv[0]
