@@ -1,6 +1,6 @@
 /*
- * sparse_mnist.cpp: Sparse DNN inference for MNIST dataset
- * [http://yann.lecun.com/exdb/mnist/]
+ * imdb.cpp: Sparse DNN inference for IMDB Large Movie Review Dataset
+ * [https://www.tensorflow.org/datasets/catalog/imdb_reviews]
  * (c) Mohammad Hasanzadeh Mofrad, 2020
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
@@ -26,7 +26,7 @@
 using WGT = float;
 WGT noop(WGT w) {return w;}
 WGT relu(WGT w) {return (w < 0) ? 0 : w;}
-
+const std::string classifier = "softmax";
 
 int main(int argc, char **argv) {
     Logging::enabled = true;
@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
 			   nneurons, nmax_layers, layer_files, 
 			   bias_value, bias_type, bias_files, 
 			   ncategories, category_type, category_file, 
-			   noop, relu, "sigmoid",
+			   noop, relu, classifier,
 			   input_type, parallelism_type, compression_type, hashing_type);
     
     return(Env::finalize());
