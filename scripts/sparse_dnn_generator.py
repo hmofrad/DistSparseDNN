@@ -1,9 +1,7 @@
 # sparse_dataset_generator.py: Python TensorFlow script for generating deep sparse networks
 # (c) Mohammad Hasanzadeh Mofrad, 2020
 # (e) m.hasanzadeh.mofrad@gmail.com
-# Datasets include
-#     MNIST:   [http://yann.lecun.com/exdb/mnist/]
-#     CIFAR10: [https://www.cs.toronto.edu/~kriz/cifar.html]
+# Datasets: MNIST, Fashion MNIST, CIFAR10, CIFAR100, IMDB
 # Run: python sparse_dataset_generator.py (mnist|cifar10)
 
 import sys
