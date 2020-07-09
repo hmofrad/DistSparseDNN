@@ -20,5 +20,7 @@ mpirun -np 4 bin/./radixnet -m 60000 1024 -n 1024 -l 120 -c 0 data/radixnet/bin/
 
 For other datasets including MNIST, fashion MNIST, CIFAR-10, CIFAR-100, and IMDB generate the input dataset and sparse DNN using scripts/sparse_dnn_generator.py and then run them; e.g., run fashion MNIST with 30 layers each with 2048 neurons as follow
 
+python3 scripts/sparse_dnn_generator.py fashion_mnist # set parameters internally
+
 mpirun -np 4 bin/./fashion_mnist -m 60000 784 -n 2048 -l 30 -c 10 data/fashion_mnist/bin/ data/fashion_mnist/bin/ -p 0
 
