@@ -12,17 +12,17 @@
 /* mode: 1 = Single column input text file
          2 = Two columns input text file
          3 = Three columns input text file (3rd column as double/float weights)
-		 4 = Two columns input text file
+         4 = Two columns input text file
  */
  
 using WGT = float; 
 
 int main(int argc, char **argv) {
     
-	if (argc != 4) {
+    if (argc != 4) {
         std::cout << "Usage: " << argv[0] << " input.txt output.bin mode [1-3]"  << std::endl;
-    	std::exit(1);
-	}
+        std::exit(1);
+    }
     
     std::string filepath_in  = argv[1];
     std::string filepath_out = argv[2];
@@ -69,7 +69,7 @@ int main(int argc, char **argv) {
             fout.write(reinterpret_cast<const char*>(&w), sizeof(WGT));
             //std::cout << "i=" << i << " j=" << j << " w=" << w << std::endl;
         }
-		else if(mode == 4) {
+        else if(mode == 4) {
             iss >> i >> w;
             fout.write(reinterpret_cast<const char*>(&i), sizeof(uint32_t));
             fout.write(reinterpret_cast<const char*>(&w), sizeof(WGT));
@@ -82,8 +82,8 @@ int main(int argc, char **argv) {
     }
     fout.close();
     fin.close();
-	
+    
     std::cout << "File \"" << filepath_in << "\": [" << num_rows+1 << " x " << num_cols+1 << "]" << ", nnz=" <<  num_edges << " convertd into File \"" << filepath_out << "\"." << std::endl;
 
-	return(0);
+    return(0);
 }
