@@ -57,22 +57,9 @@ int main(int argc, char **argv) {
     std::string layer_file_prefix = ((std::string) argv[11]);
     INPUT_TYPE input_type = INPUT_TYPE::_BINARY_;
     
-    std::vector<uint32_t> nneurons_vector = {2048};    
-    uint32_t idxN = std::distance(nneurons_vector.begin(), std::find(nneurons_vector.begin(), nneurons_vector.end(), nneurons));
-    if(idxN >= nneurons_vector.size()) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of neurons %d\n", nneurons);
-        std::exit(Env::finalize());
-    }    
-    
     std::string feature_file = feature_file_prefix + "/input";
     feature_file += (input_type == INPUT_TYPE::_TEXT_) ? ".txt" : ".bin";
     
-    std::vector<uint32_t> nmax_layers_vector = {30};
-    uint32_t idxL = std::distance(nmax_layers_vector.begin(), std::find(nmax_layers_vector.begin(), nmax_layers_vector.end(), nmax_layers));
-    if(idxL >= nmax_layers_vector.size()) {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "Invalid number of layers %d\n", nmax_layers);
-        std::exit(Env::finalize());
-    }
     std::string category_file = layer_file_prefix;
     category_file += (input_type == INPUT_TYPE::_TEXT_) ? "predictions.txt" : "predictions.bin";
     VALUE_TYPE category_type = VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_;
