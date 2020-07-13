@@ -36,15 +36,25 @@ template<typename Weight>
 void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type_, const bool one_rank, const int32_t socket_id) {  
     compression_type = compression_type_;
 
-    if(compression_type == COMPRESSED_FORMAT::_CSC_) spmat = std::make_shared<struct CSC<Weight>>(triples.size(), height, width, socket_id);
-    else if(compression_type == COMPRESSED_FORMAT::_CSR_) spmat = std::make_shared<struct CSR<Weight>>(triples.size(), height, width, socket_id);
+    if(compression_type == COMPRESSED_FORMAT::_CSC_) { 
+        spmat = std::make_shared<struct CSC<Weight>>(triples.size(), height, width, socket_id); 
+        spmat->populate(triples);
+    }
+    else if(compression_type == COMPRESSED_FORMAT::_CSR_) { 
+        spmat = std::make_shared<struct CSR<Weight>>(triples.size(), height, width, socket_id); 
+        spmat->populate(triples);
+    }
+    else if(compression_type == COMPRESSED_FORMAT::_DDC_) { 
+        spmat = std::make_shared<struct DDC<Weight>>(triples.size(), height, width, socket_id); 
+        spmat->populate(triples);
+    }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
         std::exit(Env::finalize());
     }
 
     if(not triples.empty()){
-        spmat->populate(triples, height, width);
+        
         //spmat->walk_dxm(one_rank, 0, 0);
         triples.clear();
         triples.shrink_to_fit();
