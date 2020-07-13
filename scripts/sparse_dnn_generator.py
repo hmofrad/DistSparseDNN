@@ -271,12 +271,12 @@ if(y_test.ndim==1):
     nclasses = 2
 elif(y_test.ndim==2):
     nclasses = y_test.shape[1]
-nlayers = 90
-nneurons = 2048
+nneurons = 1024
+nlayers = 3
 dense_model = generate_dense_model(nfeatures, nneurons, nclasses, nlayers)
 
 batch_size = 128
-nepochs = 90
+nepochs = 3
 begin_step = nepochs//3;
 sparsity = 0.75; 
 height, weight=1, 1
