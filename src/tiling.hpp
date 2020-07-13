@@ -182,7 +182,6 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
             tile.start_col = j*tile_width;
             tile.end_col = (j+1)*tile_width;
             tile.width = tile_width;
-            
         }
     }
 
@@ -211,7 +210,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     print_tiling("rank");
     print_tiling("nedges");
     
-    compress_triples(compression_type);
+    compress_triples(compression_type);    
 }
 
 template<typename Weight>
@@ -492,7 +491,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             int32_t thread_rank = (((i % colgrp_nthreads) * rowgrp_nthreads + (j % rowgrp_nthreads)) 
-                               + ((i / (nrowgrps/gcd_t)) * (thread_nrowgrps))) % (Env::nranks * Env::nthreads);
+                                + ((i / (nrowgrps/gcd_t)) * (thread_nrowgrps))) % (Env::nranks * Env::nthreads);
             tile.rank   = thread_rank % Env::nranks;
             tile.thread = thread_rank / Env::nranks;  
             tile.start_row = i*tile_height;
