@@ -85,4 +85,4 @@ For other datasets e.g., for inferring fashion MNIST on a sparse DNN with 30 lay
 
 ## Contact
 
-Mohammad Hasnzadeh Mofrad; m.hasanzadeh.mofrad@gmail.com
+Mohammad Hasnzadeh Mofrad (m.hasanzadeh.mofrad@gmail.com)
