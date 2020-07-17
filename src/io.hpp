@@ -15,24 +15,24 @@
 #include "log.hpp"
 #include "tile.hpp"
 #include "hashers.hpp"
-enum INPUT_TYPE {_TEXT_, _BINARY_};
+enum FILE_TYPE {_TEXT_, _BINARY_};
 enum VALUE_TYPE {_CONSTANT_, _NONZERO_INSTANCES_ONLY_, _INSTANCE_AND_VALUE_PAIRS_};
 
 namespace IO {
     template<typename Weight>
-    uint64_t get_nnzs(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const uint32_t nrows);
+    uint64_t get_nnzs(const std::string input_file, const FILE_TYPE file_type, const std::shared_ptr<struct TwoDHasher> hasher, const uint32_t nrows);
     template<typename Weight>
-    std::vector<struct Triple<Weight>> read_file_ijw(const std::string input_file, const INPUT_TYPE input_type, std::shared_ptr<struct TwoDHasher> hasher, bool one_rank, const uint32_t nrows, const uint32_t ncols);
+    std::vector<struct Triple<Weight>> read_file_ijw(const std::string input_file, const FILE_TYPE file_type, std::shared_ptr<struct TwoDHasher> hasher, bool one_rank, const uint32_t nrows, const uint32_t ncols);
     template<typename Weight>
-    uint32_t read_file_iv(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const bool dimension, const VALUE_TYPE value_type, std::vector<Weight>& values, const uint32_t nrows);
+    uint32_t read_file_iv(const std::string input_file, const FILE_TYPE file_type, const std::shared_ptr<struct TwoDHasher> hasher, const bool dimension, const VALUE_TYPE value_type, std::vector<Weight>& values, const uint32_t nrows);
 }
 
 template<typename Weight>
-uint64_t IO::get_nnzs(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const uint32_t nrows) {
+uint64_t IO::get_nnzs(const std::string input_file, const FILE_TYPE file_type, const std::shared_ptr<struct TwoDHasher> hasher, const uint32_t nrows) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Get nnzs: Start counting nnzs from file %s\n", input_file.c_str());
     uint64_t ninput_nnzs = 0;
     
-    if(input_type == INPUT_TYPE::_TEXT_) {
+    if(file_type == FILE_TYPE::_TEXT_) {
         std::ifstream fin(input_file.c_str(), std::ios_base::in);
         if(not fin.is_open()) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", input_file.c_str());
@@ -51,7 +51,7 @@ uint64_t IO::get_nnzs(const std::string input_file, const INPUT_TYPE input_type,
         }
         fin.close();
     }
-    else if(input_type == INPUT_TYPE::_BINARY_) {
+    else if(file_type == FILE_TYPE::_BINARY_) {
         std::ifstream fin(input_file.c_str(), std::ios_base::binary);
         if(not fin.is_open()) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", input_file.c_str());
@@ -84,11 +84,11 @@ uint64_t IO::get_nnzs(const std::string input_file, const INPUT_TYPE input_type,
 }
 
 template<typename Weight>
-std::vector<struct Triple<Weight>> IO::read_file_ijw(const std::string input_file, const INPUT_TYPE input_type, std::shared_ptr<struct TwoDHasher> hasher, bool one_rank, const uint32_t nrows,  const uint32_t ncols) {
+std::vector<struct Triple<Weight>> IO::read_file_ijw(const std::string input_file, const FILE_TYPE file_type, std::shared_ptr<struct TwoDHasher> hasher, bool one_rank, const uint32_t nrows,  const uint32_t ncols) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Start reading the input file %s\n", input_file.c_str());
     std::vector<struct Triple<Weight>> triples;
     std::vector<std::vector<struct Triple<Weight>>> triples1(Env::nthreads);
-    if(input_type == INPUT_TYPE::_TEXT_) {
+    if(file_type == FILE_TYPE::_TEXT_) {
         std::ifstream fin(input_file.c_str(), std::ios_base::in);
         if(not fin.is_open()) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", input_file.c_str());
@@ -168,7 +168,7 @@ std::vector<struct Triple<Weight>> IO::read_file_ijw(const std::string input_fil
         }
         fin.close();
     }
-    else if(input_type == INPUT_TYPE::_BINARY_) {
+    else if(file_type == FILE_TYPE::_BINARY_) {
         std::ifstream fin(input_file.c_str(), std::ios_base::binary);
         if(not fin.is_open()) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", input_file.c_str());
@@ -244,13 +244,13 @@ std::vector<struct Triple<Weight>> IO::read_file_ijw(const std::string input_fil
 }
 
 template<typename Weight>
-uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_type, const std::shared_ptr<struct TwoDHasher> hasher, const bool dimension, const VALUE_TYPE value_type, std::vector<Weight>& values, const uint32_t nrows) {
+uint32_t IO::read_file_iv(const std::string input_file, const FILE_TYPE file_type, const std::shared_ptr<struct TwoDHasher> hasher, const bool dimension, const VALUE_TYPE value_type, std::vector<Weight>& values, const uint32_t nrows) {
     Logging::print(Logging::LOG_LEVEL::INFO, "Read file: Start reading file %s\n", input_file.c_str());
     values.resize(nrows);
     uint32_t ninstances = 0;
     uint32_t instance = 0;
     Weight value = 0;
-    if(input_type == INPUT_TYPE::_TEXT_) {
+    if(file_type == FILE_TYPE::_TEXT_) {
         std::ifstream fin(input_file.c_str(), std::ios_base::in);
         if(not fin.is_open()) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", input_file.c_str());
@@ -297,7 +297,7 @@ uint32_t IO::read_file_iv(const std::string input_file, const INPUT_TYPE input_t
         }
         
     }    
-    else if(input_type == INPUT_TYPE::_BINARY_) {
+    else if(file_type == FILE_TYPE::_BINARY_) {
         std::ifstream fin(input_file.c_str(), std::ios_base::binary);
         if(not fin.is_open()) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "Opening %s\n", input_file.c_str());
