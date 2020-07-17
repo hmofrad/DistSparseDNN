@@ -44,8 +44,8 @@ void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type_, const boo
         spmat = std::make_shared<struct CSR<Weight>>(triples.size(), height, width, socket_id); 
         spmat->populate(triples);
     }
-    else if(compression_type == COMPRESSED_FORMAT::_DDC_) { 
-        spmat = std::make_shared<struct DDC<Weight>>(triples.size(), height, width, socket_id); 
+    else if(compression_type == COMPRESSED_FORMAT::_UDC_) { 
+        spmat = std::make_shared<struct UDC<Weight>>(triples.size(), height, width, socket_id); 
         spmat->populate(triples);
     }
     else {
