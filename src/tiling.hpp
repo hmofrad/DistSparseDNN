@@ -29,14 +29,14 @@ class Tiling {
         
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_, 
-               const std::string input_file, const INPUT_TYPE input_type,
+               const std::string input_file, const FILE_TYPE file_type,
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type, 
                std::shared_ptr<struct TwoDHasher> hasher);
 
         Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, 
                const uint32_t nranks_, const uint32_t rank_nthreads_, const uint32_t nthreads_,
                const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_, 
-               const std::string input_file, const INPUT_TYPE input_type, 
+               const std::string input_file, const FILE_TYPE file_type, 
                const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
                std::shared_ptr<struct TwoDHasher> hasher);
 
@@ -96,7 +96,7 @@ class Tiling {
 template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_, const uint32_t nranks_, 
                        const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_,
-                       const std::string input_file, const INPUT_TYPE input_type,
+                       const std::string input_file, const FILE_TYPE file_type,
                        const TILING_TYPE tiling_type_, 
                        const COMPRESSED_FORMAT compression_type, std::shared_ptr<struct TwoDHasher> hasher)
         : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
@@ -200,7 +200,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                           = [%d]\n", nnzs);
     
-    std::vector<struct Triple<Weight>> triples = IO::read_file_ijw<Weight>(input_file, input_type, hasher, one_rank, nrows, ncols);
+    std::vector<struct Triple<Weight>> triples = IO::read_file_ijw<Weight>(input_file, file_type, hasher, one_rank, nrows, ncols);
     Tiling<Weight>::insert_triples(triples);
     Tiling<Weight>::delete_triples(triples);
 
@@ -217,7 +217,7 @@ template<typename Weight>
 Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const uint32_t ncolgrps_,  const uint32_t nranks_, 
                        const uint32_t rank_nthreads_, const uint32_t nthreads_, 
                        const uint64_t nnzs_, const uint32_t nrows_, const uint32_t ncols_,
-                       const std::string input_file, const INPUT_TYPE input_type,
+                       const std::string input_file, const FILE_TYPE file_type,
                        const TILING_TYPE tiling_type_, const COMPRESSED_FORMAT compression_type,
                        std::shared_ptr<struct TwoDHasher> hasher)
                      : ntiles(ntiles_) , nrowgrps(nrowgrps_), ncolgrps(ncolgrps_), nranks(nranks_), rank_ntiles(ntiles_/nranks_), 
@@ -330,7 +330,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height      x tile_width       = [%d x %d]\n", tile_height, tile_width);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                                 = [%d]\n", nnzs);
     
-    std::vector<struct Triple<Weight>> triples = IO::read_file_ijw<Weight>(input_file, input_type, hasher, one_rank, nrows, ncols);
+    std::vector<struct Triple<Weight>> triples = IO::read_file_ijw<Weight>(input_file, file_type, hasher, one_rank, nrows, ncols);
     Tiling<Weight>::insert_triples(triples);
     Tiling<Weight>::delete_triples(triples);
 
