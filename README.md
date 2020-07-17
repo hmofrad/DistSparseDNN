@@ -28,7 +28,7 @@ make clean
 
 ## Supported Features
 
-Compression Type
+**Compression Type**
 <ol start="0">
   <li>Uncompressed Dense Column (UDC)</li>
   <li>Compressed Sparse Column (CSC)</li>
@@ -38,7 +38,7 @@ Compression Type
 </ol>
 
 
-Multiplication Type
+**Multiplication Type**
 <ol start="0">
   <li>Dense matrix by dense matrix</li>
   <li>Dense matrix by compressed matrix</li>
@@ -48,7 +48,7 @@ Multiplication Type
 </ol>
 
 	
-Parallelism Type
+**Parallelism Type**
 <ol start="0">
   <li>Model parallelism</li>
   <li>Data parallelism </li>
@@ -57,7 +57,7 @@ Parallelism Type
   <li>Work-stealing parallelism</li>
 </ol>
 
-Parallelism Type
+**Parallelism Type**
 <ol start="0">
   <li>No hashing</li>
   <li>Input hashing</li>
@@ -85,5 +85,4 @@ For other datasets e.g., for inferring fashion MNIST on a sparse DNN with 30 lay
 
 ## Contact
 
-Mohammad Hasnzadeh Mofrad
-m.hasanzadeh.mofrad@gmail.com
+Mohammad Hasnzadeh Mofrad; m.hasanzadeh.mofrad@gmail.com
