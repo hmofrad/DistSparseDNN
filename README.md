@@ -13,7 +13,7 @@ Distributed Sparse Deep Neural Network Inference
 
 make
 
-## Unistall
+## Uninstall
 
 make clean
 
@@ -27,40 +27,43 @@ make clean
                    -h <hashing_type[0-3]>
 
 ## Supported Features
-- **Compression Type**
-	<ol start="0">
-	  <li>Uncompressed Dense Column (UDC)</li>
-	  <li>Compressed Sparse Column (CSC)</li>
-	  <li>Doubly Compressed Sparse Column (DCSC) (not implemented yet)</li>
-	  <li>Triply Compressed Sparse Column (TCSC) (not implemented yet) </li>
-	  <li>Compressed Sparse Row (CSR)</li>
-	</ol>
 
-- **Multiplication Type**
-	<ol start="0">
-	  <li>Dense matrix by dense matrix</li>
-	  <li>Dense matrix by compressed matrix</li>
-	  <li>Compressed matrix by compressed matrix</li>
-	  <li>Compressed matrix by doubly compressed matrix (not implemented yet)</li>
-	  <li>Compressed matrix by triply compressed matrix (not implemented yet)</li>
-	</ol>
+Compression Type
+<ol start="0">
+  <li>Uncompressed Dense Column (UDC)</li>
+  <li>Compressed Sparse Column (CSC)</li>
+  <li>Doubly Compressed Sparse Column (DCSC) (not implemented yet)</li>
+  <li>Triply Compressed Sparse Column (TCSC) (not implemented yet) </li>
+  <li>Compressed Sparse Row (CSR)</li>
+</ol>
+
+
+Multiplication Type
+<ol start="0">
+  <li>Dense matrix by dense matrix</li>
+  <li>Dense matrix by compressed matrix</li>
+  <li>Compressed matrix by compressed matrix</li>
+  <li>Compressed matrix by doubly compressed matrix (not implemented yet)</li>
+  <li>Compressed matrix by triply compressed matrix (not implemented yet)</li>
+</ol>
+
 	
-- **Parallelism Type**
-	<ol start="0">
-	  <li>Model parallelism</li>
-	  <li>Data parallelism </li>
-	  <li>Data-then-model parallelism</li>
-	  <li>Manage-worker parallelism</li>
-	  <li>Work-stealing parallelism</li>
-	</ol>
+Parallelism Type
+<ol start="0">
+  <li>Model parallelism</li>
+  <li>Data parallelism </li>
+  <li>Data-then-model parallelism</li>
+  <li>Manage-worker parallelism</li>
+  <li>Work-stealing parallelism</li>
+</ol>
 
-- **Parallelism Type**
-	<ol start="0">
-	  <li>No hashing</li>
-	  <li>Input hashing</li>
-	  <li>Layer hashing</li>
-	  <li>Input and layer hashing	</li>
-	</ol>
+Parallelism Type
+<ol start="0">
+  <li>No hashing</li>
+  <li>Input hashing</li>
+  <li>Layer hashing</li>
+  <li>Input and layer hashing	</li>
+</ol>
 
 ## Datasets
 
