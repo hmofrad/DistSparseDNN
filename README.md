@@ -11,11 +11,11 @@ Distributed Sparse Deep Neural Network Inference
 
 ## Install
 
-make
+    make
 
 ## Uninstall
 
-make clean
+    make clean
 
 ## Test
 
