@@ -9,9 +9,9 @@
  *  Doubly Compressed Sparse Column (DCSC)
  *  Triply Compressed Sparse Row (TCSR)
  *  Triply Compressed Sparse Column (TCSC)
- *  Decompression types:    
- *  Decompressed Dense Row (DDR)
- *  Decompressed Dense Column (DDC)
+ *  Uncompressed types:    
+ *  Uncompressed Dense Row (UDR)
+ *  Uncompressed Dense Column (UDC)
  */
  
 #ifndef SPMAT_HPP
@@ -25,12 +25,8 @@
 #include "triple.hpp"
 #include "env.hpp"
 
-/*
-
-*/
-
-enum COMPRESSED_FORMAT {_CSR_, _DCSR_, _TCSR_, _CSC_, _DCSC_, _TCSC_, _DDR_, _DDC_};
-const char* COMPRESSED_FORMATS[] = {"_CSR_", "_DCSR_", "_TCSR_", "_CSC_", "_DCSC_", "_TCSC_", "_DDR_", "_DDC_"};
+enum COMPRESSED_FORMAT {_CSR_, _DCSR_, _TCSR_, _CSC_, _DCSC_, _TCSC_, _UDR_, _UDC_};
+const char* COMPRESSED_FORMATS[] = {"_CSR_", "_DCSR_", "_TCSR_", "_CSC_", "_DCSC_", "_TCSC_", "_UDR_", "_UDC_"};
 
 
 template<typename Weight>
@@ -292,7 +288,6 @@ void CSR<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
 template<typename Weight>
 void CSR<Weight>::adjust(const int32_t tid){
     CSR::nnz_i = Env::threads[tid].idx_nnz;
-    Env::nnzs[tid].push_back(Env::threads[tid].idx_nnz);
 }
 
 template<typename Weight>
@@ -301,7 +296,6 @@ void CSR<Weight>::adjust(const int32_t leader_tid, const int32_t tid){
         CSR::nnz_i = 0;
         for(uint32_t i = 0; i < Env::threads.size(); i++) {    
             CSR::nnz_i += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
-            Env::nnzs[i].push_back(Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
         }
     }
     pthread_barrier_wait(&Env::thread_barrier);
@@ -314,7 +308,6 @@ void CSR<Weight>::adjust(const std::deque<int32_t> my_threads, const int32_t lea
         for(uint32_t i = 0; i < my_threads.size(); i++) {    
             int32_t t = my_threads[i];
             CSR::nnz_i += (Env::threads[t].idx_nnz - Env::threads[t].off_nnz);
-            Env::nnzs[t].push_back(Env::threads[t].idx_nnz - Env::threads[t].off_nnz);
         }
     }
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
@@ -636,10 +629,7 @@ void CSC<Weight>::walk_dxd(const bool one_rank, const int32_t leader_tid, const 
             }
             Logging::print(Logging::LOG_LEVEL::INFO, "CSC: Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
         }
-    }
-
-
-    
+    }    
 }
 
 template<typename Weight>
@@ -852,12 +842,15 @@ void CSC<Weight>::walk_dxm1(const bool one_rank, const int32_t leader_tid, const
 
 
 template<typename Weight>
-struct DDC: public Compressed_Format<Weight> {
+struct UDC: public Compressed_Format<Weight> {
     public:
-        DDC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id);
-        ~DDC(){};
+        UDC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id);
+        ~UDC(){};
         
         void populate(std::vector<struct Triple<Weight>>& triples);
+        void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid);
+        void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid);
+        void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         
         uint64_t nnz   = 0;
         uint64_t nnz_i = 0;
@@ -866,36 +859,115 @@ struct DDC: public Compressed_Format<Weight> {
 };
 
 template<typename Weight>
-DDC<Weight>::DDC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id) {
-    Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_DDC_;
+UDC<Weight>::UDC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id) {
+    Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_UDC_;
     Compressed_Format<Weight>::nnz = nnz_;
     Compressed_Format<Weight>::nnz_i = nnz_;
     Compressed_Format<Weight>::nrows = nrows_; 
     Compressed_Format<Weight>::ncols = ncols_;
     
-    DDC::compression_type = COMPRESSED_FORMAT::_DDC_;
-    DDC::nnz = nnz_;
-    DDC::nnz_i = nnz_;
-    DDC::nrows = nrows_; //tile_height
-    DDC::ncols = ncols_; //tile_width
+    UDC::compression_type = COMPRESSED_FORMAT::_UDC_;
+    UDC::nnz = nnz_;
+    UDC::nnz_i = nnz_;
+    UDC::nrows = nrows_; //tile_height
+    UDC::ncols = ncols_; //tile_width
     
-    DDC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(DDC::nrows * DDC::ncols, socket_id));  
+    UDC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(UDC::nrows * UDC::ncols, socket_id));  
 }
 
 //(row*width) + col
 template<typename Weight>
-void DDC<Weight>::populate(std::vector<struct Triple<Weight>>& triples) {
+void UDC<Weight>::populate(std::vector<struct Triple<Weight>>& triples) {
     // Not necessary, however, it provides sequential access to triples
     const ColSort<Weight> f_col;
     std::sort(triples.begin(), triples.end(), f_col);  
     
-    Weight* A = DDC::A_blk->ptr;
+    Weight* A = UDC::A_blk->ptr;
     for(struct Triple<Weight>& triple: triples) {
-        uint32_t row = (triple.row % DDC::nrows);
-        uint32_t col = (triple.col % DDC::ncols);
+        uint32_t row = (triple.row % UDC::nrows);
+        uint32_t col = (triple.col % UDC::ncols);
         Weight weight = triple.weight;
-        int index = (col * DDC::nrows) + row;
+        uint64_t index = (col * UDC::nrows) + row;
         A[index]= weight;
     }
 }
+template<typename Weight>
+void UDC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid) {
+    if((leader_tid == -1) or (tid == leader_tid)) {
+        UDC::nrows = nrows_; 
+        UDC::ncols = ncols_;
+        UDC::A_blk->reallocate(UDC::nrows * UDC::ncols);
+        UDC::A_blk->clear();
+        
+        Compressed_Format<Weight>::nrows = nrows_; 
+        Compressed_Format<Weight>::ncols = ncols_;
+    }
+}
+
+template<typename Weight>
+void UDC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t col, uint64_t& index, Weight(*activation_function)(Weight), const int32_t tid) {
+    uint64_t&  k = index;
+    uint32_t   c = col + 1;
+    Weight*    A = UDC::A_blk->ptr;
+    Weight*    s = *spa;
+    const Weight* b = bias;
+    
+    for(uint32_t i = 0; i < UDC::nrows; i++) {
+        if(s[i]) {
+            s[i] += b[c-1];
+            s[i] = activation_function(s[i]);
+            if(s[i]) {
+                A[k] = s[i];
+                s[i] = 0;
+            }
+        }
+        k++;
+    }
+}
+
+template<typename Weight>
+void UDC<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid) {
+    uint32_t nrows = UDC::nrows;
+    uint32_t ncols = UDC::ncols;
+    Weight*    A = UDC::A_blk->ptr;
+    
+    double&   checksum   = Env::counters[tid].checksum;
+    uint64_t& checkcount = Env::counters[tid].checkcount;
+    
+    checksum   = 0;
+    checkcount = 0;    
+    
+    for(uint64_t k = 0; k < nrows * ncols; k++) {
+        if(A[k]) {
+            checksum += A[k];
+            checkcount++;
+        }
+    }
+
+    Env::barrier();
+    pthread_barrier_wait(&Env::thread_barrier);
+    if(tid == leader_tid) {
+        double     sum_threads = 0;
+        uint64_t count_threads = 0;
+
+        for(auto it = Env::counters.begin(); it != Env::counters.end(); it++) {
+            sum_threads   += (*it).checksum;
+            count_threads += (*it).checkcount;
+        }
+        
+        if(one_rank) {
+            Logging::print(Logging::LOG_LEVEL::INFO, "CSC: Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_threads, count_threads);
+        }
+        else {
+            double     sum_ranks = 0;
+            uint64_t count_ranks = 0;
+            
+            MPI_Allreduce(&sum_threads, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(&count_threads, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+            
+            Logging::print(Logging::LOG_LEVEL::INFO, "CSC: Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
+        }
+    }
+}
+
 #endif
