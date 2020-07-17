@@ -340,7 +340,7 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
         pthread_barrier_wait(&Env::thread_barrier);
         A_SPMAT->repopulate(C_SPMAT, thread_st.dis_nnz, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
-        A_SPMAT->walk_dxm(false, leader_tid, tid);
+        //A_SPMAT->walk_dxm(false, leader_tid, tid);
    }
    else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
