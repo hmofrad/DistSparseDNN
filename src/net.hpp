@@ -101,7 +101,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
                  const uint32_t nneurons_, const uint32_t nmax_layers_, const std::vector<std::string> layer_files,
                  const Weight bias_value, const VALUE_TYPE bias_type, const std::vector<std::string> bias_files,
                  const uint32_t ncategories_, const VALUE_TYPE category_type_, const std::string category_file, 
-                Weight(*noop_function_)(Weight), Weight(*activation_function_)(Weight), const std::string classifier_,
+                 Weight(*noop_function_)(Weight), Weight(*activation_function_)(Weight), const std::string classifier_,
                  const INPUT_TYPE input_type, const PARALLELISM_TYPE parallelism_type_, 
                  const COMPRESSED_FORMAT compression_type_, const HASHING_TYPE hashing_type_)
                      : input_ninstanses(input_ninstanses_), input_nfeatures(input_nfeatures_), 
@@ -144,8 +144,6 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
                                                                     TILING_TYPE::_1D_ROW_, compression_type, hashers[0]));
         Env::thread_rowgroup = input_features->set_thread_index();                                                           
     }
-    //Env::barrier();
-    //std::exit(0);
     
     input_ninstanses = input_features->nrows;
     input_nfeatures  = input_features->ncols;
@@ -189,14 +187,14 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
     Logging::print(Logging::LOG_LEVEL::VOID, "\n"); 
     Logging::print(Logging::LOG_LEVEL::INFO, "Neural network: Done reading %d layer files.\n", nmax_layers); 
     Env::barrier();
-
+    
     spa_vectors.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++) {
-        if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+        if((compression_type == COMPRESSED_FORMAT::_UDC_) or (compression_type == COMPRESSED_FORMAT::_CSC_)) {
             uint32_t max_height = input_features->get_tile_info_max("height");
             spa_vectors[i] = std::move(std::make_shared<struct Data_Block<Weight>>(max_height, Env::threads_socket_id[i]));    
         }
-        else if(compression_type == COMPRESSED_FORMAT::_CSR_) {
+        else if((compression_type == COMPRESSED_FORMAT::_UDR_) or (compression_type == COMPRESSED_FORMAT::_CSR_)) {
             uint32_t max_width = input_features->get_tile_info_max("width");
             max_width = (nneurons > max_width) ? nneurons : max_width;
             spa_vectors[i] = std::move(std::make_shared<struct Data_Block<Weight>>(max_width, Env::threads_socket_id[i]));    
@@ -206,7 +204,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
             std::exit(Env::finalize());
         }
     }
-    
+
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
         output = std::move(std::make_unique<Tiling<Weight>>(Env::nranks, Env::nranks, 1, Env::nranks, 
                                                             0, input_ninstanses, nneurons, 
@@ -276,25 +274,13 @@ void Net<Weight>::execute() {
 
 template<typename Weight>
 void Net<Weight>::inferenceReLU(const int32_t tid) {
-    if(Env::NUMA_ALLOC) {
-        (void)Env::set_thread_affinity(tid);   
-    }
+    if(Env::NUMA_ALLOC) { (void)Env::set_thread_affinity(tid); }
     
-    if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
-        data_x_model(tid);
-    }
-    else if(parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) {
-        data_x_data(tid);
-    }
-    else if(parallelism_type == PARALLELISM_TYPE::_HYBRID_X_HYBRID_) {
-        hybrid_x_hybrid(tid);
-    }
-    else if(parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) {
-        manager_x_worker(tid);
-    }    
-    else if(parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_) {
-        work_x_stealing(tid);
-    }
+    if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) { data_x_model(tid); }
+    else if(parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) { data_x_data(tid); }
+    else if(parallelism_type == PARALLELISM_TYPE::_HYBRID_X_HYBRID_) { hybrid_x_hybrid(tid); }
+    else if(parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) { manager_x_worker(tid); }    
+    else if(parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_) { work_x_stealing(tid); }
 }
 
 template<typename Weight>
@@ -307,13 +293,17 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0;
     uint32_t start = 0, end = 0;
     uint32_t sub_start = 0, sub_end = 0;
-
-    struct Tile<Weight>& A_tile = input_features->tiles[leader_rowgroup][0];
-    struct Tile<Weight>& C_tile = output->tiles[leader_rowgroup][0];
+    uint32_t l = 0;
     for (uint32_t l = 0; l < nmax_layers; l++) {    
+        struct Tile<Weight>& A_tile = (compression_type == COMPRESSED_FORMAT::_UDC_) ? (not(l%2)) ? input_features->tiles[leader_rowgroup][0]
+                                                                                                  : output->tiles[leader_rowgroup][0] 
+                                                                                     : input_features->tiles[leader_rowgroup][0];    
         std::shared_ptr<struct Compressed_Format<Weight>>& A_SPMAT = A_tile.spmat;
         struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
         std::shared_ptr<struct Compressed_Format<Weight>>& B_SPMAT = B_tile.spmat;
+        struct Tile<Weight>& C_tile = (compression_type == COMPRESSED_FORMAT::_UDC_) ? (not(l%2)) ? output->tiles[leader_rowgroup][0] 
+                                                                                                  : input_features->tiles[leader_rowgroup][0]
+                                                                                     : output->tiles[leader_rowgroup][0];
         std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
         std::shared_ptr<struct Data_Block<Weight>>& s_spa = spa_vectors[tid];
         std::shared_ptr<struct Data_Block<Weight>>& b_bias = bias_vectors[l];
@@ -333,7 +323,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         }    
         pthread_barrier_wait(&Env::thread_barrier);
         
-        if(compression_type == COMPRESSED_FORMAT::_CSC_) {
+        if((compression_type == COMPRESSED_FORMAT::_UDC_) or (compression_type == COMPRESSED_FORMAT::_CSC_)) {
             start = Env::threads[tid].start_col;
             end = Env::threads[tid].end_col;
             sub_start = 0, sub_end   = 0;
@@ -348,11 +338,16 @@ void Net<Weight>::data_x_model(const int32_t tid) {
                             start, end, 
                             sub_start, sub_end, 
                             thread_st, last_layer, leader_tid, tid); 
+        //break;
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
-
-    const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = A_tile.spmat;
+    
+    
+    struct Tile<Weight>& C_tile = (compression_type == COMPRESSED_FORMAT::_UDC_) ? (not((l-1)%2)) ? output->tiles[leader_rowgroup][0] 
+                                                                                                  : input_features->tiles[leader_rowgroup][0]
+                                                                                 : input_features->tiles[leader_rowgroup][0];
+    const std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
     data_x_model_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type,classifier, leader_tid, tid);
 }
 
@@ -369,12 +364,12 @@ void Net<Weight>::data_x_data(const int32_t tid) {
     for (l = 0; l < nmax_layers; l++) {
         struct Tile<Weight>& A_tile = (not(l%2)) ? input_features->tiles[leader_rowgroup][0]
                                                  : output->tiles[leader_rowgroup][0];
-        std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
+        std::shared_ptr<struct Compressed_Format<Weight>>& A_SPMAT = A_tile.spmat;
         struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
-        std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
+        std::shared_ptr<struct Compressed_Format<Weight>>& B_SPMAT = B_tile.spmat;
         struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
                                                  : input_features->tiles[leader_rowgroup][0];
-        std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
+        std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
         std::shared_ptr<struct Data_Block<Weight>>& s_spa = spa_vectors[tid];
         std::shared_ptr<struct Data_Block<Weight>>& b_bias = bias_vectors[l];
 
@@ -451,8 +446,8 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& leader_owned_threads, c
         std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
         struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[my_rowgroup][0]
                                                  : input_features->tiles[my_rowgroup][0];
-        std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-        std::shared_ptr<struct Data_Block<Weight>> s_spa = spa_vectors[tid];
+        std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
+        std::shared_ptr<struct Data_Block<Weight>>& s_spa = spa_vectors[tid];
         std::shared_ptr<struct Data_Block<Weight>>& b_bias = bias_vectors[l];      
         
         A_nrows = A_SPMAT->nrows;
@@ -785,12 +780,12 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
         for (uint32_t l = 0; l < nmax_layers; l++) {
             struct Tile<Weight>& A_tile = (not(l%2)) ? input_features->tiles[leader_rowgroup][0]
                                                      : output->tiles[leader_rowgroup][0];
-            std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
+            std::shared_ptr<struct Compressed_Format<Weight>>& A_SPMAT = A_tile.spmat;
             struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
-            std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
+            std::shared_ptr<struct Compressed_Format<Weight>>& B_SPMAT = B_tile.spmat;
             struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
                                                      : input_features->tiles[leader_rowgroup][0];
-            std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
+            std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
             std::shared_ptr<struct Data_Block<Weight>>& s_spa = spa_vectors[tid];
             std::shared_ptr<struct Data_Block<Weight>>& b_bias = bias_vectors[l];    
             
@@ -848,14 +843,14 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
         for (uint32_t l = 0; l < nmax_layers; l++) {
             struct Tile<Weight>& A_tile = (not(l%2)) ? input_features->tiles[leader_rowgroup][0]
                                                      : output->tiles[leader_rowgroup][0];
-            std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT = A_tile.spmat;
+            std::shared_ptr<struct Compressed_Format<Weight>>& A_SPMAT = A_tile.spmat;
             struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];    
-            std::shared_ptr<struct Compressed_Format<Weight>> B_SPMAT = B_tile.spmat;
+            std::shared_ptr<struct Compressed_Format<Weight>>& B_SPMAT = B_tile.spmat;
             struct Tile<Weight>& C_tile = (not(l%2)) ? output->tiles[leader_rowgroup][0]
                                                      : input_features->tiles[leader_rowgroup][0];
-            std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
-            std::shared_ptr<struct Data_Block<Weight>> s_spa = spa_vectors[tid];
-            std::shared_ptr<struct Data_Block<Weight>> b_bias = bias_vectors[l];  
+            std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
+            std::shared_ptr<struct Data_Block<Weight>>& s_spa = spa_vectors[tid];
+            std::shared_ptr<struct Data_Block<Weight>>& b_bias = bias_vectors[l];  
         
             A_nrows = A_SPMAT->nrows;
             B_nrows = B_SPMAT->nrows;
