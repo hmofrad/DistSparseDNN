@@ -2,16 +2,12 @@
  * spmat.hpp: Sparse Matrix implementation 
  * (c) Mohammad Hasanzadeh Mofrad, 2020
  * (e) m.hasanzadeh.mofrad@gmail.com
- *  Compression types:
- *  Compressed Sparse Row (CSR)
- *  Compressed Sparse Column (CSC)
- *  Doubly Compressed Sparse Row (DCSR)
- *  Doubly Compressed Sparse Column (DCSC)
- *  Triply Compressed Sparse Row (TCSR)
- *  Triply Compressed Sparse Column (TCSC)
  *  Uncompressed types:    
- *  Uncompressed Dense Row (UDR)
  *  Uncompressed Dense Column (UDC)
+ *  Compression types:
+ *  Compressed Sparse Column (CSC)
+ *  Doubly Compressed Sparse Column (DCSC)
+ *  Triply Compressed Sparse Column (TCSC)
  */
  
 #ifndef SPMAT_HPP
@@ -25,8 +21,8 @@
 #include "triple.hpp"
 #include "env.hpp"
 
-enum COMPRESSED_FORMAT {_CSR_, _DCSR_, _TCSR_, _CSC_, _DCSC_, _TCSC_, _UDR_, _UDC_};
-const char* COMPRESSED_FORMATS[] = {"_CSR_", "_DCSR_", "_TCSR_", "_CSC_", "_DCSC_", "_TCSC_", "_UDR_", "_UDC_"};
+enum COMPRESSED_FORMAT {_UDC_, _CSC_, _DCSC_, _TCSC_, _CSR_, _C_SIZE_};
+const char* COMPRESSED_FORMATS[] = {"_UDC_", "_CSC_", "_DCSC_", "_TCSC_", "_CSR_", "_C_SIZE_"};
 
 
 template<typename Weight>
@@ -58,6 +54,7 @@ struct Compressed_Format {
         std::shared_ptr<struct Data_Block<Weight>>   A_blk;
 };
 
+// Compressed Sparse Row (CSR) 
 template<typename Weight>
 struct CSR: public Compressed_Format<Weight> {
     public:
@@ -86,8 +83,6 @@ struct CSR: public Compressed_Format<Weight> {
         std::shared_ptr<struct Data_Block<Weight>>   A_blk;
 };
 
-
-/* Compressed Sparse Row (CSR) */
 template<typename Weight>
 CSR<Weight>::CSR(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id) {
     Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_CSR_;
@@ -425,7 +420,7 @@ void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
     pthread_barrier_wait(&Env::thread_barriers[leader_tid]);
 }
 
-/* Compressed Sparse Column (CSC) */
+// Compressed Sparse Column (CSC) 
 template<typename Weight>
 struct CSC: public Compressed_Format<Weight> {
     public:
@@ -839,7 +834,6 @@ void CSC<Weight>::walk_dxm1(const bool one_rank, const int32_t leader_tid, const
         } 
     }    
 }
-
 
 template<typename Weight>
 struct UDC: public Compressed_Format<Weight> {
