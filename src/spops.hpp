@@ -267,7 +267,6 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
             std::exit(1); 
         }
 
-        idx_nnz = start * A_nrows;
         for(uint32_t j = start; j < end; j++) {
             for(uint32_t i = 0; i < B_nrows; i++) {
                 uint64_t k = j*B_nrows + i;
@@ -280,7 +279,6 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
             }
             C_UDC->populate_spa(&s_A, b_A, off + j, idx_nnz, activation_function, tid);            
         }
-        idx_nnz = 0;
     }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
@@ -310,6 +308,7 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
     COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;   
     if(compression_type == COMPRESSED_FORMAT::_UDC_) {
         C_SPMAT->reallocate(0, nrows, ncols, leader_tid, tid);
+        thread_st.idx_nnz = start * nrows;
         pthread_barrier_wait(&Env::thread_barrier);
         if(not last_layer) { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, sub_start, thread_st.idx_nnz, tid); }
         else { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, start, end, sub_start, thread_st.idx_nnz, tid); }
@@ -341,7 +340,7 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
         pthread_barrier_wait(&Env::thread_barrier);
         A_SPMAT->repopulate(C_SPMAT, thread_st.dis_nnz, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
-        //A_SPMAT->walk_dxm(false, leader_tid, tid);
+        A_SPMAT->walk_dxm(false, leader_tid, tid);
    }
    else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
@@ -368,7 +367,15 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
                                const int32_t tid) {
     
     COMPRESSED_FORMAT compression_type = A_SPMAT->compression_type;    
-    if((A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) or (A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSR_)) {
+    if(A_SPMAT->compression_type == COMPRESSED_FORMAT::_UDC_) {
+        C_SPMAT->reallocate(0, nrows, ncols, tid, tid);
+        thread_st.idx_nnz = 0;
+        if(not last_layer) { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, off, thread_st.idx_nnz, tid); }
+        else { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, start, end, off, thread_st.idx_nnz, tid); }
+        //leader_tid = 0;
+        //C_SPMAT->walk_dxd(false, leader_tid, tid);
+    }
+    else if((A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSC_) or (A_SPMAT->compression_type == COMPRESSED_FORMAT::_CSR_)) {
         double start_time = 0;
         start_time = Env::tic();
         std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, tid);
