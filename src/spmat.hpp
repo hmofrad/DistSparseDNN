@@ -851,6 +851,7 @@ struct UDC: public Compressed_Format<Weight> {
         void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid);
         void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid);
         void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
+        void walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid);
         
         uint64_t nnz   = 0;
         uint64_t nnz_i = 0;
@@ -893,7 +894,7 @@ void UDC<Weight>::populate(std::vector<struct Triple<Weight>>& triples) {
 }
 template<typename Weight>
 void UDC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid) {
-    if((leader_tid == -1) or (tid == leader_tid)) {
+    if(tid == leader_tid) {
         UDC::nrows = nrows_; 
         UDC::ncols = ncols_;
         UDC::A_blk->reallocate(UDC::nrows * UDC::ncols);
@@ -927,6 +928,35 @@ void UDC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
 
 template<typename Weight>
 void UDC<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid) {
+    if(tid == leader_tid) {
+        uint32_t nrows = UDC::nrows;
+        uint32_t ncols = UDC::ncols;
+        Weight*    A = UDC::A_blk->ptr;
+        
+        double&   checksum   = Env::counters[tid].checksum;
+        uint64_t& checkcount = Env::counters[tid].checkcount;
+        
+        checksum   = 0;
+        checkcount = 0;    
+        
+        for(uint64_t k = 0; k < nrows * ncols; k++) {
+            if(A[k]) { checksum += A[k]; checkcount++; }
+        }
+
+        Env::barrier();
+        if(one_rank) { Logging::print(Logging::LOG_LEVEL::INFO, "Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, checksum, checkcount); }
+        else {
+            double     sum_ranks = 0;
+            uint64_t count_ranks = 0;
+            MPI_Allreduce(&checksum, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
+            MPI_Allreduce(&checkcount, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
+            Logging::print(Logging::LOG_LEVEL::INFO, "UDC: Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
+        }
+    }
+}
+
+template<typename Weight>
+void UDC<Weight>::walk_dxd(const bool one_rank, const int32_t leader_tid, const int32_t tid) {
     uint32_t nrows = UDC::nrows;
     uint32_t ncols = UDC::ncols;
     Weight*    A = UDC::A_blk->ptr;
@@ -938,10 +968,7 @@ void UDC<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const 
     checkcount = 0;    
     
     for(uint64_t k = 0; k < nrows * ncols; k++) {
-        if(A[k]) {
-            checksum += A[k];
-            checkcount++;
-        }
+        if(A[k]) { checksum += A[k]; checkcount++; }
     }
 
     Env::barrier();
@@ -949,23 +976,20 @@ void UDC<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const 
     if(tid == leader_tid) {
         double     sum_threads = 0;
         uint64_t count_threads = 0;
-
+        
         for(auto it = Env::counters.begin(); it != Env::counters.end(); it++) {
             sum_threads   += (*it).checksum;
             count_threads += (*it).checkcount;
+            //printf("%f %lu\n", (*it).checksum, (*it).checkcount);
         }
         
-        if(one_rank) {
-            Logging::print(Logging::LOG_LEVEL::INFO, "CSC: Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_threads, count_threads);
-        }
+        if(one_rank) { Logging::print(Logging::LOG_LEVEL::INFO, "UDC: Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_threads, count_threads); }
         else {
             double     sum_ranks = 0;
             uint64_t count_ranks = 0;
-            
             MPI_Allreduce(&sum_threads, &sum_ranks, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD);
             MPI_Allreduce(&count_threads, &count_ranks, 1, MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
-            
-            Logging::print(Logging::LOG_LEVEL::INFO, "CSC: Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
+            Logging::print(Logging::LOG_LEVEL::INFO, "UDC: Iteration=%d, Total checksum=%f, Total count=%d\n", Env::iteration, sum_ranks, count_ranks);
         }
     }
 }
