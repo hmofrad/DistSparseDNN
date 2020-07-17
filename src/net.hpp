@@ -377,8 +377,8 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         B_nrows = B_SPMAT->nrows;
         B_ncols = B_SPMAT->ncols;
         
-        if(compression_type == COMPRESSED_FORMAT::_CSC_) end = B_ncols;
-        else if (compression_type == COMPRESSED_FORMAT::_CSR_) end = A_nrows;
+        if((compression_type == COMPRESSED_FORMAT::_CSC_) or (compression_type == COMPRESSED_FORMAT::_UDC_)) { end = B_ncols; }
+        else if (compression_type == COMPRESSED_FORMAT::_CSR_) { end = A_nrows; }
         else {
             Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
             std::exit(Env::finalize());
@@ -386,7 +386,8 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
         data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                            A_nrows, B_ncols, start, end, off, 
-                           thread_st, last_layer, leader_tid, tid);
+                           thread_st, last_layer, leader_tid, tid); 
+        //if(l==1) break;
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
