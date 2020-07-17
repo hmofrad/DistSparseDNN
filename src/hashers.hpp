@@ -11,8 +11,8 @@
 #define HASHERS_HPP
 
 enum HASHER_TYPE {_EMPTY_, _BUCKET_};
-enum HASHING_TYPE {_NO_, _INPUT_, _LAYER_, _BOTH_};
-const char* HASHING_TYPES[] = {"_NO_", "_INPUT_", "_LAYER_", "_BOTH_"};
+enum HASHING_TYPE {_NO_, _INPUT_, _LAYER_, _BOTH_, _H_SIZE_};
+const char* HASHING_TYPES[] = {"_NO_", "_INPUT_", "_LAYER_", "_BOTH_", "_H_SIZE_"};
 
 class ReversibleHasher {
     public:
