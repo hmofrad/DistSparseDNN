@@ -27,38 +27,46 @@ make clean
                    -h <hashing_type[0-3]>
 
 ## Supported Features
-- compression_type
-	0. Uncompressed Dense Column (UDC)
-	1. Compressed Sparse Column (CSC)
-	2. Doubly Compressed Sparse Column (DCSC) (not implemented yet)
-	3. Triply Compressed Sparse Column (TCSC) (not implemented yet)
-	4. Compressed Sparse Row (CSR)
+- **Compression Type**
+	<ol start="0">
+	  <li>Uncompressed Dense Column (UDC)</li>
+	  <li>Compressed Sparse Column (CSC)</li>
+	  <li>Doubly Compressed Sparse Column (DCSC) (not implemented yet)</li>
+	  <li>Triply Compressed Sparse Column (TCSC) (not implemented yet) </li>
+	  <li>Compressed Sparse Row (CSR)</li>
+	</ol>
 
-- multiplication_type
-	0. Dense matrix by dense matrix
-	1. Dense matrix by compressed matrix
-	2. Compressed matrix by compressed matrix
-	3. Compressed matrix by doubly compressed matrix (not implemented yet)
-	4. Compressed matrix by triply compressed matrix (not implemented yet)
-- parallelism_type
-	0. Model parallelism
-	1. Data parallelism 
-	3. Data-then-model parallelism
-	4. manage-worker parallelism
-	5. work-stealing parallelism
+- **Multiplication Type**
+	<ol start="0">
+	  <li>Dense matrix by dense matrix</li>
+	  <li>Dense matrix by compressed matrix</li>
+	  <li>Compressed matrix by compressed matrix</li>
+	  <li>Compressed matrix by doubly compressed matrix (not implemented yet)</li>
+	  <li>Compressed matrix by triply compressed matrix (not implemented yet)</li>
+	</ol>
+	
+- **Parallelism Type**
+	<ol start="0">
+	  <li>Model parallelism</li>
+	  <li>Data parallelism </li>
+	  <li>Data-then-model parallelism</li>
+	  <li>Manage-worker parallelism</li>
+	  <li>Work-stealing parallelism</li>
+	</ol>
 
-- hashing_type
-	0. No hashing
-	1. Input hashing
-	2. Layer hashing
-	3. Input and layer hashing	
+- **Parallelism Type**
+	<ol start="0">
+	  <li>No hashing</li>
+	  <li>Input hashing</li>
+	  <li>Layer hashing</li>
+	  <li>Input and layer hashing	</li>
+	</ol>
 
 ## Datasets
 
 - Radixnet Sparse DNN: Download the MNIST and DNN files from http://graphchallenge.mit.edu/data-sets 
 - Customized Sparse DNNs: Generate the sparse network using the sparse dnn generator program located under scripts/sparse_dnn_generator.py
-	- Currently supported input datasets are MNIST, fashion MNIST, CIFAR-10, CIFAR-100, and IMDB.
-- 
+	- Currently supported input datasets are MNIST, fashion MNIST, CIFAR-10, CIFAR-100, and IMDB. 
 
 
 ## Example Commands
@@ -71,3 +79,8 @@ For other datasets e.g., for inferring fashion MNIST on a sparse DNN with 30 lay
 
     python3 scripts/sparse_dnn_generator.py fashion_mnist # Parameters are hardcoded
     mpirun -np 4 bin/./fashion_mnist -i 60000 784 10 data/fashion_mnist/bin/ -n 2048 30 data/fashion_mnist/bin/ -c 1 -m 2 -p 0 -h 3
+
+## Contact
+
+Mohammad Hasnzadeh Mofrad
+m.hasanzadeh.mofrad@gmail.com
