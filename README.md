@@ -7,7 +7,7 @@ Distributed Sparse Deep Neural Network Inference
 
 - C++17 or higher
 - Pthread, OpenMP, and NUMActl (optional)
-- Python3 and TensorFlow2(only for creating customized sparse DNN) 
+- Python3 and TensorFlow2 (only for creating customized sparse DNN) 
 
 ## Install
 
