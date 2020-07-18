@@ -57,7 +57,7 @@ Distributed Sparse Deep Neural Network Inference
   <li>Work-stealing parallelism</li>
 </ol>
 
-**Parallelism Type**
+**Hashing Type**
 <ol start="0">
   <li>No hashing</li>
   <li>Input hashing</li>
