@@ -27,7 +27,7 @@ Distributed Sparse Deep Neural Network Inference
 
 ## Supported Features
 
-### Compression Type (option)
+### Compression Types
 <ol start="0">
   <li>Uncompressed Dense Column (UDC)</li>
   <li>Compressed Sparse Column (CSC)</li>
@@ -36,24 +36,24 @@ Distributed Sparse Deep Neural Network Inference
   <li>Compressed Sparse Row (CSR)</li>
 </ol>
 
-### Parallelism Type  (option)
+### Parallelism Types
 <ol start="0">
-  <li>Model parallelism</li>
-  <li>Data parallelism </li>
-  <li>Data-then-model parallelism</li>
-  <li>Manage-worker parallelism</li>
-  <li>Work-stealing parallelism</li>
+  <li>Model parallelism (supported UDC and CSC)</li>
+  <li>Data parallelism (supported UDC, CSC, and CSR)</li>
+  <li>Data-then-model parallelism (supported CSC and CSR)</li>
+  <li>Manage-worker parallelism (supported CSC and CSR)</li>
+  <li>Work-stealing parallelism (supported CSC and CSR)</li>
 </ol>
 
-### Hashing Type  (option)
+### Hashing Types
 <ol start="0">
   <li>No hashing</li>
   <li>Input hashing</li>
   <li>Layer hashing</li>
-  <li>Input and layer hashing	</li>
+  <li>Input and layer hashing</li>
 </ol>
 
-## Supported Multiplication Type
+## Supported Multiplication Types
 <ol start="0">
   <li>Dense matrix by dense matrix</li>
   <li>Dense matrix by compressed matrix</li>
