@@ -45,6 +45,8 @@ Distributed Sparse Deep Neural Network Inference
   <li>Work-stealing parallelism (supported CSC and CSR)</li>
 </ol>
 
+![hashing](images/compression.png)
+
 ### Hashing Types
 <ol start="0">
   <li>No hashing</li>
@@ -52,6 +54,8 @@ Distributed Sparse Deep Neural Network Inference
   <li>Layer hashing</li>
   <li>Input and layer hashing</li>
 </ol>
+
+![hashing](images/hashing.png)
 
 ## Supported Multiplication Types
 <ol start="0">
@@ -62,14 +66,8 @@ Distributed Sparse Deep Neural Network Inference
   <li>Compressed matrix by triply compressed matrix (not implemented yet)</li>
 </ol>
 
-|                        |     Col-major Sparse Format    |            |             |             |     Row-major Sparse Format    |            |             |             |
-|------------------------|:------------------------------:|:----------:|:-----------:|:-----------:|:------------------------------:|:----------:|:-----------:|:-----------:|
-|     Parallelism        |               UDC              |     CSC    |     DCSC    |     TCSC    |               UDR              |     CSR    |     DCSR    |     TCSR    |
-|     Data               |               Yes              |     Yes    |             |             |                                |     Yes    |             |             |
-|     Model              |               Yes              |     Yes    |             |             |                                |            |             |             |
-|     Data-then-model    |                                |     Yes    |             |             |                                |     Yes    |             |             |
-|     Manager-worker     |                                |     Yes    |             |             |                                |     Yes    |             |             |
-|     Work-stealing      |                                |     Yes    |             |             |                                |     Yes    |             |             |
+![multiplication](images/multiplication.png)
+
 
 ## Datasets
 
