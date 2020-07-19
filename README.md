@@ -66,16 +66,14 @@ Distributed Sparse Deep Neural Network Inference
   <li>Compressed matrix by triply compressed matrix (not implemented yet)</li>
 </ol>
 
-![multiplication](images/multiplication.png)
-
-|                        |     Col-major Sparse Format    |            |             |             |     Row-major Sparse Format    |            |             |             |
-|------------------------|:------------------------------:|:----------:|:-----------:|:-----------:|:------------------------------:|:----------:|:-----------:|:-----------:|
-|     Parallelism        |               UDC              |     CSC    |     DCSC    |     TCSC    |               UDR              |     CSR    |     DCSR    |     TCSR    |
-|     Data               |               Yes              |     Yes    |             |             |                                |     Yes    |             |             |
-|     Model              |               Yes              |     Yes    |             |             |                                |            |             |             |
-|     Data-then-model    |                                |     Yes    |             |             |                                |     Yes    |             |             |
-|     Manager-worker     |                                |     Yes    |             |             |                                |     Yes    |             |             |
-|     Work-stealing      |                                |     Yes    |             |             |                                |     Yes    |             |             |
+|                        |            |            | Col-major Format |             |            |            | Row-major Format |             |
+|------------------------|:----------:|:----------:|:----------------:|:-----------:|:----------:|:----------:|:----------------:|:-----------:|
+|     Parallelism        |     UDC    |     CSC    |        DCSC      |     TCSC    |     UDR    |     CSR    |        DCSR      |     TCSR    |
+|     Data               |     Yes    |     Yes    |                  |             |            |     Yes    |                  |             |
+|     Model              |     Yes    |     Yes    |                  |             |            |            |                  |             |
+|     Data-then-model    |            |     Yes    |                  |             |            |     Yes    |                  |             |
+|     Manager-worker     |            |     Yes    |                  |             |            |     Yes    |                  |             |
+|     Work-stealing      |            |     Yes    |                  |             |            |     Yes    |                  |             |
 
 ## Datasets
 
