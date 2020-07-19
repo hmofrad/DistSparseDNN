@@ -68,6 +68,14 @@ Distributed Sparse Deep Neural Network Inference
 
 ![multiplication](images/multiplication.png)
 
+|                        |     Col-major Sparse Format    |            |             |             |     Row-major Sparse Format    |            |             |             |
+|------------------------|:------------------------------:|:----------:|:-----------:|:-----------:|:------------------------------:|:----------:|:-----------:|:-----------:|
+|     Parallelism        |               UDC              |     CSC    |     DCSC    |     TCSC    |               UDR              |     CSR    |     DCSR    |     TCSR    |
+|     Data               |               Yes              |     Yes    |             |             |                                |     Yes    |             |             |
+|     Model              |               Yes              |     Yes    |             |             |                                |            |             |             |
+|     Data-then-model    |                                |     Yes    |             |             |                                |     Yes    |             |             |
+|     Manager-worker     |                                |     Yes    |             |             |                                |     Yes    |             |             |
+|     Work-stealing      |                                |     Yes    |             |             |                                |     Yes    |             |             |
 
 ## Datasets
 
