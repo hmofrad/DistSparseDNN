@@ -119,7 +119,8 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
             }
         }
     }
-    else if(not((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_))) {
+    else if(not(((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) or
+                ((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)))) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "[%sx%s] multiplication not implemented\n", COMPRESSED_FORMATS[input_compression_type], COMPRESSED_FORMATS[layer_compression_type]);
         std::exit(Env::finalize());
     }
@@ -278,6 +279,41 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
             C_UDC->populate_spa(&s_A, b_A, off + j, idx_nnz, activation_function, tid);            
         }
     }
+    else if((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) {
+        const std::shared_ptr<struct UDC<Weight>> A_UDC = std::static_pointer_cast<struct UDC<Weight>>(A_SPMAT);
+        A_nrows = A_UDC->nrows;
+        A_ncols = A_UDC->ncols;
+        A_A   = A_UDC->A_blk->ptr;
+        
+        const std::shared_ptr<struct CSC<Weight>> B_CSC = std::static_pointer_cast<struct CSC<Weight>>(B_SPMAT);          
+        B_nnz   = B_CSC->nnz;
+        B_nrows = B_CSC->nrows;
+        B_ncols = B_CSC->ncols;
+        B_IA   = B_CSC->IA_blk->ptr;
+        B_JA   = B_CSC->JA_blk->ptr;
+        B_A   = B_CSC->A_blk->ptr;
+        
+        const std::shared_ptr<struct UDC<Weight>> C_UDC = std::static_pointer_cast<struct UDC<Weight>>(C_SPMAT);              
+        C_nrows = C_UDC->nrows;
+        C_ncols = C_UDC->ncols;
+        C_A   = C_UDC->A_blk->ptr;
+        
+        if((A_ncols != B_nrows) or (s->nitems < A_nrows)) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
+            std::exit(1); 
+        }
+        
+        for(uint32_t j = start; j < end; j++) {
+            for(uint32_t i = B_JA[j]; i < B_JA[j+1]; i++) {
+                uint32_t r = B_IA[i]; Weight v = B_A[i]; 
+                for(uint32_t k = 0; k < A_nrows; k++) {
+                    uint32_t l = r*A_nrows + k;
+                    if(A_A[l]) { s_A[k] += (A_A[l] * v); }
+                }
+            }
+            C_UDC->populate_spa(&s_A, b_A, off + j, idx_nnz, activation_function, tid);      
+        }
+    }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "[%sx%s] multiplication not implemented\n", COMPRESSED_FORMATS[input_compression_type], COMPRESSED_FORMATS[layer_compression_type]);
         std::exit(Env::finalize());
@@ -300,6 +336,14 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
                                 const int32_t leader_tid,  const int32_t tid) {
     
     if((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) {
+        C_SPMAT->reallocate(0, nrows, ncols, leader_tid, tid);
+        thread_st.idx_nnz = start * nrows;
+        pthread_barrier_wait(&Env::thread_barrier);
+        if(not last_layer) { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, sub_start, thread_st.idx_nnz, input_compression_type, layer_compression_type, tid); }
+        else { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, start, end, sub_start, thread_st.idx_nnz, input_compression_type, layer_compression_type, tid); }
+        //C_SPMAT->walk_dxm(false, leader_tid, tid);
+    }
+    else if((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) {
         C_SPMAT->reallocate(0, nrows, ncols, leader_tid, tid);
         thread_st.idx_nnz = start * nrows;
         pthread_barrier_wait(&Env::thread_barrier);
@@ -356,6 +400,14 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
                                int32_t leader_tid,  const int32_t tid) {
        
     if((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) {
+        C_SPMAT->reallocate(0, nrows, ncols, tid, tid);
+        thread_st.idx_nnz = 0;
+        if(not last_layer) { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, off, thread_st.idx_nnz, input_compression_type, layer_compression_type, tid); }
+        else { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, start, end, off, thread_st.idx_nnz, input_compression_type, layer_compression_type, tid); }
+        //leader_tid = 0;
+        //C_SPMAT->walk_dxd(false, leader_tid, tid);
+    }
+    else if((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) {
         C_SPMAT->reallocate(0, nrows, ncols, tid, tid);
         thread_st.idx_nnz = 0;
         if(not last_layer) { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, off, thread_st.idx_nnz, input_compression_type, layer_compression_type, tid); }
