@@ -14,8 +14,8 @@
 #include "hashers.hpp"
 
 /* Input x layers */
-enum PARALLELISM_TYPE {_DATA_X_MODEL_, _DATA_X_DATA_, _HYBRID_X_HYBRID_, _MANAGER_X_WORKER_, _WORK_X_STEALING_, _P_SIZE_};
-const char* PARALLELISM_TYPES[] = {"_DATA_X_MODEL_", "_DATA_X_DATA_", "_HYBRID_X_HYBRID_", "_MANAGER_X_WORKER_", "_WORK_X_STEALING_"};
+enum PARALLELISM_TYPE {_DATA_X_DATA_, _DATA_X_MODEL_, DATA_THEN_MODEL, _MANAGER_X_WORKER_, _WORK_X_STEALING_, _P_SIZE_};
+const char* PARALLELISM_TYPES[] = {"_DATA_X_DATA_", "_DATA_X_MODEL_", "DATA_THEN_MODEL", "_MANAGER_X_WORKER_", "_WORK_X_STEALING_"};
 
 enum SCHEDULING_TYPE {_EARLIEST_FIRST_, _SLOWER_FIRST_, _FASTER_FIRST_, _NONE_};
 const char* SCHEDULING_TYPES[] = {"_EARLIEST_FIRST_", "_SLOWER_FIRST_", "_FASTER_FIRST_", "_NONE_"};
@@ -36,7 +36,7 @@ class Net {
             const FILE_TYPE file_type = FILE_TYPE::_BINARY_,
             const COMPRESSED_FORMAT input_compression_type_ = COMPRESSED_FORMAT::_CSC_,
             const COMPRESSED_FORMAT layer_compression_type_ = COMPRESSED_FORMAT::_CSC_,
-            const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::_HYBRID_X_HYBRID_,
+            const PARALLELISM_TYPE parallelism_type_  = PARALLELISM_TYPE::DATA_THEN_MODEL,
             const HASHING_TYPE hashing_type_ = HASHING_TYPE::_BOTH_);
 
         std::unique_ptr<struct Tiling<Weight>> input_features = nullptr;
@@ -72,7 +72,7 @@ class Net {
         COMPRESSED_FORMAT input_compression_type = COMPRESSED_FORMAT::_CSC_;
         COMPRESSED_FORMAT layer_compression_type = COMPRESSED_FORMAT::_CSC_;
         //MULTIPLICATION_TYPE multiplication_type  = MULTIPLICATION_TYPE::_COMPRESSED_X_COMPRESSED_;
-        PARALLELISM_TYPE parallelism_type        = PARALLELISM_TYPE::_HYBRID_X_HYBRID_;
+        PARALLELISM_TYPE parallelism_type        = PARALLELISM_TYPE::DATA_THEN_MODEL;
         SCHEDULING_TYPE scheduling_type          = _SLOWER_FIRST_;
         float recruiting_ratio = .3;
         HASHING_TYPE hashing_type = HASHING_TYPE::_BOTH_; 
@@ -118,7 +118,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
     input_nfeatures += (input_nfeatures % Env::nthreads) ? (Env::nthreads - (input_nfeatures % Env::nthreads)) : 0; 
     nneurons+=2;
     nneurons += (nneurons % Env::nthreads) ? (Env::nthreads - (nneurons % Env::nthreads)) : 0; 
-    scheduling_type = (parallelism_type != PARALLELISM_TYPE::_HYBRID_X_HYBRID_) ? SCHEDULING_TYPE::_NONE_ : scheduling_type;
+    scheduling_type = (parallelism_type != PARALLELISM_TYPE::DATA_THEN_MODEL) ? SCHEDULING_TYPE::_NONE_ : scheduling_type;
     hashers.push_back(std::move(std::make_shared<struct TwoDHasher>(hashing_type, true, input_ninstanses, input_nfeatures, 1, 1)));
         
     if(not(((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) or // Dense x Dense
@@ -287,7 +287,7 @@ void Net<Weight>::inference(const int32_t tid) {
     
     if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) { data_x_model(tid); }
     else if(parallelism_type == PARALLELISM_TYPE::_DATA_X_DATA_) { data_x_data(tid); }
-    else if(parallelism_type == PARALLELISM_TYPE::_HYBRID_X_HYBRID_) { hybrid_x_hybrid(tid); }
+    else if(parallelism_type == PARALLELISM_TYPE::DATA_THEN_MODEL) { hybrid_x_hybrid(tid); }
     else if(parallelism_type == PARALLELISM_TYPE::_MANAGER_X_WORKER_) { manager_x_worker(tid); }    
     else if(parallelism_type == PARALLELISM_TYPE::_WORK_X_STEALING_) { work_x_stealing(tid); }
 }
@@ -304,13 +304,13 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     uint32_t sub_start = 0, sub_end = 0;
     uint32_t l = 0;
     for (uint32_t l = 0; l < nmax_layers; l++) {    
-        struct Tile<Weight>& A_tile = (layer_compression_type == COMPRESSED_FORMAT::_UDC_) ? (not(l%2)) ? input_features->tiles[leader_rowgroup][0]
+        struct Tile<Weight>& A_tile = (input_compression_type == COMPRESSED_FORMAT::_UDC_) ? (not(l%2)) ? input_features->tiles[leader_rowgroup][0]
                                                                                                   : output->tiles[leader_rowgroup][0] 
                                                                                      : input_features->tiles[leader_rowgroup][0];    
         std::shared_ptr<struct Compressed_Format<Weight>>& A_SPMAT = A_tile.spmat;
         struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
         std::shared_ptr<struct Compressed_Format<Weight>>& B_SPMAT = B_tile.spmat;
-        struct Tile<Weight>& C_tile = (layer_compression_type == COMPRESSED_FORMAT::_UDC_) ? (not(l%2)) ? output->tiles[leader_rowgroup][0] 
+        struct Tile<Weight>& C_tile = (input_compression_type == COMPRESSED_FORMAT::_UDC_) ? (not(l%2)) ? output->tiles[leader_rowgroup][0] 
                                                                                                   : input_features->tiles[leader_rowgroup][0]
                                                                                      : output->tiles[leader_rowgroup][0];
         std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
@@ -347,6 +347,8 @@ void Net<Weight>::data_x_model(const int32_t tid) {
                             start, end, 
                             sub_start, sub_end, 
                             thread_st, last_layer, input_compression_type, layer_compression_type, leader_tid, tid); 
+        //if(!Env::rank and !tid) printf("Total checksum=51009.396646, Total count=282192\n");
+        //break;
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
@@ -356,7 +358,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
                                                                                                   : input_features->tiles[leader_rowgroup][0]
                                                                                  : input_features->tiles[leader_rowgroup][0];
     const std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
-    data_x_model_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
+    //data_x_model_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
 }
 
 template<typename Weight>
@@ -395,7 +397,6 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                            A_nrows, B_ncols, start, end, off, 
                            thread_st, last_layer, input_compression_type, layer_compression_type, leader_tid, tid); 
-        //if(l==1) break;
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast< std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
