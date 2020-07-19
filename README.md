@@ -45,17 +45,14 @@ Distributed Sparse Deep Neural Network Inference
   <li>Work-stealing parallelism (supported CSC and CSR)</li>
 </ol>
 
-|                                            |     Col-major Formats    |                     |     Row-major Formats    |                     |
-|--------------------------------------------|:------------------------:|:-------------------:|:------------------------:|:-------------------:|
-|     Multiplication Type (Input x Layer)    |        Input Format      |     Layer Format    |        Input Format      |     Layer Format    |
-|     Dense x Dense                          |            UDC           |          UDC        |                          |                     |
-|     Dense x Compressed                     |            UDC           |          CSC        |                          |                     |
-|     Dense x Doubly Compressed              |            CSC           |          CSC        |            CSR           |          CSR        |
-|     Dense x Triply Compressed              |                          |                     |                          |                     |
-|     Compressed x Compressed                |                          |                     |                          |                     |
-|     Compressed x Doubly Compressed         |                          |                     |                          |                     |
-|     Compressed x Triply Compressed         |                          |                     |                          |                     |
-
+|                        |     Col-major Formats    |            |             |             |     Row-major Formats    |            |             |             |
+|------------------------|--------------------------|------------|-------------|-------------|--------------------------|------------|-------------|-------------|
+|     Parallelism        |            UDC           |     CSC    |     DCSC    |     TCSC    |            UDR           |     CSR    |     DCSR    |     TCSR    |
+|     Data               |            Yes           |     Yes    |             |             |                          |     Yes    |             |             |
+|     Model              |            Yes           |     Yes    |             |             |                          |            |             |             |
+|     Data-then-model    |                          |     Yes    |             |             |                          |     Yes    |             |             |
+|     Manager-worker     |                          |     Yes    |             |             |                          |     Yes    |             |             |
+|     Work-stealing      |                          |     Yes    |             |             |                          |     Yes    |             |             |
 
 ### Hashing Types
 <ol start="0">
@@ -82,14 +79,18 @@ Distributed Sparse Deep Neural Network Inference
   <li>Compressed matrix by triply compressed matrix (not implemented yet)</li>
 </ol>
 
-|                        |     Col-major Formats    |            |             |             |     Row-major Formats    |            |             |             |
-|------------------------|--------------------------|------------|-------------|-------------|--------------------------|------------|-------------|-------------|
-|     Parallelism        |            UDC           |     CSC    |     DCSC    |     TCSC    |            UDR           |     CSR    |     DCSR    |     TCSR    |
-|     Data               |            Yes           |     Yes    |             |             |                          |     Yes    |             |             |
-|     Model              |            Yes           |     Yes    |             |             |                          |            |             |             |
-|     Data-then-model    |                          |     Yes    |             |             |                          |     Yes    |             |             |
-|     Manager-worker     |                          |     Yes    |             |             |                          |     Yes    |             |             |
-|     Work-stealing      |                          |     Yes    |             |             |                          |     Yes    |             |             |
+|                                            |     Col-major Formats    |                     |     Row-major Formats    |                     |
+|--------------------------------------------|:------------------------:|:-------------------:|:------------------------:|:-------------------:|
+|     Multiplication Type (Input x Layer)    |        Input Format      |     Layer Format    |        Input Format      |     Layer Format    |
+|     Dense x Dense                          |            UDC           |          UDC        |                          |                     |
+|     Dense x Compressed                     |            UDC           |          CSC        |                          |                     |
+|     Dense x Doubly Compressed              |            CSC           |          CSC        |            CSR           |          CSR        |
+|     Dense x Triply Compressed              |                          |                     |                          |                     |
+|     Compressed x Compressed                |                          |                     |                          |                     |
+|     Compressed x Doubly Compressed         |                          |                     |                          |                     |
+|     Compressed x Triply Compressed         |                          |                     |                          |                     |
+
+
 
 ## Datasets
 
