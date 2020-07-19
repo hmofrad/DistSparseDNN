@@ -19,7 +19,7 @@ Distributed Sparse Deep Neural Network Inference
 
 ## Test
 
-    bin/./radixnet -i <input_ninstances input_nfeatures ncategories input_path> 
+    bin/./app -i <input_ninstances input_nfeatures ncategories input_path> 
                    -n <nneurons nmax_layers layers_path> 
                    -c <input_compression_type[0-4] layer_compression_type[0-4]>
                    -p <parallelism_type[0-4]>
