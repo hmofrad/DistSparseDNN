@@ -107,24 +107,11 @@ namespace Env {
         uint32_t score;
     };
     
-    struct options {
-        uint32_t input_ninstances; // -i
-        uint32_t input_nfeatures;
-        std::string input_path;    
-        uint32_t ncategories;
-        uint32_t layer_nneurons; // -n
-        uint32_t nmax_layers; 
-        std::string layers_path; 
-        uint32_t parallelism_type; // -p
-        uint32_t hashing_type;  // -h
-        uint32_t multiplication_type; // -mul
-    };
-        
     int init();
     void read_options(int argc, char** argv, std::string input, std::string network, 
                       uint32_t& input_ninstances, uint32_t& input_nfeatures, uint32_t& ncategories, std::string& input_path,
                       uint32_t& nneurons, uint32_t& nmax_layers, std::string& layers_path,  
-                      uint32_t& c,  uint32_t& m, uint32_t& p, uint32_t& h);
+                      uint32_t& ci,  uint32_t& cl, uint32_t& p, uint32_t& h);
     void barrier();
     int finalize();
     
@@ -248,8 +235,8 @@ int Env::init() {
 void Env::read_options(int argc, char** argv, std::string input, std::string network, 
                        uint32_t& input_ninstances, uint32_t& input_nfeatures, uint32_t& ncategories, std::string& input_path,
                        uint32_t& nneurons, uint32_t& nmax_layers, std::string& layers_path,  
-                       uint32_t& c,  uint32_t& m, uint32_t& p, uint32_t& h) { 
-   if(argc != 18) {
+                       uint32_t& ci,  uint32_t& cl, uint32_t& p, uint32_t& h) { 
+   if(argc != 17) {
         printf("USAGE = %s -i <input_ninstances input_nfeatures ncategories input_path> -n <nneurons nmax_layers layers_path> -c <compression_type[0-4]> -m <multiplication_type[0-3]> -p <parallelism_type[0-4]> -h <hashing_type[0-3]>\n", argv[0]);
         std::exit(Env::finalize());     
     }
@@ -262,10 +249,15 @@ void Env::read_options(int argc, char** argv, std::string input, std::string net
     nneurons = atoi(argv[7]);
     nmax_layers = atoi(argv[8]);
     layers_path = ((std::string) argv[9]);
-    c = atoi(argv[11]);
-    m = atoi(argv[13]);
-    p = atoi(argv[15]);
+    ci = atoi(argv[11]);
+    cl = atoi(argv[12]);
+    p = atoi(argv[14]);
     h = atoi(argv[16]);
+    if(Env::rank==0) {
+        printf("INFO[rank=%d] Input [dim=%dx%d][ncategories=%d][path=%s]\n", Env::rank, input_ninstances, input_nfeatures, ncategories, input_path.c_str());
+        printf("INFO[rank=%d] Layer [dim=%dx%d][nmax_layers=%d][path=%s]\n", Env::rank, nneurons, nneurons, nmax_layers, layers_path.c_str());
+        printf("INFO[rank=%d] Config[compression=%dx%d][parallelism=%d][hashing=%d]\n", Env::rank, ci, cl, p, h);
+    }
 }
 
 
