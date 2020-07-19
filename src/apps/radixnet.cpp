@@ -41,11 +41,11 @@ int main(int argc, char** argv) {
     uint32_t input_ninstances, input_nfeatures, ncategories;
     uint32_t nneurons, nmax_layers;
     std::string input_path, layers_path;
-    uint32_t c, m, p, h;
+    uint32_t ci, cl, p, h;
     Env::read_options(argc, argv, "MNIST", "Radix-Net", 
                       input_ninstances, input_nfeatures, ncategories, input_path, 
                       nneurons, nmax_layers, layers_path, 
-                      c, m, p, h);
+                      ci, cl, p, h);
     FILE_TYPE file_type = FILE_TYPE::_BINARY_;
 
     std::string input_file = input_path + "/sparse-images-" + std::to_string(nneurons);
@@ -67,15 +67,15 @@ int main(int argc, char** argv) {
     WGT bias_value = bias_vector[index];
     VALUE_TYPE bias_type = VALUE_TYPE::_CONSTANT_;
     
-    COMPRESSED_FORMAT compression_type = (COMPRESSED_FORMAT)c;
-    MULTIPLICATION_TYPE multiplication_type = (MULTIPLICATION_TYPE)m;
+    COMPRESSED_FORMAT input_compression_type = (COMPRESSED_FORMAT)ci;
+    COMPRESSED_FORMAT layer_compression_type = (COMPRESSED_FORMAT)cl;
     PARALLELISM_TYPE parallelism_type = (PARALLELISM_TYPE)p;
     HASHING_TYPE hashing_type = (HASHING_TYPE)h;
     
-    if((compression_type >= (COMPRESSED_FORMAT::_C_SIZE_)) or 
-    (multiplication_type >= (MULTIPLICATION_TYPE::_M_SIZE_)) or
-    (hashing_type >= (HASHING_TYPE::_H_SIZE_)) or
-    (parallelism_type >= (PARALLELISM_TYPE::_P_SIZE_))) {
+    if((input_compression_type >= (COMPRESSED_FORMAT::_C_SIZE_)) or 
+       (layer_compression_type >= (COMPRESSED_FORMAT::_C_SIZE_)) or
+       (hashing_type >= (HASHING_TYPE::_H_SIZE_)) or
+       (parallelism_type >= (PARALLELISM_TYPE::_P_SIZE_))) {
         Logging::print(Logging::LOG_LEVEL::FATAL, "Incorrect parallelism,compression, or hashing type\n");
         std::exit(Env::finalize());
     }
@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
                bias_value, bias_type, bias_files,
                noop, relu, classifier,
                file_type, 
-               compression_type, multiplication_type, parallelism_type, hashing_type);
+               input_compression_type, layer_compression_type, parallelism_type, hashing_type);
     
     return(Env::finalize());
 }
