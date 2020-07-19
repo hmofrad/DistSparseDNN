@@ -21,14 +21,13 @@ Distributed Sparse Deep Neural Network Inference
 
     bin/./radixnet -i <input_ninstances input_nfeatures ncategories input_path> 
                    -n <nneurons nmax_layers layers_path> 
-                   -c <compression_type[0-4]>
-                   -m <multiplication_type[0-4]> 
+                   -c <input_compression_type[0-4] layer_compression_type[0-4]>
                    -p <parallelism_type[0-4]>
                    -h <hashing_type[0-3]>
 
 ## Supported Features
 
-### Compression Type
+### Compression Type (option)
 <ol start="0">
   <li>Uncompressed Dense Column (UDC)</li>
   <li>Compressed Sparse Column (CSC)</li>
@@ -37,18 +36,7 @@ Distributed Sparse Deep Neural Network Inference
   <li>Compressed Sparse Row (CSR)</li>
 </ol>
 
-
-### Multiplication Type
-<ol start="0">
-  <li>Dense matrix by dense matrix</li>
-  <li>Dense matrix by compressed matrix</li>
-  <li>Compressed matrix by compressed matrix</li>
-  <li>Compressed matrix by doubly compressed matrix (not implemented yet)</li>
-  <li>Compressed matrix by triply compressed matrix (not implemented yet)</li>
-</ol>
-
-	
-### Parallelism Type
+### Parallelism Type  (option)
 <ol start="0">
   <li>Model parallelism</li>
   <li>Data parallelism </li>
@@ -57,12 +45,21 @@ Distributed Sparse Deep Neural Network Inference
   <li>Work-stealing parallelism</li>
 </ol>
 
-### Hashing Type
+### Hashing Type  (option)
 <ol start="0">
   <li>No hashing</li>
   <li>Input hashing</li>
   <li>Layer hashing</li>
   <li>Input and layer hashing	</li>
+</ol>
+
+## Supported Multiplication Type
+<ol start="0">
+  <li>Dense matrix by dense matrix</li>
+  <li>Dense matrix by compressed matrix</li>
+  <li>Compressed matrix by compressed matrix</li>
+  <li>Compressed matrix by doubly compressed matrix (not implemented yet)</li>
+  <li>Compressed matrix by triply compressed matrix (not implemented yet)</li>
 </ol>
 
 ## Datasets
@@ -76,12 +73,12 @@ Distributed Sparse Deep Neural Network Inference
 
 For Radixnet Sparse DNN, e.g., for the smallest DNN use
 
-    mpirun -np 4 bin/./radixnet -i 60000 1024 0 data/radixnet/bin/MNIST -n 1024 120 data/radixnet/bin/DNN -c 1 -m 2 -p 0 -h 3
+    mpirun -np 4 bin/./radixnet -i 60000 1024 0 data/radixnet/bin/MNIST -n 1024 120 data/radixnet/bin/DNN -c 1 1 -p 0 -h 3
 
 For other datasets e.g., for inferring fashion MNIST on a sparse DNN with 30 layers each with 2048 neurons use
 
     python3 scripts/sparse_dnn_generator.py fashion_mnist # Parameters are hardcoded
-    mpirun -np 4 bin/./fashion_mnist -i 60000 784 10 data/fashion_mnist/bin/ -n 2048 30 data/fashion_mnist/bin/ -c 1 -m 2 -p 0 -h 3
+    mpirun -np 4 bin/./fashion_mnist -i 60000 784 10 data/fashion_mnist/bin/ -n 2048 30 data/fashion_mnist/bin/ -c 1 1 -p 0 -h 3
 
 ## Contact
 
