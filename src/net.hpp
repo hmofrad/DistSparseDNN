@@ -181,17 +181,17 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
         bias_vectors[i] = std::move(std::make_shared<struct Data_Block<Weight>>(layer_ncols, Env::rank_socket_id));
         if(bias_type == VALUE_TYPE::_CONSTANT_) {                
             Weight* b_A = bias_vectors[i]->ptr;
-            for(uint32_t j = 0; j < layer_ncols; j++) b_A[j] = bias_value;
+            for(uint32_t j = 0; j < layer_ncols; j++) { b_A[j] = bias_value; }
         }
         else if(bias_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
             std::string bias_file = bias_files[i];
             std::vector<Weight> bias_values;
             uint32_t c = IO::read_file_iv<Weight>(bias_file, file_type, hashers[i+1], false, bias_type, bias_values, layer_ncols);
             Weight* b_A = bias_vectors[i]->ptr;
-            for(uint32_t j = 0; j < layer_ncols; j++) b_A[j] = bias_values[j];
+            for(uint32_t j = 0; j < layer_ncols; j++) { b_A[j] = bias_values[j]; }
         }
         Logging::enabled = false; 
-        if(i%10==0 and Env::rank == 0) printf("|"); 
+        if(i%10==0 and Env::rank == 0) { printf("|"); }
     }
     Logging::enabled = true;
     Logging::print(Logging::LOG_LEVEL::VOID, "\n"); 
