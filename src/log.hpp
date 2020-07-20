@@ -20,7 +20,7 @@ namespace Logging {
 }
 
 void Logging::print(const int log_level, const char* format, ...) {
-    if(enabled) {
+    if(enabled or log_level==LOG_LEVEL::ERROR or log_level==LOG_LEVEL::FATAL) {
         if((print_at_rank_zero and !Env::rank) or 
            (not print_at_rank_zero) or
            (print_at_rank_zero and !strncmp(Logging::LOG_LEVELS[log_level], LOG_LEVELS[ERROR], 4))) {
