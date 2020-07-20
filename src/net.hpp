@@ -251,21 +251,26 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
 
 template<typename Weight>
 void Net<Weight>::printTimes() {
-    Logging::print(Logging::LOG_LEVEL::INFO, "Time: min, max, mean, std_dev, sum\n");
     Env::barrier();
-    
+    Logging::print(Logging::LOG_LEVEL::INFO, "Time: min, max, mean, std_dev, sum\n");
     double min = 0.0, max = 0.0, mean = 0.0, std_dev = 0.0, sum = 0.0;
-    
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::io_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "I/O time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
-    
-    int index = std::distance(Env::execution_time.begin(), std::max_element(Env::execution_time.begin(), Env::execution_time.end()));
-    double exec_time = Env::execution_time[index];
-    
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "Exe time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
-    std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::end_to_end_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "Run time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
+    if(Env::nranks == 1) {        
+        Env::stats<double>(Env::execution_time, min, max, mean, std_dev, sum);
+        Logging::print(Logging::LOG_LEVEL::VOID, "Exe time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
+        Logging::print(Logging::LOG_LEVEL::VOID, "I/O time: %.3f\n", Env::io_time);
+        Logging::print(Logging::LOG_LEVEL::VOID, "Run time: %.3f\n", Env::end_to_end_time);
+    }
+    else {
+        int index = std::distance(Env::execution_time.begin(), std::max_element(Env::execution_time.begin(), Env::execution_time.end()));
+        double exec_time = Env::execution_time[index];
+        std::tie(min, max, mean, std_dev, sum) =  Env::statistics<double>(exec_time);
+        Logging::print(Logging::LOG_LEVEL::VOID, "Exe time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
+        
+        std::tie(min, max, mean, std_dev, sum) =  Env::statistics<double>(Env::io_time);
+        Logging::print(Logging::LOG_LEVEL::VOID, "I/O time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
+        std::tie(min, max, mean, std_dev, sum) =  Env::statistics<double>(Env::end_to_end_time);
+        Logging::print(Logging::LOG_LEVEL::VOID, "Run time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
+    }
 }
 
 template<typename Weight>
