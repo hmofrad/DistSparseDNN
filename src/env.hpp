@@ -121,7 +121,7 @@ namespace Env {
     template<typename Type>
     std::tuple<Type, Type, Type, Type, Type> statistics(const Type value);
     template<typename Type>
-    void stats(const std::vector<Type> vec, Type& sum, Type& mean, Type& std_dev, Type& min, Type& max);
+    void stats(const std::vector<Type> vec, Type& min, Type& max, Type& mean, Type& std_dev, Type& sum);
     int get_nsockets();
     bool numa_configure();
     bool set_thread_affinity(const int32_t tid);
@@ -392,13 +392,13 @@ std::tuple<Type, Type, Type, Type, Type> Env::statistics(const Type value) {
     std::vector<Type> values(Env::nranks);
     MPI_Datatype MPI_TYPE = MPI_Types::get_mpi_data_type<Type>();
     MPI_Allgather(&value, 1, MPI_TYPE, values.data(), 1, MPI_TYPE, MPI_COMM_WORLD); 
-    Type sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
-    stats(values, sum, mean, std_dev, min, max);    
-    return(std::make_tuple(sum, mean, std_dev, min, max));
+    Type min = 0.0, max = 0.0, mean = 0.0, std_dev = 0.0, sum = 0.0;
+    stats(values, min, max, mean, std_dev, sum);
+    return(std::make_tuple( min, max, mean, std_dev, sum));
 }
 
 template<typename Type>
-void Env::stats(const std::vector<Type> vec, Type& sum, Type& mean, Type& std_dev, Type& min, Type& max) {
+void Env::stats(const std::vector<Type> vec,  Type& min, Type& max, Type& mean, Type& std_dev, Type& sum) {
     sum = std::accumulate(vec.begin(), vec.end(), 0.0);
     mean = sum / vec.size();
     Type sq_sum = std::inner_product(vec.begin(), vec.end(), vec.begin(), 0.0);
