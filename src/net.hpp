@@ -254,7 +254,7 @@ void Net<Weight>::printTimes() {
     Logging::print(Logging::LOG_LEVEL::INFO, "Time: min, max, mean, std_dev, sum\n");
     Env::barrier();
     
-    double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
+    double min = 0.0, max = 0.0, mean = 0.0, std_dev = 0.0, sum = 0.0;
     
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::io_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "I/O time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
