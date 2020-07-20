@@ -1,11 +1,12 @@
 /*
- * mnist.cpp: Sparse DNN inference for MNIST dataset
- * [http://yann.lecun.com/exdb/mnist/]
+ * mnist.cpp: Sparse DNN inference for MNIST/Fashion MNIST datasets
+ * MNIST: [http://yann.lecun.com/exdb/mnist/]
+ * Fashion MNIST: [https://github.com/zalandoresearch/fashion-mnist]
  * (c) Mohammad Hasanzadeh Mofrad, 2020
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
  
-// make clean && make && time mpirun.mpich -np 1 bin/./mnist -m 60000 784 -n 1024 -l 120 -c 10 data/mnist/bin/ data/mnist/bin/ -p 0
+// make clean && make && time mpirun.mpich -np 2 bin/./mnist -i 60000 784 10 /zfs1/cs3580_2017F/moh18/dnn/mnist/bin/ -n 2048 60 /zfs1/cs3580_2017F/moh18/dnn/mnist/bin/ -c 1 1 -p 0 -h 3
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,67 +36,60 @@ int main(int argc, char **argv) {
         Logging::print(Logging::LOG_LEVEL::FATAL, "Failure to initialize MPI environment\n");
         std::exit(Env::finalize());   
     }
-
-    if(argc != 14) {
-        Logging::print(Logging::LOG_LEVEL::FATAL, "USAGE = %s -m <input_ninstances input_nfeatures> -n <nneurons> -l <nmax_layers> -c <ncategories> <path_to_input> <path_to_dnn> -p <parallelism_type>\n", argv[0]);
-        std::exit(Env::finalize());     
-    }
     
-    std::string script = "sparse_mnist";
-    Logging::print(Logging::LOG_LEVEL::INFO, "%s sparse DNN for MNIST dataset\n", script.c_str());
-    Logging::print(Logging::LOG_LEVEL::INFO, "Machines = %d, MPI ranks  = %d, Threads per rank = %d\n", Env::nmachines, Env::nranks, Env::nthreads);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Sockets  = %d, Processors = %d\n", Env::nsockets, Env::ncores);
-    if(Env::NUMA_ALLOC) Logging::print(Logging::LOG_LEVEL::INFO, "NUMA is enabled.\n", Env::NUMA_ALLOC);
-    else Logging::print(Logging::LOG_LEVEL::WARN, "NUMA is disabled.\n", Env::NUMA_ALLOC);
+    uint32_t input_ninstances, input_nfeatures, ncategories;
+    uint32_t nneurons, nmax_layers;
+    std::string input_path, layers_path;
+    uint32_t ci, cl, p, h;
+    Env::read_options(argc, argv, "MNIST", "Radix-Net", 
+                      input_ninstances, input_nfeatures, ncategories, input_path, 
+                      nneurons, nmax_layers, layers_path, 
+                      ci, cl, p, h);
+    FILE_TYPE file_type = FILE_TYPE::_BINARY_;
     
-    uint32_t input_ninstances = atoi(argv[2]);
-    uint32_t input_nfeatures = atoi(argv[3]);
-    uint32_t nneurons = atoi(argv[5]);
-    uint32_t nmax_layers = atoi(argv[7]);
-    uint32_t ncategories = atoi(argv[9]);
-    std::string feature_file_prefix = ((std::string) argv[10]);
-    std::string layer_file_prefix = ((std::string) argv[11]);
-    INPUT_TYPE input_type = INPUT_TYPE::_BINARY_;
+    std::string input_file = input_path + "/input";
+    input_file += (file_type == FILE_TYPE::_TEXT_) ? ".txt" : ".bin";
     
-    std::string feature_file = feature_file_prefix + "/input";
-    feature_file += (input_type == INPUT_TYPE::_TEXT_) ? ".txt" : ".bin";
-    
-    std::string category_file = layer_file_prefix;
-    category_file += (input_type == INPUT_TYPE::_TEXT_) ? "predictions.txt" : "predictions.bin";
+    std::string category_file = layers_path;
+    category_file += (file_type == FILE_TYPE::_TEXT_) ? "predictions.txt" : "predictions.bin";
     VALUE_TYPE category_type = VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_;
     
     std::vector<std::string> layer_files;
     for(uint32_t i = 0; i < nmax_layers; i++) {
-    std::string layer_file = layer_file_prefix + "/weights" + std::to_string(i);
-    layer_file += (input_type == INPUT_TYPE::_TEXT_) ? ".txt" : ".bin";
-    layer_files.push_back(layer_file);
+        std::string layer_file = layers_path + "/weights" + std::to_string(i);
+        layer_file += (file_type == FILE_TYPE::_TEXT_) ? ".txt" : ".bin";
+        layer_files.push_back(layer_file);
     }
     
     std::vector<std::string> bias_files;
     for(uint32_t i = 0; i < nmax_layers; i++) {
-    std::string bias_file = layer_file_prefix + "/bias" + std::to_string(i);
-    bias_file += (input_type == INPUT_TYPE::_TEXT_) ? ".txt" : ".bin";
+    std::string bias_file = layers_path + "/bias" + std::to_string(i);
+    bias_file += (file_type == FILE_TYPE::_TEXT_) ? ".txt" : ".bin";
     bias_files.push_back(bias_file);
     }
     WGT bias_value = 0;
     VALUE_TYPE bias_type = VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_;
+
+    COMPRESSED_FORMAT input_compression_type = (COMPRESSED_FORMAT)ci;
+    COMPRESSED_FORMAT layer_compression_type = (COMPRESSED_FORMAT)cl;
+    PARALLELISM_TYPE parallelism_type = (PARALLELISM_TYPE)p;
+    HASHING_TYPE hashing_type = (HASHING_TYPE)h;
     
-    int x = atoi(argv[13]);
-    PARALLELISM_TYPE parallelism_type = (PARALLELISM_TYPE)x;
-    if(parallelism_type >= (PARALLELISM_TYPE::_SIZE_)) {
-        Logging::print(Logging::LOG_LEVEL::FATAL, "Incorrect parallelism type\n");
+    if((input_compression_type >= (COMPRESSED_FORMAT::_C_SIZE_)) or 
+       (layer_compression_type >= (COMPRESSED_FORMAT::_C_SIZE_)) or
+       (hashing_type >= (HASHING_TYPE::_H_SIZE_)) or
+       (parallelism_type >= (PARALLELISM_TYPE::_P_SIZE_))) {
+        Logging::print(Logging::LOG_LEVEL::FATAL, "Incorrect parallelism,compression, or hashing type\n");
         std::exit(Env::finalize());
     }
-    
-    COMPRESSED_FORMAT compression_type = COMPRESSED_FORMAT::_CSC_;
-    HASHING_TYPE hashing_type = HASHING_TYPE::_NO_;
 
-    Net<WGT> N(input_ninstances, input_nfeatures, feature_file,
-               nneurons, nmax_layers, layer_files, 
-               bias_value, bias_type, bias_files, 
+    Net<WGT> N(input_ninstances, input_nfeatures, input_file,
                ncategories, category_type, category_file, 
+               nneurons, nmax_layers, layer_files, 
+               bias_value, bias_type, bias_files,
                noop, relu, classifier,
-               input_type, parallelism_type, compression_type, hashing_type);
+               file_type, 
+               input_compression_type, layer_compression_type, parallelism_type, hashing_type);
     
     return(Env::finalize());
 }
