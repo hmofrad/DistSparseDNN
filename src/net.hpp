@@ -257,7 +257,7 @@ void Net<Weight>::printTimes() {
     double sum = 0.0, mean = 0.0, std_dev = 0.0, min = 0.0, max = 0.0;
     
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::io_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "i/o time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
+    Logging::print(Logging::LOG_LEVEL::VOID, "I/O time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
     
     int index = std::distance(Env::execution_time.begin(), std::max_element(Env::execution_time.begin(), Env::execution_time.end()));
     double exec_time = Env::execution_time[index];
@@ -265,7 +265,7 @@ void Net<Weight>::printTimes() {
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(exec_time);
     Logging::print(Logging::LOG_LEVEL::VOID, "Exe time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
     std::tie(sum, mean, std_dev, min, max) =  Env::statistics<double>(Env::end_to_end_time);
-    Logging::print(Logging::LOG_LEVEL::VOID, "run time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
+    Logging::print(Logging::LOG_LEVEL::VOID, "Run time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
 }
 
 template<typename Weight>
@@ -358,7 +358,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
                                                                                                   : input_features->tiles[leader_rowgroup][0]
                                                                                  : input_features->tiles[leader_rowgroup][0];
     const std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
-    //data_x_model_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
+    data_x_model_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
 }
 
 template<typename Weight>
