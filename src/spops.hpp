@@ -537,7 +537,7 @@ uint32_t infer(const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
                 }
             }
             else if(classifier == "softmax") {  
-                std::vector<Weight> values(C_nrows, std::numeric_limits<Weight>::max());
+                std::vector<Weight> values(C_nrows, std::numeric_limits<Weight>::min());
                 for(uint64_t k = 0; k < C_nrows * C_ncols; k++) {
                     if(C_A[k]) {
                         uint32_t row = k % C_nrows;
@@ -577,7 +577,7 @@ uint32_t infer(const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
                 }
             }
             else if(classifier == "softmax") {    
-                std::vector<Weight> values(C_nrows, std::numeric_limits<Weight>::max());
+                std::vector<Weight> values(C_nrows, std::numeric_limits<Weight>::min());
                 for(uint32_t j = 0; j < C_ncols; j++) {
                     for(uint32_t i = C_JA[j]; i < C_JA[j+1]; i++) {
                         //if(values[C_IA[i]]) {
