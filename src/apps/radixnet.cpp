@@ -5,7 +5,7 @@
  * (e) m.hasanzadeh.mofrad@gmail.com
  */
  
-// make clean && make && time mpirun.mpich -np 4 bin/./radixnet -i 1000 1024 0 data/radixnet/bin/MNIST -n 1024 120 data/radixnet/bin/DNN -c 1 1 -m 0 -p 0 -h 1
+// make clean && make && time mpirun.mpich -np 4 bin/./radixnet -i 60000 1024 0 data/radixnet/bin/MNIST -n 1024 120 data/radixnet/bin/DNN -c 1 1 -p 0 -h 1
 
 #include <stdio.h>
 #include <stdlib.h>
