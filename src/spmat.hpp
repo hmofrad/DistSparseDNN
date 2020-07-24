@@ -532,8 +532,35 @@ void CSC<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const 
         uint32_t* JA = CSC::JA_blk->ptr;
         Weight*    A = CSC::A_blk->ptr;
         
+        uint64_t checkcount = 0;        
+        std::vector<int> rows(CSC::nrows);
+        std::vector<int> cols(CSC::ncols);
+        
+        for(uint32_t j = 0; j < CSC::ncols; j++) {
+            for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
+                checkcount++;
+                rows[IA[i]]=1;
+                cols[j]=1;
+            }
+        }
+        
+        int r = std::accumulate(rows.begin(), rows.end(), 0);
+        int c = std::accumulate(cols.begin(), cols.end(), 0);
+        printf("%d %d %lu\n", r, c, checkcount);
+    }
+/*
+    if(tid == leader_tid) {
+        uint32_t* IA = CSC::IA_blk->ptr;
+        uint32_t* JA = CSC::JA_blk->ptr;
+        Weight*    A = CSC::A_blk->ptr;
+        
         double checksum = 0;
         uint64_t checkcount = 0;
+        
+        std::vector<int> rows(CSC::nrows);
+        std::vector<int> cols(CSC::ncols);
+        
+        
         for(uint32_t j = 0; j < CSC::ncols; j++) {
             //if(!Env::rank)
             //    std::cout << "j=" << j << "," << j << ": " << JA[j] << "--" << JA[j + 1] << ": " <<  JA[j + 1] - JA[j] << std::endl;
@@ -542,10 +569,14 @@ void CSC<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const 
                 (void) A[i];
                 checksum += A[i];
                 checkcount++;
+                rows[IA[i]]=1;
+                cols[j]=1;
                 //if(!Env::rank)
                 //    std::cout << "    i=" << i << ",i=" << IA[i] <<  ",value=" << A[i] << std::endl;
             }
         }
+        
+
 
         Env::barrier();
         if(one_rank) {
@@ -565,8 +596,13 @@ void CSC<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const 
                 Logging::print(Logging::LOG_LEVEL::WARN, "Compression checksum warning!! (%lu != %lu)\n", count_ranks, nnz_ranks);
             }
             Logging::print(Logging::LOG_LEVEL::INFO, "tid=%d CSC: Iteration=%d, Total checksum=%f, Total count=%d\n", tid, Env::iteration, sum_ranks, count_ranks);
+            
+            int r = std::accumulate(rows.begin(), rows.end(), 0);
+            int c = std::accumulate(cols.begin(), cols.end(), 0);
+            printf("%d %d %lu\n", r, c, checkcount);
         } 
-    }    
+    }   
+*/    
 }
 
 template<typename Weight>
