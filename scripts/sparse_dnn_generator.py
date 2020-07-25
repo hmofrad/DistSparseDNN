@@ -279,8 +279,8 @@ batch_size = 128
 nepochs = 30
 begin_step = nepochs//3;
 sparsity = 0.75; 
-height, weight=1, 1
-sparse_model = train_sparse_model(dense_model, nclasses, batch_size, nepochs, sparsity, begin_step, height, weight)
+height, width=1, 1
+sparse_model = train_sparse_model(dense_model, nclasses, batch_size, nepochs, sparsity, begin_step, height, width)
 sparse_score = sparse_model.evaluate(x_test, y_test, verbose=0)
 print("Sparse Network accuracy:", sparse_score[1])
 
