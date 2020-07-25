@@ -486,7 +486,8 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
         //leader_tid = 0;
         //C_SPMAT->walk_dxd(false, leader_tid, tid);
     }
-    else if(((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) or
+    else if(((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) or
+            ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) or
             ((input_compression_type == COMPRESSED_FORMAT::_CSR_) and (layer_compression_type == COMPRESSED_FORMAT::_CSR_))) {
         double start_time = 0;
         start_time = Env::tic();
