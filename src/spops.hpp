@@ -642,13 +642,13 @@ uint32_t infer(const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT,
     else if(category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) {
         for(uint32_t i = 0; i < C_nrows; i++) count += (true_categories[C_start_row + i] == all_categories[i]) ? 1 : 0;
     }
-    
+    /*
     for(uint32_t i = 0; i < C_nrows; i++) {
         if(true_categories[C_start_row + i] != all_categories[i]) {
             printf("i=%d groundtruth=%d != inferred=%d\n", i, true_categories[C_start_row + i], all_categories[i]);
         }
     }
-
+    */
     return count;
 }
 
