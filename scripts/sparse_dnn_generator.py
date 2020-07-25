@@ -244,8 +244,8 @@ def generate_dense_model(nfeatures, nneurons, nclasses, nlayers):
                 dense_model.add(tf.keras.layers.Dense(nclasses, kernel_initializer="normal", activation="softmax"))
     return dense_model
 
-def train_sparse_model(dense_model, nclasses, batch_size, nepochs, sparsity, begin_step, height, weight):
-    pruning_params = {'pruning_schedule': tfmot.sparsity.keras.ConstantSparsity(sparsity, begin_step), "block_size": (height, weight), 'block_pooling_type': 'AVG'}
+def train_sparse_model(dense_model, nclasses, batch_size, nepochs, sparsity, begin_step, height, width):
+    pruning_params = {'pruning_schedule': tfmot.sparsity.keras.ConstantSparsity(sparsity, begin_step), "block_size": (height, width), 'block_pooling_type': 'AVG'}
     callbacks = [tfmot.sparsity.keras.UpdatePruningStep()]
     sparse_model = tfmot.sparsity.keras.prune_low_magnitude(dense_model, **pruning_params)
     sparse_model.summary()
