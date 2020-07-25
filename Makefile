@@ -15,7 +15,7 @@ NUMACTL = /ihome/rmelhem/moh18/numactl/libnuma
 LIBNUMA = /ihome/rmelhem/moh18/numactl/libnuma/usr/local/lib
 SYSLIBS = -lnuma -I $(NUMACTL) -L$(LIBNUMA)
 
-OBJS = radixnet mnist imdb
+OBJS = radixnet mnist cifar imdb
 
 all: dir $(OBJS)
 
