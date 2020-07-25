@@ -123,6 +123,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
         
     if(not(((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) or // Dense x Dense
            ((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) or // Dense x Compressed
+           ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) or // Compressed x Dense
            ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) or // Compressed x Compressed (CSC)
            ((input_compression_type == COMPRESSED_FORMAT::_CSR_) and (layer_compression_type == COMPRESSED_FORMAT::_CSR_)))){ // Compressed x Compressed (CSR)
         Logging::print(Logging::LOG_LEVEL::ERROR, "[%sx%s] multiplication not implemented\n", COMPRESSED_FORMATS[input_compression_type], COMPRESSED_FORMATS[layer_compression_type]);
@@ -321,7 +322,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
         std::shared_ptr<struct Data_Block<Weight>>& s_spa = spa_vectors[tid];
         std::shared_ptr<struct Data_Block<Weight>>& b_bias = bias_vectors[l];
-        if(l==0 and tid==0) { A_SPMAT->walk_dxm(false, tid, tid); }
+        //if(l==0 and tid==0) { A_SPMAT->walk_dxm(false, tid, tid); }
         A_nrows = A_SPMAT->nrows;
         B_nrows = B_SPMAT->nrows;
         B_ncols = B_SPMAT->ncols;
