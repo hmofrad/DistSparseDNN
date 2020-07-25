@@ -84,9 +84,10 @@ Distributed Sparse Deep Neural Network Inference
 |     Multiplication Type (Input x Layer)    |        Input Format      |     Layer Format    |        Input Format      |     Layer Format    |
 |     Dense x Dense                          |            UDC           |          UDC        |                          |                     |
 |     Dense x Compressed                     |            UDC           |          CSC        |                          |                     |
+|     Compressed x Dense                     |            CSC           |          UDC        |                          |                     |
+|     Compressed x Compressed                |                          |                     |                          |                     |
 |     Dense x Doubly Compressed              |            CSC           |          CSC        |            CSR           |          CSR        |
 |     Dense x Triply Compressed              |                          |                     |                          |                     |
-|     Compressed x Compressed                |                          |                     |                          |                     |
 |     Compressed x Doubly Compressed         |                          |                     |                          |                     |
 |     Compressed x Triply Compressed         |                          |                     |                          |                     |
 
