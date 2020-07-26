@@ -74,6 +74,7 @@ Distributed Sparse Deep Neural Network Inference
 <ol start="0">
   <li>Dense matrix by dense matrix</li>
   <li>Dense matrix by compressed matrix</li>
+  <li>Compressed matrix by dense matrix</li>
   <li>Compressed matrix by compressed matrix</li>
   <li>Compressed matrix by doubly compressed matrix (not implemented yet)</li>
   <li>Compressed matrix by triply compressed matrix (not implemented yet)</li>
@@ -85,8 +86,8 @@ Distributed Sparse Deep Neural Network Inference
 |     Dense x Dense                          |            UDC           |          UDC        |                          |                     |
 |     Dense x Compressed                     |            UDC           |          CSC        |                          |                     |
 |     Compressed x Dense                     |            CSC           |          UDC        |                          |                     |
-|     Compressed x Compressed                |                          |                     |                          |                     |
-|     Dense x Doubly Compressed              |            CSC           |          CSC        |            CSR           |          CSR        |
+|     Compressed x Compressed                |            CSC           |          CSC        |            CSR           |          CSR        |
+|     Dense x Doubly Compressed              |                          |                     |                          |                     |
 |     Dense x Triply Compressed              |                          |                     |                          |                     |
 |     Compressed x Doubly Compressed         |                          |                     |                          |                     |
 |     Compressed x Triply Compressed         |                          |                     |                          |                     |
