@@ -927,6 +927,7 @@ void UDC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const u
     if(tid == leader_tid) {
         UDC::nrows = nrows_; 
         UDC::ncols = ncols_;
+
         UDC::A_blk->reallocate(UDC::nrows * UDC::ncols);
         UDC::A_blk->clear();
         
