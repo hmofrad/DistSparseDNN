@@ -257,9 +257,16 @@ void Net<Weight>::printTimes() {
     double min = 0.0, max = 0.0, mean = 0.0, std_dev = 0.0, sum = 0.0;
     if(Env::nranks == 1) {        
         Env::stats<double>(Env::execution_time, min, max, mean, std_dev, sum);
-        Logging::print(Logging::LOG_LEVEL::VOID, "Exe time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
-        Logging::print(Logging::LOG_LEVEL::VOID, "I/O time: %.3f\n", Env::io_time);
-        Logging::print(Logging::LOG_LEVEL::VOID, "Run time: %.3f\n", Env::end_to_end_time);
+        Logging::print(Logging::LOG_LEVEL::VOID, "Exec time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
+        Logging::print(Logging::LOG_LEVEL::VOID, "I/O  time: %.3f\n", Env::io_time);
+        Logging::print(Logging::LOG_LEVEL::VOID, "Run  time: %.3f\n", Env::end_to_end_time);
+        
+        Env::stats<double>(Env::spmm_symb_time, min, max, mean, std_dev, sum);
+        Logging::print(Logging::LOG_LEVEL::VOID, "Symb time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
+        Env::stats<double>(Env::spmm_real_time, min, max, mean, std_dev, sum);
+        Logging::print(Logging::LOG_LEVEL::VOID, "Real time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
+        Env::stats<double>(Env::memory_allocation_time, min, max, mean, std_dev, sum);
+        Logging::print(Logging::LOG_LEVEL::VOID, "Memo time: %.3f %.3f %.3f %.3f\n", min, max, mean, std_dev, sum);
     }
     else {
         int index = std::distance(Env::execution_time.begin(), std::max_element(Env::execution_time.begin(), Env::execution_time.end()));
@@ -687,7 +694,6 @@ bool Net<Weight>::thread_scheduling(std::deque<int32_t>& leader_owned_threads, c
     }
     return(found);
 }
-
 
 template<typename Weight>
 bool Net<Weight>::add_to_my_follower_threads(std::deque<int32_t>& leader_owned_threads, const uint32_t leader_rowgroup, const uint32_t leader_start_layer, const uint32_t leader_current_layer, const uint32_t nrows, const uint32_t ncols, const int32_t leader_tid, const int32_t tid) {  
