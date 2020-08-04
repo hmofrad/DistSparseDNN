@@ -198,7 +198,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows         x ncols         = [%d x %d]\n", nrows, ncols);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height   x tile_width    = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                           = [%d]\n", nnzs);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                          = [%d]\n", nnzs);
     
     std::vector<struct Triple<Weight>> triples = IO::read_file_ijw<Weight>(input_file, file_type, hasher, one_rank, nrows, ncols);
     Tiling<Weight>::insert_triples(triples);
@@ -328,7 +328,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: thread_nrowgrps  x thread_ncolgrps  = [%d x %d]\n", thread_nrowgrps, thread_ncolgrps);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows            x ncols            = [%d x %d]\n", nrows, ncols);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height      x tile_width       = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                                 = [%d]\n", nnzs);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                                = [%d]\n", nnzs);
     
     std::vector<struct Triple<Weight>> triples = IO::read_file_ijw<Weight>(input_file, file_type, hasher, one_rank, nrows, ncols);
     Tiling<Weight>::insert_triples(triples);
@@ -402,7 +402,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: rank_nrowgrps x rank_ncolgrps = [%d x %d]\n", rank_nrowgrps, rank_ncolgrps);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows            x ncols            = [%d x %d]\n", nrows, ncols);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height      x tile_width       = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                                 = [%d]\n", nnzs);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                                = [%d]\n", nnzs);
     
     print_tiling("rank");
     print_tiling("nedges");
@@ -512,7 +512,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling Information: thread_nrowgrps  x thread_ncolgrps  = [%d x %d]\n", thread_nrowgrps, thread_ncolgrps);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nrows            x ncols            = [%d x %d]\n", nrows, ncols);
     Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: tile_height      x tile_width       = [%d x %d]\n", tile_height, tile_width);
-    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                                 = [%d]\n", nnzs);
+    Logging::print(Logging::LOG_LEVEL::INFO, "Tiling information: nnzs                                = [%d]\n", nnzs);
 
     print_tiling("rank");
     print_tiling("thread");
