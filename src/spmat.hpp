@@ -762,6 +762,7 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
             k++;
         }
     }
+    pthread_barrier_wait(&Env::thread_barrier);
 }
 
 template<typename Weight>
