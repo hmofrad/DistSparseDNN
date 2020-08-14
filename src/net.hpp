@@ -175,10 +175,18 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
         std::string layer_file = layer_files[i];
         hashers.push_back(std::move(std::make_shared<struct TwoDHasher>(hashing_type, false, layer_nrows, layer_ncols, 1, 1)));
         layer_nnzs = IO::get_nnzs<Weight>(layer_file, file_type, hashers[i+1], layer_nrows);
-        layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
-                                                               layer_nnzs, layer_nrows, layer_ncols, 
-                                                               layer_file, file_type, 
-                                                               TILING_TYPE::_1D_COL_, layer_compression_type, hashers[i+1]));
+        if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
+            layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
+                                                                   layer_nnzs, layer_nrows, layer_ncols, 
+                                                                   layer_file, file_type, 
+                                                                   TILING_TYPE::_1D_COL_, layer_compression_type, hashers[i+1]));
+        }
+        else {
+            layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
+                                                                   layer_nnzs, layer_nrows, layer_ncols, 
+                                                                   layer_file, file_type, 
+                                                                   TILING_TYPE::_1D_COL_, layer_compression_type, hashers[i+1]));
+        }
         bias_vectors[i] = std::move(std::make_shared<struct Data_Block<Weight>>(layer_ncols, Env::rank_socket_id));
         if(bias_type == VALUE_TYPE::_CONSTANT_) {                
             Weight* b_A = bias_vectors[i]->ptr;
@@ -321,7 +329,8 @@ void Net<Weight>::data_x_model(const int32_t tid) {
                                                                                                   : output->tiles[leader_rowgroup][0] 
                                                                                      : input_features->tiles[leader_rowgroup][0];    
         std::shared_ptr<struct Compressed_Format<Weight>>& A_SPMAT = A_tile.spmat;
-        struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
+        //struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
+        struct Tile<Weight>& B_tile = layers[l]->tiles[0][tid];
         std::shared_ptr<struct Compressed_Format<Weight>>& B_SPMAT = B_tile.spmat;
         struct Tile<Weight>& C_tile = (input_compression_type == COMPRESSED_FORMAT::_UDC_) ? (not(l%2)) ? output->tiles[leader_rowgroup][0] 
                                                                                                   : input_features->tiles[leader_rowgroup][0]
@@ -329,11 +338,12 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
         std::shared_ptr<struct Data_Block<Weight>>& s_spa = spa_vectors[tid];
         std::shared_ptr<struct Data_Block<Weight>>& b_bias = bias_vectors[l];
-        //if(l==0 and tid==0) { A_SPMAT->walk_dxm(false, tid, tid); }
+        
+        bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
+        /*
         A_nrows = A_SPMAT->nrows;
         B_nrows = B_SPMAT->nrows;
         B_ncols = B_SPMAT->ncols;
-        //printf("Tid=%d l=%d A[%d] B[%d %d]\n", tid, l, A_nrows, B_nrows, B_ncols);
         if(tid == leader_tid) {
             for(int32_t i = 0; i < Env::nthreads; i++) {
                 Env::threads[i].start_row = ((B_nrows/Env::nthreads) * i);    
@@ -342,26 +352,35 @@ void Net<Weight>::data_x_model(const int32_t tid) {
                 Env::threads[i].start_col = ((B_ncols/Env::nthreads) * i);    
                 Env::threads[i].end_col = (i == (Env::nthreads-1)) ? B_ncols : ((B_ncols/Env::nthreads) * (i+1));    
             }    
-        }    
+        }         
         pthread_barrier_wait(&Env::thread_barrier);
+        */
         
         if((layer_compression_type == COMPRESSED_FORMAT::_UDC_) or (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) {
-            start = Env::threads[tid].start_col;
-            end = Env::threads[tid].end_col;
-            sub_start = 0, sub_end   = 0;
+            //start = Env::threads[tid].start_col;
+            //end = Env::threads[tid].end_col;
+            //sub_start = 0, sub_end   = 0;
+            A_nrows = A_tile.nrows;
+            B_ncols = B_tile.ncols;
+            start = 0;
+            end = B_tile.width;
+            sub_start = last_layer ? (B_ncols/Env::nthreads)*tid : B_tile.start_col;
+            sub_end = last_layer ? (tid==Env::nthreads-1) ? B_ncols : (B_ncols/Env::nthreads)*(tid+1) :  B_tile.end_col;
+            if(last_layer) printf("%d [%d %d] [%d %d] [%d %d]\n", tid, A_nrows, B_ncols, start, end, sub_start, sub_end);
+            //pthread_barrier_wait(&Env::thread_barrier);
+            //std::exit(0);
         }
         else {
             Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[layer_compression_type]);
             std::exit(Env::finalize());
         }
-        bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
+        
+
         data_x_model_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                             A_nrows, B_ncols, 
                             start, end, 
                             sub_start, sub_end, 
                             thread_st, last_layer, input_compression_type, layer_compression_type, leader_tid, tid); 
-        //if(!Env::rank and !tid) printf("Total checksum=51009.396646, Total count=282192\n");
-        //break;
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
     Env::execution_time[tid] = (double)(std::chrono::duration_cast<std::chrono::nanoseconds>(finish_t - start_t).count())/1e9;
