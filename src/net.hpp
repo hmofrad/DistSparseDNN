@@ -364,11 +364,8 @@ void Net<Weight>::data_x_model(const int32_t tid) {
             B_ncols = B_tile.ncols;
             start = 0;
             end = B_tile.width;
-            sub_start = last_layer ? (B_ncols/Env::nthreads)*tid : B_tile.start_col;
-            sub_end = last_layer ? (tid==Env::nthreads-1) ? B_ncols : (B_ncols/Env::nthreads)*(tid+1) :  B_tile.end_col;
-            if(last_layer) printf("%d [%d %d] [%d %d] [%d %d]\n", tid, A_nrows, B_ncols, start, end, sub_start, sub_end);
-            //pthread_barrier_wait(&Env::thread_barrier);
-            //std::exit(0);
+            sub_start = B_tile.start_col;
+            sub_end = B_tile.end_col;
         }
         else {
             Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[layer_compression_type]);
