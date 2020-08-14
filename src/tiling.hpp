@@ -168,14 +168,16 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
     tile_width  = ncols / ncolgrps;
     
     tiles.resize(nrowgrps);
-    for (uint32_t i = 0; i < nrowgrps; i++) tiles[i].resize(ncolgrps);
-    
+    for (uint32_t i = 0; i < nrowgrps; i++) { tiles[i].resize(ncolgrps); }
     int32_t gcd_r = std::gcd(rowgrp_nranks, colgrp_nranks);
+
     for (uint32_t i = 0; i < nrowgrps; i++) {
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             tile.rank = (one_rank) ? Env::rank : (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
             tile.thread = 0;
+            tile.nrows = nrows;
+            tile.ncols = ncols;
             tile.start_row = i*tile_height;
             tile.end_row = (i+1)*tile_height;
             tile.height = tile_height;
@@ -184,7 +186,7 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
             tile.width = tile_width;
         }
     }
-
+    
     if((not one_rank) and (ntiles == nranks *nranks)) {
         if(not assert_tiling()) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "Tiling failed1\n");
@@ -311,6 +313,8 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                                 + ((i / (nrowgrps/gcd_t)) * (thread_nrowgrps))) % (Env::nranks * Env::nthreads);
             tile.rank   = (one_rank) ? Env::rank : thread_rank % Env::nranks;
             tile.thread = thread_rank / Env::nranks;   
+            tile.nrows = nrows;
+            tile.ncols = ncols;
             tile.start_row = i*tile_height;
             tile.end_row = (i+1)*tile_height;
             tile.height = tile_height;
@@ -385,6 +389,8 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             tile.rank = (((i % colgrp_nranks) * rowgrp_nranks + (j % rowgrp_nranks)) + ((i / (nrowgrps/(gcd_r))) * (rank_nrowgrps))) % nranks;
+            tile.nrows = nrows;
+            tile.ncols = ncols;
             tile.start_row = i*tile_height;
             tile.end_row = (i+1)*tile_height;
             tile.height = tile_height;
@@ -494,6 +500,8 @@ Tiling<Weight>::Tiling(const uint32_t ntiles_, const uint32_t nrowgrps_, const u
                                 + ((i / (nrowgrps/gcd_t)) * (thread_nrowgrps))) % (Env::nranks * Env::nthreads);
             tile.rank   = thread_rank % Env::nranks;
             tile.thread = thread_rank / Env::nranks;  
+            tile.nrows = nrows;
+            tile.ncols = ncols;
             tile.start_row = i*tile_height;
             tile.end_row = (i+1)*tile_height;
             tile.height = tile_height;
@@ -821,6 +829,8 @@ void Tiling<Weight>::set_tile_info(const std::vector<std::vector<struct Tile<Wei
         for (uint32_t j = 0; j < ncolgrps; j++) {
             auto& tile = tiles[i][j];
             auto other = other_tiles[i][j];
+            tile.nrows = other.nrows;
+            tile.ncols = other.ncols;
             tile.start_row = other.start_row;
             tile.end_row = other.end_row;
             tile.start_col = other.start_col;
