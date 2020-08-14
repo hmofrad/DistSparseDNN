@@ -23,6 +23,8 @@ struct Tile{
         
         int32_t rank;
         int32_t thread;
+        uint32_t nrows     = 0;
+        uint32_t ncols     = 0;
         uint64_t nedges    = 0;
         uint32_t start_row = 0;
         uint32_t end_row   = 0;
