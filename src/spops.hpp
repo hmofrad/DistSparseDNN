@@ -366,7 +366,6 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
         const std::shared_ptr<struct UDC<Weight>> C_UDC = std::static_pointer_cast<struct UDC<Weight>>(C_SPMAT);              
         C_nrows = C_UDC->nrows;
         C_ncols = C_UDC->ncols;
-        C_A   = C_UDC->A_blk->ptr;
         
         if((A_ncols != B_nrows) or (s->nitems < A_nrows)) {
             Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
@@ -385,7 +384,7 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
         }
     }
     else {
-        Logging::print(Logging::LOG_LEVEL::ERROR, "+++++[%sx%s] multiplication not implemented\n", COMPRESSED_FORMATS[input_compression_type], COMPRESSED_FORMATS[layer_compression_type]);
+        Logging::print(Logging::LOG_LEVEL::ERROR, "[%sx%s] multiplication not implemented\n", COMPRESSED_FORMATS[input_compression_type], COMPRESSED_FORMATS[layer_compression_type]);
         std::exit(Env::finalize());
     }
 }
@@ -438,7 +437,6 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
 
         start_time = Env::tic(); 
         std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, input_compression_type, layer_compression_type, tid);
-        pthread_barrier_wait(&Env::thread_barrier);
         Env::spmm_symb_time[tid] += Env::toc(start_time);           
         pthread_barrier_wait(&Env::thread_barrier);
         
@@ -509,7 +507,6 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
         if(not last_layer) { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, off, thread_st.idx_nnz, input_compression_type, layer_compression_type, tid); }
         else { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, start, end, off, thread_st.idx_nnz, input_compression_type, layer_compression_type, tid); }
         Env::spmm_real_time[tid] += Env::toc(start_time);  
-        
         //leader_tid = 0;
         //C_SPMAT->walk_dxd(false, leader_tid, tid);
     }
