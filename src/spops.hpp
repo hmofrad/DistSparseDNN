@@ -457,8 +457,8 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
         
         start_time = Env::tic();
         pthread_barrier_wait(&Env::thread_barrier);
-        //A_SPMAT->repopulate(C_SPMAT, thread_st.dis_nnz, leader_tid, tid);
-        A_SPMAT->repopulate(C_SPMAT, thread_st.dis_nnz, sub_start, sub_end, leader_tid, tid);
+        A_SPMAT->repopulate(C_SPMAT, thread_st.dis_nnz, leader_tid, tid);
+        //A_SPMAT->repopulate(C_SPMAT, thread_st.dis_nnz, sub_start, sub_end, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
         
         //A_SPMAT->walk_dxm(false, leader_tid, tid);
