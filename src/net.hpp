@@ -175,6 +175,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
         std::string layer_file = layer_files[i];
         hashers.push_back(std::move(std::make_shared<struct TwoDHasher>(hashing_type, false, layer_nrows, layer_ncols, 1, 1)));
         layer_nnzs = IO::get_nnzs<Weight>(layer_file, file_type, hashers[i+1], layer_nrows);
+        /*
         if(parallelism_type == PARALLELISM_TYPE::_DATA_X_MODEL_) {
             layers[i] = std::move(std::make_unique<Tiling<Weight>>(Env::nthreads, 1, Env::nthreads, 1, 
                                                                    layer_nnzs, layer_nrows, layer_ncols, 
@@ -182,11 +183,12 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
                                                                    TILING_TYPE::_1D_COL_, layer_compression_type, hashers[i+1]));
         }
         else {
+        */
             layers[i] = std::move(std::make_unique<Tiling<Weight>>(1, 1, 1, 1, 
                                                                    layer_nnzs, layer_nrows, layer_ncols, 
                                                                    layer_file, file_type, 
                                                                    TILING_TYPE::_1D_COL_, layer_compression_type, hashers[i+1]));
-        }
+        //}
         bias_vectors[i] = std::move(std::make_shared<struct Data_Block<Weight>>(layer_ncols, Env::rank_socket_id));
         if(bias_type == VALUE_TYPE::_CONSTANT_) {                
             Weight* b_A = bias_vectors[i]->ptr;
@@ -326,11 +328,11 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     uint32_t l = 0;
     for (uint32_t l = 0; l < nmax_layers; l++) {    
         struct Tile<Weight>& A_tile = (input_compression_type == COMPRESSED_FORMAT::_UDC_) ? (not(l%2)) ? input_features->tiles[leader_rowgroup][0]
-                                                                                                  : output->tiles[leader_rowgroup][0] 
+                                                                                                        : output->tiles[leader_rowgroup][0] 
                                                                                      : input_features->tiles[leader_rowgroup][0];    
         std::shared_ptr<struct Compressed_Format<Weight>>& A_SPMAT = A_tile.spmat;
-        //struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
-        struct Tile<Weight>& B_tile = layers[l]->tiles[0][tid];
+        struct Tile<Weight>& B_tile = layers[l]->tiles[0][0];
+        //struct Tile<Weight>& B_tile = layers[l]->tiles[0][tid];
         std::shared_ptr<struct Compressed_Format<Weight>>& B_SPMAT = B_tile.spmat;
         struct Tile<Weight>& C_tile = (input_compression_type == COMPRESSED_FORMAT::_UDC_) ? (not(l%2)) ? output->tiles[leader_rowgroup][0] 
                                                                                                   : input_features->tiles[leader_rowgroup][0]
@@ -340,7 +342,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         std::shared_ptr<struct Data_Block<Weight>>& b_bias = bias_vectors[l];
         
         bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
-        /*
+        
         A_nrows = A_SPMAT->nrows;
         B_nrows = B_SPMAT->nrows;
         B_ncols = B_SPMAT->ncols;
@@ -354,18 +356,21 @@ void Net<Weight>::data_x_model(const int32_t tid) {
             }    
         }         
         pthread_barrier_wait(&Env::thread_barrier);
-        */
+        
         
         if((layer_compression_type == COMPRESSED_FORMAT::_UDC_) or (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) {
-            //start = Env::threads[tid].start_col;
-            //end = Env::threads[tid].end_col;
-            //sub_start = 0, sub_end   = 0;
+            start = Env::threads[tid].start_col;
+            end = Env::threads[tid].end_col;
+            sub_start = 0, sub_end   = 0;
+            sub_start = B_tile.start_col, sub_end   = B_tile.end_col;
+            /*
             A_nrows = A_tile.nrows;
             B_ncols = B_tile.ncols;
             start = 0;
             end = B_tile.width;
             sub_start = B_tile.start_col;
             sub_end = B_tile.end_col;
+            */
         }
         else {
             Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[layer_compression_type]);
@@ -384,8 +389,8 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     
     
     struct Tile<Weight>& C_tile = (layer_compression_type == COMPRESSED_FORMAT::_UDC_) ? (not((l-1)%2)) ? output->tiles[leader_rowgroup][0] 
-                                                                                                  : input_features->tiles[leader_rowgroup][0]
-                                                                                 : input_features->tiles[leader_rowgroup][0];
+                                                                                                        : input_features->tiles[leader_rowgroup][0]
+                                                                                       : input_features->tiles[leader_rowgroup][0];
     const std::shared_ptr<struct Compressed_Format<Weight>>& C_SPMAT = C_tile.spmat;
     data_x_model_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
 }
