@@ -470,8 +470,11 @@ CSC<Weight>::CSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncol
 
 template<typename Weight>
 void CSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples) {
-    const ColSort<Weight> f_col;
-    std::sort(triples.begin(), triples.end(), f_col);  
+    //const ColSort<Weight> f_col;
+    //std::sort(triples.begin(), triples.end(), f_col);  
+    std::sort(triples.begin(), triples.end(), [](const struct Triple<Weight>& a, const struct Triple<Weight>& b){ 
+              return a.col == b.col ? a.row < b.row : a.col < b.col; } );  
+
     
     uint32_t* IA = CSC::IA_blk->ptr;
     uint32_t* JA = CSC::JA_blk->ptr;
@@ -926,6 +929,7 @@ void UDC<Weight>::populate(std::vector<struct Triple<Weight>>& triples) {
 template<typename Weight>
 void UDC<Weight>::reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid) {
     if(tid == leader_tid) {
+        UDC::nnz_i = 0;
         UDC::nrows = nrows_; 
         UDC::ncols = ncols_;
 
@@ -952,6 +956,7 @@ void UDC<Weight>::populate_spa(Weight** spa, const Weight* bias, const uint32_t 
             if(s[i]) {
                 A[k] = s[i];
                 s[i] = 0;
+                //UDC::nnz_i++;
             }
         }
         k++;
