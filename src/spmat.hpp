@@ -39,7 +39,7 @@ struct Compressed_Format {
         virtual void adjust(const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void adjust(const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
-        virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const uint32_t start, const uint32_t end, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
+        virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         virtual void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid) {Logging::print(Logging::LOG_LEVEL::ERROR, "Not implemented\n"); std::exit(Env::finalize());}
         
         COMPRESSED_FORMAT compression_type;
@@ -70,7 +70,7 @@ struct CSR: public Compressed_Format<Weight> {
         void adjust(const int32_t tid);
         void adjust(const int32_t leader_tid, const int32_t tid);
         void adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
-        void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const uint32_t start_row, const uint32_t end_row, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid);
         void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
         
         uint64_t nnz   = 0;
@@ -309,7 +309,7 @@ void CSR<Weight>::adjust(const std::deque<int32_t> my_threads, const int32_t lea
 }
 
 template<typename Weight>
-void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const uint32_t start_row, const uint32_t end_row, const int32_t leader_tid, const int32_t tid) {
+void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid) {
     std::shared_ptr<struct CSR<Weight>> other_csr = std::static_pointer_cast<struct CSR<Weight>>(other_spmat);
     
     uint32_t  o_ncols = other_csr->ncols;
@@ -343,8 +343,8 @@ void CSR<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
     uint32_t* JA = CSR::JA_blk->ptr;
     Weight*    A = CSR::A_blk->ptr;
 
-    //const uint32_t start_row = Env::threads[tid].start_row;
-    //const uint32_t end_row   = Env::threads[tid].end_row;
+    const uint32_t start_row = Env::threads[tid].start_row;
+    const uint32_t end_row   = Env::threads[tid].end_row;
 
     for(int32_t i = 0; i < tid; i++) {
         IA[start_row+1] += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
@@ -436,7 +436,7 @@ struct CSC: public Compressed_Format<Weight> {
         void adjust(const int32_t tid);
         void adjust(const int32_t leader_tid, const int32_t tid);
         void adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
-        void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const uint32_t start_col, const uint32_t end_col, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid);
         void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
         
         uint64_t nnz   = 0;
@@ -716,7 +716,7 @@ void CSC<Weight>::adjust(const std::deque<int32_t> my_threads, const int32_t lea
 }
 
 template<typename Weight>
-void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const uint32_t start_col, const uint32_t end_col, const int32_t leader_tid, const int32_t tid) {
+void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid) {
     std::shared_ptr<struct CSC<Weight>> other_csc = std::static_pointer_cast<struct CSC<Weight>>(other_spmat);
     
     uint32_t  o_ncols = other_csc->ncols;
@@ -749,8 +749,8 @@ void CSC<Weight>::repopulate(const std::shared_ptr<struct Compressed_Format<Weig
     uint32_t* IA = CSC::IA_blk->ptr;
     Weight*    A = CSC::A_blk->ptr;
     
-    //const uint32_t start_col = Env::threads[tid].start_col;
-    //const uint32_t end_col   = Env::threads[tid].end_col;
+    const uint32_t start_col = Env::threads[tid].start_col;
+    const uint32_t end_col   = Env::threads[tid].end_col;
     for(int32_t i = 0; i < tid; i++) {
         JA[start_col+1] += (Env::threads[i].idx_nnz - Env::threads[i].off_nnz);
     }
