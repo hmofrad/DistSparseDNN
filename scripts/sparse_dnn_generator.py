@@ -12,6 +12,7 @@ import pathlib as path
 import numpy as np
 import scipy as sp
 from scipy.stats import rankdata
+from numpy import linalg as LA
 import tensorflow_model_optimization as tfmot
 
 if(len(sys.argv) != 3):
@@ -244,8 +245,8 @@ def generate_dense_model(nfeatures, nneurons, nclasses, nlayers):
                 dense_model.add(tf.keras.layers.Dense(nclasses, kernel_initializer="normal", activation="softmax"))
     return dense_model
 
-def train_sparse_model(dense_model, nclasses, batch_size, nepochs, sparsity, begin_step, height, width):
-    pruning_params = {'pruning_schedule': tfmot.sparsity.keras.ConstantSparsity(sparsity, begin_step), "block_size": (height, width), 'block_pooling_type': 'AVG'}
+def train_sparse_model(dense_model, nclasses, batch_size, nepochs, weight_sparsity, begin_step, height, width):
+    pruning_params = {'pruning_schedule': tfmot.sparsity.keras.ConstantSparsity(weight_sparsity, begin_step), "block_size": (height, width), 'block_pooling_type': 'AVG'}
     callbacks = [tfmot.sparsity.keras.UpdatePruningStep()]
     sparse_model = tfmot.sparsity.keras.prune_low_magnitude(dense_model, **pruning_params)
     sparse_model.summary()
@@ -261,6 +262,24 @@ def train_sparse_model(dense_model, nclasses, batch_size, nepochs, sparsity, beg
         sparse_model.compile(optimizer="adam", loss=tf.keras.losses.categorical_crossentropy, metrics=["accuracy"])
     return sparse_model
 
+
+def neuron_pruning(sparse_model, neuron_sparsity):
+    weights = sparse_model.get_weights()
+    weights = np.array(weights)
+    for l in range(0,weights.shape[0]):
+        k = 0
+        if(l%2==0):
+            norm = LA.norm(weights[l],axis=0)
+            norm = np.tile(norm,(weights[l].shape[0],1))
+            rank = (rankdata(norm,method='dense') - 1).astype(int).reshape(norm.shape)
+            lower_bound_rank = np.ceil(np.max(rank)*neuron_sparsity).astype(int)
+            rank[rank<=lower_bound_rank] = 0
+            rank[rank>lower_bound_rank] = 1
+            weights[l] = weights[l]*rank
+    
+    sparse_model.set_weights(weights)
+    return sparse_model
+
 # Everything starts from here
 tic=time.time()
     
@@ -272,17 +291,22 @@ if(y_test.ndim==1):
 elif(y_test.ndim==2):
     nclasses = y_test.shape[1]
 nneurons = 1024
-nlayers = 60
+nlayers = 3
 dense_model = generate_dense_model(nfeatures, nneurons, nclasses, nlayers)
 
 batch_size = 128
-nepochs = 30
+nepochs = 3
 begin_step = nepochs//3;
-sparsity = 0.75; 
+weight_sparsity = 0.75; 
 height, width=1, 1
-sparse_model = train_sparse_model(dense_model, nclasses, batch_size, nepochs, sparsity, begin_step, height, width)
+sparse_model = train_sparse_model(dense_model, nclasses, batch_size, nepochs, weight_sparsity, begin_step, height, width)
 sparse_score = sparse_model.evaluate(x_test, y_test, verbose=0)
 print("Sparse Network accuracy:", sparse_score[1])
+
+neuron_sparsity = 0.25; 
+sparse_model = neuron_pruning(sparse_model, neuron_sparsity)
+sparse_score = sparse_model.evaluate(x_test, y_test, verbose=0)
+print("Sparse Network accuracy (after neuron pruning):", sparse_score[1])
 
 elapsed_time = time.time()-tic
 write_text(sparse_model, nclasses, x_train, directory, dataset, elapsed_time, sparse_score[1])
