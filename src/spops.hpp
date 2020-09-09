@@ -150,6 +150,43 @@ inline std::tuple<uint64_t, uint32_t, uint32_t> spmm_symb(std::shared_ptr<struct
             }
         }
     }
+    else if((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_DCSC_)) {
+        const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
+        A_nnz   = A_CSC->nnz;
+        A_nrows = A_CSC->nrows;
+        A_ncols = A_CSC->ncols;
+        A_IA   = A_CSC->IA_blk->ptr;
+        A_JA   = A_CSC->JA_blk->ptr;
+        A_A   = A_CSC->A_blk->ptr;
+    
+        const std::shared_ptr<struct DCSC<Weight>> B_DCSC = std::static_pointer_cast<struct DCSC<Weight>>(B_SPMAT);
+        B_nnz   = B_DCSC->nnz;
+        B_nrows = B_DCSC->nrows;
+        B_ncols = B_DCSC->ncols;
+        B_IA    = B_DCSC->IA_blk->ptr;
+        B_JA    = B_DCSC->JA_blk->ptr;
+        B_A     = B_DCSC->A_blk->ptr;
+        
+        if((A_ncols != B_nrows) or (s->nitems < A_nrows)) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree A[%d %d] B[%d %d], SPA[%lu]\n", A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
+            std::exit(1); 
+        }
+
+        for(uint32_t j = start; j < end; j++) {
+            for(uint32_t i = B_JA[j]; i < B_JA[j+1]; i++) {
+                uint32_t r = B_IA[i];
+                for(uint32_t k = A_JA[r]; k < A_JA[r+1]; k++) {
+                    s_A[A_IA[k]] = 1;
+                }
+            }
+            for(uint32_t i = 0; i < A_nrows; i++) {
+                if(s_A[i]){
+                    nnzmax++;
+                    s_A[i] = 0;
+                }
+            }
+        }
+    }
     else if(not(((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) or
                 ((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)))) {
         Logging::print(Logging::LOG_LEVEL::ERROR, "[%sx%s] multiplication not implemented\n", COMPRESSED_FORMATS[input_compression_type], COMPRESSED_FORMATS[layer_compression_type]);
@@ -383,6 +420,48 @@ inline void spmm_real(std::shared_ptr<struct Compressed_Format<Weight>> A_SPMAT,
             C_UDC->populate_spa(&s_A, b_A, off + j, idx_nnz, activation_function, tid);      
         }
     }
+    else if((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_DCSC_)) {
+        const std::shared_ptr<struct CSC<Weight>> A_CSC = std::static_pointer_cast<struct CSC<Weight>>(A_SPMAT);
+        A_nnz   = A_CSC->nnz;
+        A_nrows = A_CSC->nrows;
+        A_ncols = A_CSC->ncols;
+        A_IA   = A_CSC->IA_blk->ptr;
+        A_JA   = A_CSC->JA_blk->ptr;
+        A_A   = A_CSC->A_blk->ptr;
+        
+        const std::shared_ptr<struct DCSC<Weight>> B_DCSC = std::static_pointer_cast<struct DCSC<Weight>>(B_SPMAT);          
+        B_nnz   = B_DCSC->nnz;
+        B_nrows = B_DCSC->nrows;
+        B_ncols = B_DCSC->ncols;
+        uint32_t nnzcols = B_DCSC->nnzcols;
+        B_IA   = B_DCSC->IA_blk->ptr;
+        B_JA   = B_DCSC->JA_blk->ptr;
+        B_A   = B_DCSC->A_blk->ptr;
+        uint32_t* B_JC   = B_DCSC->JC_blk->ptr;
+            
+        const std::shared_ptr<struct CSC<Weight>> C_CSC = std::static_pointer_cast<struct CSC<Weight>>(C_SPMAT);              
+        C_nnz   = C_CSC->nnz;
+        C_nrows = C_CSC->nrows;
+        C_ncols = C_CSC->ncols;
+        C_IA   = C_CSC->IA_blk->ptr;
+        C_JA   = C_CSC->JA_blk->ptr;
+        C_A   = C_CSC->A_blk->ptr;
+                        
+        if((A_ncols != B_nrows) or (s->nitems < A_nrows)) {
+            Logging::print(Logging::LOG_LEVEL::ERROR, "SpMM dimensions do not agree C[%d %d] != A[%d %d] B[%d %d], SPA[%lu]\n", C_nrows, C_ncols, A_nrows, A_ncols, B_nrows, B_ncols, s->nitems);
+            std::exit(1); 
+        }
+
+        for(uint32_t j = start; j < end; j++) {
+            for(uint32_t i = B_JA[j]; i < B_JA[j+1]; i++) {
+                uint32_t r = B_IA[i]; Weight v = B_A[i]; 
+                for(uint32_t k = A_JA[r]; k < A_JA[r+1]; k++) {
+                    s_A[A_IA[k]] += (A_A[k] * v);
+                }
+            }
+            C_CSC->populate_spa(&s_A, b_A, off + B_JC[j], idx_nnz, activation_function, tid);
+        }
+    }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "[%sx%s] multiplication not implemented\n", COMPRESSED_FORMATS[input_compression_type], COMPRESSED_FORMATS[layer_compression_type]);
         std::exit(Env::finalize());
@@ -433,7 +512,8 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
         //C_SPMAT->walk_dxm(false, leader_tid, tid);
     }
     else if(((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) or 
-            ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_))) {
+            ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) or 
+            ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_DCSC_))) {
 
         start_time = Env::tic(); 
         std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, input_compression_type, layer_compression_type, tid);
@@ -444,7 +524,7 @@ inline void data_x_model_1_iter(std::shared_ptr<struct Compressed_Format<Weight>
         uint64_t nnz = Env::adjust_nnz(leader_tid, tid);
         C_SPMAT->reallocate(nnz, nrows, ncols, leader_tid, tid);
         Env::memory_allocation_time[tid] += Env::toc(start_time);
-        
+
         start_time = Env::tic();
         pthread_barrier_wait(&Env::thread_barrier);
         if(not last_layer) { spmm_real(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, activation_function, start, end, sub_start, thread_st.idx_nnz, input_compression_type, layer_compression_type, tid); }
@@ -512,7 +592,8 @@ inline void data_x_data_1_iter(std::shared_ptr<struct Compressed_Format<Weight>>
     }
     else if(((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) or
             ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) or
-            ((input_compression_type == COMPRESSED_FORMAT::_CSR_) and (layer_compression_type == COMPRESSED_FORMAT::_CSR_))) {
+            ((input_compression_type == COMPRESSED_FORMAT::_CSR_) and (layer_compression_type == COMPRESSED_FORMAT::_CSR_)) or 
+            ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_DCSC_))) {
         
         start_time = Env::tic();
         std::tie(thread_st.off_nnz, std::ignore, std::ignore) =  spmm_symb(A_SPMAT, B_SPMAT, s_spa, start, end, input_compression_type, layer_compression_type, tid);
