@@ -50,6 +50,10 @@ void Tile<Weight>::compress(const COMPRESSED_FORMAT compression_type_, const boo
         spmat = std::make_shared<struct UDC<Weight>>(triples.size(), height, width, socket_id); 
         spmat->populate(triples);
     }
+    else if(compression_type == COMPRESSED_FORMAT::_DCSC_) { 
+        spmat = std::make_shared<struct DCSC<Weight>>(triples.size(), height, width, socket_id); 
+        spmat->populate(triples);
+    }
     else {
         Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[compression_type]);
         std::exit(Env::finalize());
