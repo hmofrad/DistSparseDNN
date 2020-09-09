@@ -1031,4 +1031,121 @@ void UDC<Weight>::walk_dxd(const bool one_rank, const int32_t leader_tid, const 
     }
 }
 
+
+// Doubly Compressed Sparse Column (DCSC) 
+template<typename Weight>
+struct DCSC: public Compressed_Format<Weight> {
+    public:
+        DCSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id);        
+        ~DCSC(){};
+        
+        void populate(std::vector<struct Triple<Weight>>& triples);
+        void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
+        /*
+        void populate_spa(Weight** spa, const Weight* bias, const uint32_t col,  uint64_t& index, Weight (*)(Weight), const int32_t tid);
+        void walk_dxm1(const bool one_rank, const int32_t leader_tid, const int32_t tid);
+        void walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid);
+        
+        void reallocate(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t leader_tid, const int32_t tid);
+        void adjust(const int32_t tid);
+        void adjust(const int32_t leader_tid, const int32_t tid);
+        void adjust(const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const uint32_t dis_nnz, const int32_t leader_tid, const int32_t tid);
+        void repopulate(const std::shared_ptr<struct Compressed_Format<Weight>> other_spmat, const std::deque<int32_t> my_threads, const int32_t leader_tid, const int32_t tid);
+        */
+        uint64_t nnz   = 0;
+        uint64_t nnz_i = 0;
+        uint32_t nrows = 0;
+        uint32_t ncols = 0;
+        uint32_t nnzcols = 0;
+        
+        std::shared_ptr<struct Data_Block<uint32_t>> JA_blk;
+        std::shared_ptr<struct Data_Block<uint32_t>> JC_blk;
+        std::shared_ptr<struct Data_Block<uint32_t>> IA_blk;
+        std::shared_ptr<struct Data_Block<Weight>>   A_blk;
+};
+
+template<typename Weight>
+DCSC<Weight>::DCSC(const uint64_t nnz_, const uint32_t nrows_, const uint32_t ncols_, const int32_t socket_id) {
+    Compressed_Format<Weight>::compression_type = COMPRESSED_FORMAT::_CSC_;
+    Compressed_Format<Weight>::nnz = nnz_;
+    Compressed_Format<Weight>::nnz_i = nnz_;
+    Compressed_Format<Weight>::nrows = nrows_; 
+    Compressed_Format<Weight>::ncols = ncols_;
+    
+    DCSC::compression_type = COMPRESSED_FORMAT::_CSC_;
+    DCSC::nnz = nnz_;
+    DCSC::nnz_i = nnz_;
+    DCSC::nrows = nrows_; 
+    DCSC::ncols = ncols_;
+    
+    DCSC::JA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>((DCSC::ncols + 1), socket_id));
+    DCSC::JC_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>((DCSC::ncols), socket_id));
+    DCSC::IA_blk = std::move(std::make_shared<struct Data_Block<uint32_t>>(DCSC::nnz, socket_id));
+    DCSC::A_blk = std::move(std::make_shared<struct Data_Block<Weight>>(DCSC::nnz, socket_id));
+}
+
+template<typename Weight>
+void DCSC<Weight>::populate(std::vector<struct Triple<Weight>>& triples) {
+    //const ColSort<Weight> f_col;
+    //std::sort(triples.begin(), triples.end(), f_col);  
+    std::sort(triples.begin(), triples.end(), [](const struct Triple<Weight>& a, const struct Triple<Weight>& b){ 
+              return a.col == b.col ? a.row < b.row : a.col < b.col; } );  
+    
+    uint32_t* JA = DCSC::JA_blk->ptr;
+    uint32_t* JC = DCSC::JC_blk->ptr;
+    uint32_t* IA = DCSC::IA_blk->ptr;
+    Weight* A = DCSC::A_blk->ptr;
+    
+    uint32_t i = 0;
+    uint32_t j = 1; 
+    //uint32_t k = 0;
+    JA[0] = 0;
+    if(not triples.empty()) { JC[0] = triples.front().col; }
+    
+    for(struct Triple<Weight>& triple: triples) {
+        uint32_t row = triple.row % DCSC::nrows;
+        uint32_t col = triple.col % DCSC::ncols;
+        Weight weight = triple.weight;
+        if(JC[j-1] != col) {
+            JC[j++] = col;
+            JA[j] = JA[j-1];
+        }                  
+        JA[j]++;
+        IA[i] = row;
+        A[i] = weight;
+        i++;
+    }
+
+    DCSC::nnzcols = j;
+    //Compressed_Format<Weight>::nnzcols = j;
+    DCSC::JA_blk->reallocate(DCSC::nnzcols+1);
+    DCSC::JC_blk->reallocate(DCSC::nnzcols);
+}
+
+template<typename Weight>
+void DCSC<Weight>::walk_dxm(const bool one_rank, const int32_t leader_tid, const int32_t tid) {
+    uint32_t* JA = DCSC::JA_blk->ptr;
+    uint32_t* JC = DCSC::JC_blk->ptr;
+    uint32_t* IA = DCSC::IA_blk->ptr;
+    Weight* A = DCSC::A_blk->ptr;
+    
+    double&   checksum   = Env::counters[tid].checksum;
+    uint64_t& checkcount = Env::counters[tid].checkcount;
+    uint64_t& checknnz   = Env::counters[tid].checknnz;
+    
+    checksum   = 0;
+    checkcount = 0;    
+    checknnz   = DCSC::nnz_i;
+    
+    for(uint32_t j = 0; j < DCSC::nnzcols; j++) { 
+        for(uint32_t i = JA[j]; i < JA[j + 1]; i++) {
+            checksum += A[i];
+            checkcount++;
+        }
+    }   
+    
+    printf("Rank=%d Tid=%d checksum=%f, checkcount=%lu ? %lu\n", Env::rank, tid, checksum, checkcount, checknnz);
+}
+
 #endif
