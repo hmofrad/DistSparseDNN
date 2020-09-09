@@ -125,7 +125,8 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
            ((input_compression_type == COMPRESSED_FORMAT::_UDC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) or // Dense x Compressed
            ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) or // Compressed x Dense
            ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) or // Compressed x Compressed (CSC)
-           ((input_compression_type == COMPRESSED_FORMAT::_CSR_) and (layer_compression_type == COMPRESSED_FORMAT::_CSR_)))){ // Compressed x Compressed (CSR)
+           ((input_compression_type == COMPRESSED_FORMAT::_CSR_) and (layer_compression_type == COMPRESSED_FORMAT::_CSR_)) or // Compressed x Compressed (CSR)
+           ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_DCSC_)))){ // Compressed (CSC) x Compressed (DCSC)
         Logging::print(Logging::LOG_LEVEL::ERROR, "[%sx%s] multiplication not implemented\n", COMPRESSED_FORMATS[input_compression_type], COMPRESSED_FORMATS[layer_compression_type]);
         std::exit(Env::finalize());
     }
@@ -326,7 +327,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     uint32_t start = 0, end = 0;
     uint32_t sub_start = 0, sub_end = 0;
     uint32_t l = 0;
-    for (uint32_t l = 0; l < nmax_layers; l++) {    
+    for (uint32_t l = 0; l < nmax_layers; l++) {  
         struct Tile<Weight>& A_tile = (input_compression_type == COMPRESSED_FORMAT::_UDC_) ? (not(l%2)) ? input_features->tiles[leader_rowgroup][0]
                                                                                                         : output->tiles[leader_rowgroup][0] 
                                                                                      : input_features->tiles[leader_rowgroup][0];    
@@ -347,22 +348,38 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         B_nrows = B_SPMAT->nrows;
         B_ncols = B_SPMAT->ncols;
         if(tid == leader_tid) {
-            for(int32_t i = 0; i < Env::nthreads; i++) {
-                Env::threads[i].start_row = ((B_nrows/Env::nthreads) * i);    
-                Env::threads[i].end_row = (i == (Env::nthreads-1)) ? B_nrows : ((B_nrows/Env::nthreads) * (i+1));    
-                
-                Env::threads[i].start_col = ((B_ncols/Env::nthreads) * i);    
-                Env::threads[i].end_col = (i == (Env::nthreads-1)) ? B_ncols : ((B_ncols/Env::nthreads) * (i+1));    
-            }    
+            /*
+            if(layer_compression_type == COMPRESSED_FORMAT::_DCSC_) {
+                const std::shared_ptr<struct DCSC<Weight>> B_DCSC = std::static_pointer_cast<struct DCSC<Weight>>(B_SPMAT);
+                B_ncols = B_DCSC->nnzcols;
+                for(int32_t i = 0; i < Env::nthreads; i++) {
+                    Env::threads[i].start_row = ((B_nrows/Env::nthreads) * i);    
+                    Env::threads[i].end_row = (i == (Env::nthreads-1)) ? B_nrows : ((B_nrows/Env::nthreads) * (i+1));    
+                    
+                    Env::threads[i].start_col = ((B_ncols/Env::nthreads) * i);    
+                    Env::threads[i].end_col = (i == (Env::nthreads-1)) ? B_ncols : ((B_ncols/Env::nthreads) * (i+1));    
+                } 
+            }
+            else {
+                */
+                for(int32_t i = 0; i < Env::nthreads; i++) {
+                    Env::threads[i].start_row = ((B_nrows/Env::nthreads) * i);    
+                    Env::threads[i].end_row = (i == (Env::nthreads-1)) ? B_nrows : ((B_nrows/Env::nthreads) * (i+1));    
+                    
+                    Env::threads[i].start_col = ((B_ncols/Env::nthreads) * i);    
+                    Env::threads[i].end_col = (i == (Env::nthreads-1)) ? B_ncols : ((B_ncols/Env::nthreads) * (i+1));    
+                }    
+            //}
         }         
         pthread_barrier_wait(&Env::thread_barrier);
         
-        
-        if((layer_compression_type == COMPRESSED_FORMAT::_UDC_) or (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) {
+        if((layer_compression_type == COMPRESSED_FORMAT::_UDC_) or 
+                (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) { 
+                //(layer_compression_type == COMPRESSED_FORMAT::_DCSC_)) {
             start = Env::threads[tid].start_col;
             end = Env::threads[tid].end_col;
             sub_start = 0, sub_end   = 0;
-            sub_start = B_tile.start_col, sub_end   = B_tile.end_col;
+            printf("%d %d %d\n", tid, start, end);
             /*
             A_nrows = A_tile.nrows;
             B_ncols = B_tile.ncols;
@@ -421,8 +438,12 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         B_nrows = B_SPMAT->nrows;
         B_ncols = B_SPMAT->ncols;
         
-        if((input_compression_type == COMPRESSED_FORMAT::_UDC_) or (input_compression_type == COMPRESSED_FORMAT::_CSC_)) { end = B_ncols; }
-        else if (input_compression_type == COMPRESSED_FORMAT::_CSR_) { end = A_nrows; }
+        if((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_DCSC_)){ 
+            const std::shared_ptr<struct DCSC<Weight>> B_DCSC = std::static_pointer_cast<struct DCSC<Weight>>(B_SPMAT);
+            end = B_DCSC->nnzcols;
+        }
+        else if((input_compression_type == COMPRESSED_FORMAT::_UDC_) or (input_compression_type == COMPRESSED_FORMAT::_CSC_)) { end = B_ncols; }
+        else if(input_compression_type == COMPRESSED_FORMAT::_CSR_) { end = A_nrows; }
         else {
             Logging::print(Logging::LOG_LEVEL::ERROR, "%s compression not implemented\n", COMPRESSED_FORMATS[input_compression_type]);
             std::exit(Env::finalize());
