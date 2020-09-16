@@ -126,7 +126,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
            ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_UDC_)) or // Compressed x Dense
            ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) or // Compressed x Compressed (CSC)
            ((input_compression_type == COMPRESSED_FORMAT::_CSR_) and (layer_compression_type == COMPRESSED_FORMAT::_CSR_)) or // Compressed x Compressed (CSR)
-           ((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_DCSC_)))){ // Compressed (CSC) x Compressed (DCSC)
+           ((input_compression_type == COMPRESSED_FORMAT::_DCSC_) and (layer_compression_type == COMPRESSED_FORMAT::_DCSC_)))){ // Compressed (CSC) x Compressed (DCSC)
         Logging::print(Logging::LOG_LEVEL::ERROR, "[%sx%s] multiplication not implemented\n", COMPRESSED_FORMATS[input_compression_type], COMPRESSED_FORMATS[layer_compression_type]);
         std::exit(Env::finalize());
     }
@@ -212,7 +212,7 @@ Net<Weight>::Net(const uint32_t input_ninstanses_, const uint32_t input_nfeature
 
     spa_vectors.resize(Env::nthreads);
     for(int32_t i = 0; i < Env::nthreads; i++) {
-        if((input_compression_type == COMPRESSED_FORMAT::_UDC_) or (input_compression_type == COMPRESSED_FORMAT::_CSC_)) {
+        if((input_compression_type == COMPRESSED_FORMAT::_UDC_) or (input_compression_type == COMPRESSED_FORMAT::_CSC_) or (input_compression_type == COMPRESSED_FORMAT::_DCSC_)) {
             uint32_t max_height = input_features->get_tile_info_max("height");
             spa_vectors[i] = std::move(std::make_shared<struct Data_Block<Weight>>(max_height, Env::threads_socket_id[i]));    
         }
@@ -323,7 +323,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
     const int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
 
-    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0;
+    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0, B_nnzcols = 0;
     uint32_t start = 0, end = 0;
     uint32_t sub_start = 0, sub_end = 0;
     uint32_t l = 0;
@@ -347,6 +347,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
         A_nrows = A_SPMAT->nrows;
         B_nrows = B_SPMAT->nrows;
         B_ncols = B_SPMAT->ncols;
+        B_nnzcols = B_SPMAT->ncols;
         if(tid == leader_tid) {
             /*
             if(layer_compression_type == COMPRESSED_FORMAT::_DCSC_) {
@@ -379,7 +380,6 @@ void Net<Weight>::data_x_model(const int32_t tid) {
             start = Env::threads[tid].start_col;
             end = Env::threads[tid].end_col;
             sub_start = 0, sub_end   = 0;
-            printf("%d %d %d\n", tid, start, end);
             /*
             A_nrows = A_tile.nrows;
             B_ncols = B_tile.ncols;
@@ -397,6 +397,7 @@ void Net<Weight>::data_x_model(const int32_t tid) {
 
         data_x_model_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
                             A_nrows, B_ncols, 
+                            B_nnzcols,
                             start, end, 
                             sub_start, sub_end, 
                             thread_st, last_layer, input_compression_type, layer_compression_type, leader_tid, tid); 
@@ -418,7 +419,7 @@ void Net<Weight>::data_x_data(const int32_t tid) {
     uint32_t leader_rowgroup = Env::thread_rowgroup[tid];
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
-    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0;
+    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0, B_nnzcols = 0;
     uint32_t start = 0, end = 0;
     const uint32_t off = 0;
     uint32_t l = 0;
@@ -437,10 +438,11 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         A_nrows = A_SPMAT->nrows;
         B_nrows = B_SPMAT->nrows;
         B_ncols = B_SPMAT->ncols;
-        
-        if((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_DCSC_)){ 
+        B_nnzcols = B_SPMAT->ncols;
+        if(layer_compression_type == COMPRESSED_FORMAT::_DCSC_){ 
             const std::shared_ptr<struct DCSC<Weight>> B_DCSC = std::static_pointer_cast<struct DCSC<Weight>>(B_SPMAT);
             end = B_DCSC->nnzcols;
+            B_nnzcols = B_DCSC->nnzcols;
         }
         else if((input_compression_type == COMPRESSED_FORMAT::_UDC_) or (input_compression_type == COMPRESSED_FORMAT::_CSC_)) { end = B_ncols; }
         else if(input_compression_type == COMPRESSED_FORMAT::_CSR_) { end = A_nrows; }
@@ -450,7 +452,9 @@ void Net<Weight>::data_x_data(const int32_t tid) {
         }
         bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
         data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
-                           A_nrows, B_ncols, start, end, off, 
+                           A_nrows, B_ncols, 
+                           B_nnzcols,
+                           start, end, off, 
                            thread_st, last_layer, input_compression_type, layer_compression_type, leader_tid, tid); 
     }
     auto finish_t = std::chrono::high_resolution_clock::now();
@@ -458,6 +462,7 @@ void Net<Weight>::data_x_data(const int32_t tid) {
     
     struct Tile<Weight>& C_tile = (not((l-1)%2)) ? output->tiles[leader_rowgroup][0] 
                                              : input_features->tiles[leader_rowgroup][0];
+    
     const std::shared_ptr<struct Compressed_Format<Weight>> C_SPMAT = C_tile.spmat;
     data_x_data_validate_prediction(C_SPMAT, C_tile.start_row, true_categories, predicted_nistances, category_type, classifier, leader_tid, tid);
 }
@@ -491,7 +496,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& leader_owned_threads, c
     int32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
-    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0;
+    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0, B_nnzcols = 0;
     uint32_t start = 0, end = 0;
     const uint32_t off = 0;
     bool breaking = false;
@@ -512,6 +517,7 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& leader_owned_threads, c
         A_nrows = A_SPMAT->nrows;
         B_nrows = B_SPMAT->nrows;
         B_ncols = B_SPMAT->ncols;
+        B_nnzcols = B_SPMAT->ncols;
         
         if((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) { end = B_ncols; }
         else if ((input_compression_type == COMPRESSED_FORMAT::_CSR_) and (layer_compression_type == COMPRESSED_FORMAT::_CSR_)) { end = A_nrows; }
@@ -525,7 +531,9 @@ uint32_t Net<Weight>::hybrid_x_data(std::deque<int32_t>& leader_owned_threads, c
 
         bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
         data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
-                           A_nrows, B_ncols, start, end, off, 
+                           A_nrows, B_ncols,
+                           B_nnzcols,
+                           start, end, off, 
                            thread_st, last_layer, input_compression_type, layer_compression_type, leader_tid, tid); 
                            
         Env::scores[sid][tid]++;     
@@ -538,7 +546,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& leader_owned_threads, cons
     int32_t sid = (numa_queues) ? Env::threads_socket_id[tid] : Env::rank_socket_id;
     struct Env::thread_struct& thread_st = Env::threads[tid];    
     
-    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0;
+    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0, B_nnzcols = 0;
     uint32_t start = 0, end = 0;
     const uint32_t off = 0;  
     uint32_t B_ncols_prev = 0;
@@ -560,6 +568,7 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& leader_owned_threads, cons
         A_nrows = A_SPMAT->nrows;
         B_nrows = B_SPMAT->nrows;
         B_ncols = B_SPMAT->ncols;
+        B_nnzcols = B_SPMAT->ncols;
         
         add_to_my_follower_threads(leader_owned_threads, leader_rowgroup, leader_start_layer, l, A_nrows, B_ncols, leader_tid, tid);
         double start_time = Env::tic();   
@@ -602,7 +611,9 @@ void Net<Weight>::hybrid_x_model(std::deque<int32_t>& leader_owned_threads, cons
         uint32_t A_ncols = A_SPMAT->ncols;
         bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
         data_x_model_hybrid_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
-               A_nrows, B_ncols, start, end, off,
+               A_nrows, B_ncols,
+               B_nnzcols,
+               start, end, off,
                leader_owned_threads, thread_st, last_layer, input_compression_type, layer_compression_type, leader_tid, tid);
                
        if(tid == leader_tid) Env::scores[sid][tid]++;
@@ -802,7 +813,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
     uint32_t leader_rowgroup = 0;
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
-    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0;
+    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0, B_nnzcols = 0;
     uint32_t start = 0, end = 0;
     const uint32_t off = 0;
     while(!Env::rank_rowgroups.empty()) {
@@ -833,6 +844,7 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
             A_nrows = A_SPMAT->nrows;
             B_nrows = B_SPMAT->nrows;
             B_ncols = B_SPMAT->ncols;
+            B_nnzcols = B_SPMAT->ncols;
             
             if((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) { end = B_ncols; }
             else if ((input_compression_type == COMPRESSED_FORMAT::_CSR_) and (layer_compression_type == COMPRESSED_FORMAT::_CSR_)) { end = A_nrows; }
@@ -842,7 +854,9 @@ void Net<Weight>::manager_x_worker(const int32_t tid) {
             }
             bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
             data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
-                               A_nrows, B_ncols, start, end, off, 
+                               A_nrows, B_ncols,
+                                B_nnzcols, 
+                               start, end, off, 
                                thread_st, last_layer, input_compression_type, layer_compression_type, leader_tid, tid);       
         }   
     }
@@ -860,7 +874,7 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
     uint32_t leader_rowgroup = 0;
     int32_t leader_tid = 0;
     struct Env::thread_struct& thread_st = Env::threads[tid];
-    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0;
+    uint32_t A_nrows = 0, B_nrows = 0, B_ncols = 0, B_nnzcols = 0;
     uint32_t start = 0, end = 0;
     const uint32_t off = 0;
     while(true) {
@@ -896,6 +910,7 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
             A_nrows = A_SPMAT->nrows;
             B_nrows = B_SPMAT->nrows;
             B_ncols = B_SPMAT->ncols;
+            B_nnzcols = B_SPMAT->ncols;
             
             if((input_compression_type == COMPRESSED_FORMAT::_CSC_) and (layer_compression_type == COMPRESSED_FORMAT::_CSC_)) { end = B_ncols; }
             else if ((input_compression_type == COMPRESSED_FORMAT::_CSR_) and (layer_compression_type == COMPRESSED_FORMAT::_CSR_)) { end = A_nrows; }
@@ -905,7 +920,9 @@ void Net<Weight>::work_x_stealing(const int32_t tid) {
             }
             bool last_layer = (category_type == VALUE_TYPE::_INSTANCE_AND_VALUE_PAIRS_) and (l==nmax_layers-1);
             data_x_data_1_iter(A_SPMAT, B_SPMAT, C_SPMAT, s_spa, b_bias, noop_function, activation_function,
-                               A_nrows, B_ncols, start, end, off, 
+                               A_nrows, B_ncols,
+                               B_nnzcols,
+                               start, end, off, 
                                thread_st, last_layer, input_compression_type, layer_compression_type, leader_tid, tid);       
         }   
     }
