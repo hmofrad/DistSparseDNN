@@ -114,8 +114,8 @@ For other datasets e.g., for inferring fashion MNIST on a sparse DNN with 30 lay
 
 ## Papers
 
-Mohammad Hasanzadeh Mofrad, Rami Melhem, Yousuf Ahmad and Mohammad Hammoud. [“Accelerating Distributed Inference of Sparse Deep Neural Networks via Mitigating the Straggler Effect.”](http://people.cs.pitt.edu/~moh18/files/papers/PID6571125.pdf) In proceedings of IEEE High Performance Extreme Computing (HPEC), Waltham, MA USA, 2020.
-Mohammad Hasanzadeh Mofrad, Rami Melhem, Yousuf Ahmad and Mohammad Hammoud. [“Studying the Effects of Hashing of Sparse Deep Neural Networks on Data and Model Parallelisms.”](http://people.cs.pitt.edu/~moh18/files/papers/PID6577535.pdf) In proceedings of IEEE High Performance Extreme Computing (HPEC), Waltham, MA USA, 2020.
+- Mohammad Hasanzadeh Mofrad, Rami Melhem, Yousuf Ahmad and Mohammad Hammoud. [“Accelerating Distributed Inference of Sparse Deep Neural Networks via Mitigating the Straggler Effect.”](http://people.cs.pitt.edu/~moh18/files/papers/PID6571125.pdf) In proceedings of IEEE High Performance Extreme Computing (HPEC), Waltham, MA USA, 2020.
+- Mohammad Hasanzadeh Mofrad, Rami Melhem, Yousuf Ahmad and Mohammad Hammoud. [“Studying the Effects of Hashing of Sparse Deep Neural Networks on Data and Model Parallelisms.”](http://people.cs.pitt.edu/~moh18/files/papers/PID6577535.pdf) In proceedings of IEEE High Performance Extreme Computing (HPEC), Waltham, MA USA, 2020.
 
 ## Contact
 
