@@ -112,6 +112,11 @@ For other datasets e.g., for inferring fashion MNIST on a sparse DNN with 30 lay
     python3 scripts/sparse_dnn_generator.py fashion_mnist # Parameters are hardcoded
     mpirun -np 4 bin/./fashion_mnist -i 60000 784 10 data/fashion_mnist/bin/ -n 2048 30 data/fashion_mnist/bin/ -c 1 1 -p 0 -h 3
 
+## Papers
+
+Mohammad Hasanzadeh Mofrad, Rami Melhem, Yousuf Ahmad and Mohammad Hammoud. [“Accelerating Distributed Inference of Sparse Deep Neural Networks via Mitigating the Straggler Effect.”](http://people.cs.pitt.edu/~moh18/files/papers/PID6571125.pdf) In proceedings of IEEE High Performance Extreme Computing (HPEC), Waltham, MA USA, 2020.
+Mohammad Hasanzadeh Mofrad, Rami Melhem, Yousuf Ahmad and Mohammad Hammoud. [“Studying the Effects of Hashing of Sparse Deep Neural Networks on Data and Model Parallelisms.”](http://people.cs.pitt.edu/~moh18/files/papers/PID6577535.pdf) In proceedings of IEEE High Performance Extreme Computing (HPEC), Waltham, MA USA, 2020.
+
 ## Contact
 
 Mohammad Hasnzadeh Mofrad (m.hasanzadeh.mofrad@gmail.com)
